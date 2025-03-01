@@ -1,30 +1,17 @@
 use crate::errors::Errors;
 use crate::types::*;
 
+#[derive(Clone)]
 pub struct GameState {
-    piece_register: PieceRegister,
-    can_castle_queen_light: bool,
-    can_castle_king_light: bool,
-    can_castle_queen_dark: bool,
-    can_castle_king_dark: bool,
-    en_passant_location: Option<BoardLocation>,
-    half_move_clock: u16,
-    full_move_count: u16,
-    turn: Affiliation,
-}
-
-enum FENflag {
-    EndLine,
-    LightMove,
-    DarkMove,
-    Space,
-    CastleKingLight,
-    CastleKingDark,
-    CastleQueenLight,
-    CastleQueenDark,
-    EnPassantFile,
-    EnPassantRank,
-    EnPassantNone,
+    pub piece_register: PieceRegister,
+    pub can_castle_queen_light: bool,
+    pub can_castle_king_light: bool,
+    pub can_castle_queen_dark: bool,
+    pub can_castle_king_dark: bool,
+    pub en_passant_location: Option<BoardLocation>,
+    pub half_move_clock: u16,
+    pub full_move_count: u16,
+    pub turn: Affiliation,
 }
 
 impl GameState {
@@ -51,7 +38,7 @@ impl GameState {
                             affiliation: Affiliation::Dark,
                         };
                         piece_register.add_piece_record(x, location)?;
-                        location = match MoveBoardLocation(location, 1, 0) {
+                        location = match move_board_location(location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -62,7 +49,7 @@ impl GameState {
                             affiliation: Affiliation::Dark,
                         };
                         piece_register.add_piece_record(x, location)?;
-                        location = match MoveBoardLocation(location, 1, 0) {
+                        location = match move_board_location(location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -73,7 +60,7 @@ impl GameState {
                             affiliation: Affiliation::Dark,
                         };
                         piece_register.add_piece_record(x, location)?;
-                        location = match MoveBoardLocation(location, 1, 0) {
+                        location = match move_board_location(location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -84,7 +71,7 @@ impl GameState {
                             affiliation: Affiliation::Dark,
                         };
                         piece_register.add_piece_record(x, location)?;
-                        location = match MoveBoardLocation(location, 1, 0) {
+                        location = match move_board_location(location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -95,7 +82,7 @@ impl GameState {
                             affiliation: Affiliation::Dark,
                         };
                         piece_register.add_piece_record(x, location)?;
-                        location = match MoveBoardLocation(location, 1, 0) {
+                        location = match move_board_location(location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -106,7 +93,7 @@ impl GameState {
                             affiliation: Affiliation::Dark,
                         };
                         piece_register.add_piece_record(x, location)?;
-                        location = match MoveBoardLocation(location, 1, 0) {
+                        location = match move_board_location(location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -117,7 +104,7 @@ impl GameState {
                             affiliation: Affiliation::Light,
                         };
                         piece_register.add_piece_record(x, location)?;
-                        location = match MoveBoardLocation(location, 1, 0) {
+                        location = match move_board_location(location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -128,7 +115,7 @@ impl GameState {
                             affiliation: Affiliation::Light,
                         };
                         piece_register.add_piece_record(x, location)?;
-                        location = match MoveBoardLocation(location, 1, 0) {
+                        location = match move_board_location(location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -139,7 +126,7 @@ impl GameState {
                             affiliation: Affiliation::Light,
                         };
                         piece_register.add_piece_record(x, location)?;
-                        location = match MoveBoardLocation(location, 1, 0) {
+                        location = match move_board_location(location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -150,7 +137,7 @@ impl GameState {
                             affiliation: Affiliation::Light,
                         };
                         piece_register.add_piece_record(x, location)?;
-                        location = match MoveBoardLocation(location, 1, 0) {
+                        location = match move_board_location(location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -161,7 +148,7 @@ impl GameState {
                             affiliation: Affiliation::Light,
                         };
                         piece_register.add_piece_record(x, location)?;
-                        location = match MoveBoardLocation(location, 1, 0) {
+                        location = match move_board_location(location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -172,13 +159,13 @@ impl GameState {
                             affiliation: Affiliation::Light,
                         };
                         piece_register.add_piece_record(x, location)?;
-                        location = match MoveBoardLocation(location, 1, 0) {
+                        location = match move_board_location(location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
                     }
                     '/' => {
-                        location = match MoveBoardLocation(location, 0, -1) {
+                        location = match move_board_location(location, 0, -1) {
                             Ok(new_location) => (0, new_location.1),
                             Err(_) => location,
                         }
@@ -188,7 +175,7 @@ impl GameState {
                         if (x == 8) && (location.0 == 0) {
                             continue;
                         }
-                        location = match MoveBoardLocation(location, x, 0) {
+                        location = match move_board_location(location, x, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => return Err(Errors::InvalidFENstring),
                         }
@@ -238,7 +225,7 @@ impl GameState {
                     'a' => Some(0),
                     'b' => Some(1),
                     'c' => Some(2),
-                    'e' => Some(3),
+                    'd' => Some(3),
                     'e' => Some(4),
                     'f' => Some(5),
                     'g' => Some(6),

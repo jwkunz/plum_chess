@@ -1,5 +1,4 @@
 use crate::errors::*;
-use std::{collections::LinkedList, fmt::Error};
 #[derive(Copy, Clone)]
 pub enum Class {
     Pawn,
@@ -17,7 +16,7 @@ pub enum Affiliation {
 
 pub type BoardLocation = (i8, i8);
 
-pub fn MoveBoardLocation(
+pub fn move_board_location(
     x: BoardLocation,
     d_file: i8,
     d_rank: i8,
@@ -35,7 +34,7 @@ pub struct PieceRecord {
     pub affiliation: Affiliation,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct PieceRegister {
     buffer: [[Option<PieceRecord>; 8]; 8],
 }
