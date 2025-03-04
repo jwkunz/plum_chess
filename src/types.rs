@@ -10,7 +10,7 @@ pub enum Class {
     King,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Affiliation {
     Dark,
     Light,

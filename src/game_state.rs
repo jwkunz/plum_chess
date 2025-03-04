@@ -412,6 +412,13 @@ impl GameState {
         result.push_str(&self.full_move_count.to_string());
         result
     }
+
+    /// Returns the score based on material.
+    /// + favors light
+    /// - favors dark
+    fn get_material_score() -> i8 {
+        0
+    }
 }
 
 #[cfg(test)]
