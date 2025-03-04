@@ -15,6 +15,15 @@ pub struct GameState {
 }
 
 impl GameState {
+    /// Creates a `GameState` from a FEN string.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - A string slice that holds the FEN string.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self, Errors>` - Returns a `GameState` if the FEN string is valid, otherwise returns an error.
     pub fn from_fen(x: &str) -> Result<Self, Errors> {
         let mut piece_register = PieceRegister::default();
         let mut can_castle_king_dark: bool = false;
@@ -22,9 +31,9 @@ impl GameState {
         let mut can_castle_queen_dark: bool = false;
         let mut can_castle_queen_light: bool = false;
         let mut en_passant_location = None;
-        let mut half_move_clock: u16 = 0;
-        let mut full_move_count: u16 = 0;
-        let mut turn: Affiliation = Affiliation::Light;
+        let half_move_clock: u16;
+        let full_move_count: u16;
+        let turn;
 
         let mut fields = x.split_ascii_whitespace();
 
@@ -284,10 +293,22 @@ impl GameState {
             turn,
         })
     }
+
+    /// Creates a new `GameState` representing the starting position of a chess game.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - Returns a `GameState` representing the starting position.
     pub fn new_game() -> Self {
         let new_game = String::from("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
         GameState::from_fen(&new_game).expect("New game string must have been corrupted")
     }
+
+    /// Converts the current `GameState` to a FEN string.
+    ///
+    /// # Returns
+    ///
+    /// * `String` - Returns a FEN string representing the current `GameState`.
     pub fn get_fen(&self) -> String {
         let mut result = String::new();
         for i in (0..8).rev() {
@@ -398,6 +419,7 @@ mod tests {
     use super::*;
 
     #[test]
+    /// Tests the creation of a new game and the conversion to and from FEN strings.
     fn make_new_game() {
         let dut = GameState::new_game();
         let new_game_string =
