@@ -416,8 +416,23 @@ impl GameState {
     /// Returns the score based on material.
     /// + favors light
     /// - favors dark
-    fn get_material_score() -> i8 {
-        0
+    pub fn get_material_score(&self) -> i8 {
+        let mut score = 0;
+        for (_, piece_record) in self.piece_register.iter() {
+            let piece_value = match piece_record.class {
+                Class::Pawn => 1,
+                Class::Knight => 3,
+                Class::Bishop => 3,
+                Class::Rook => 5,
+                Class::Queen => 9,
+                Class::King => 0, // Kings are ignored
+            };
+            score += match piece_record.affiliation {
+                Affiliation::Light => piece_value,
+                Affiliation::Dark => -piece_value,
+            };
+        }
+        score
     }
 }
 

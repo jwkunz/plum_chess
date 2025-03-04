@@ -113,4 +113,48 @@ impl PieceRegister {
         *self.at(y) = None;
         z
     }
+
+    /// Returns an iterator over the piece records in the buffer.
+    ///
+    /// # Returns
+    ///
+    /// * `PieceRegisterIter` - An iterator over the piece records in the buffer.
+    pub fn iter(&self) -> PieceRegisterIter {
+        PieceRegisterIter {
+            register: self,
+            x: 0,
+            y: 0,
+        }
+    }
+}
+
+/// An iterator over the piece records in the buffer.
+pub struct PieceRegisterIter<'a> {
+    register: &'a PieceRegister,
+    x: usize,
+    y: usize,
+}
+
+impl<'a> Iterator for PieceRegisterIter<'a> {
+    type Item = (BoardLocation, &'a PieceRecord);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.y < 8 {
+            if let Some(piece) = &self.register.buffer[self.x][self.y] {
+                let location = (self.x as i8, self.y as i8);
+                self.x += 1;
+                if self.x == 8 {
+                    self.x = 0;
+                    self.y += 1;
+                }
+                return Some((location, piece));
+            }
+            self.x += 1;
+            if self.x == 8 {
+                self.x = 0;
+                self.y += 1;
+            }
+        }
+        None
+    }
 }
