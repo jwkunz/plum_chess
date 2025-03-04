@@ -15,7 +15,7 @@ pub struct GameState {
 }
 
 impl GameState {
-    pub fn from_fen(x: String) -> Result<Self, Errors> {
+    pub fn from_fen(x: &str) -> Result<Self, Errors> {
         let mut piece_register = PieceRegister::default();
         let mut can_castle_king_dark: bool = false;
         let mut can_castle_king_light: bool = false;
@@ -172,12 +172,9 @@ impl GameState {
                     }
                     '1'..='8' => {
                         let x = i.to_digit(10).expect("This char should parse") as i8;
-                        if (x == 8) && (location.0 == 0) {
-                            continue;
-                        }
                         location = match move_board_location(location, x, 0) {
                             Ok(new_location) => new_location,
-                            Err(_) => return Err(Errors::InvalidFENstring),
+                            Err(_) => (7, location.1),
                         }
                     }
                     _ => return Err(Errors::InvalidFENstring),
@@ -289,10 +286,110 @@ impl GameState {
     }
     pub fn new_game() -> Self {
         let new_game = String::from("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-        GameState::from_fen(new_game).expect("New game string must have been corrupted")
+        GameState::from_fen(&new_game).expect("New game string must have been corrupted")
     }
     pub fn get_fen(&self) -> String {
-        " ".to_string()
+        let mut result = String::new();
+        for i in (0..8).rev() {
+            let mut space_count: u8 = 0;
+            for j in 0..8 {
+                if let Some(x) = self.piece_register.view((j, i)) {
+                    if space_count > 0 {
+                        result.push(space_count.to_string().chars().next().unwrap());
+                    }
+                    let c: char = match x.affiliation {
+                        Affiliation::Light => match x.class {
+                            Class::Bishop => 'B',
+                            Class::King => 'K',
+                            Class::Knight => 'N',
+                            Class::Pawn => 'P',
+                            Class::Queen => 'Q',
+                            Class::Rook => 'R',
+                        },
+                        Affiliation::Dark => match x.class {
+                            Class::Bishop => 'b',
+                            Class::King => 'k',
+                            Class::Knight => 'n',
+                            Class::Pawn => 'p',
+                            Class::Queen => 'q',
+                            Class::Rook => 'r',
+                        },
+                    };
+                    result.push(c);
+                    space_count = 0;
+                } else {
+                    space_count += 1;
+                }
+            }
+            if space_count > 0 {
+                result.push(space_count.to_string().chars().next().unwrap());
+            }
+            if i > 0 {
+                result.push('/');
+            }
+        }
+
+        result.push(' ');
+        match self.turn {
+            Affiliation::Dark => result.push('b'),
+            Affiliation::Light => result.push('w'),
+        };
+        result.push(' ');
+
+        if self.can_castle_king_light {
+            result.push('K');
+        }
+        if self.can_castle_queen_light {
+            result.push('Q');
+        }
+        if self.can_castle_king_dark {
+            result.push('k');
+        }
+        if self.can_castle_queen_dark {
+            result.push('q');
+        }
+        if !self.can_castle_king_dark
+            | !self.can_castle_queen_dark
+            | !self.can_castle_king_light
+            | !self.can_castle_queen_light
+        {
+            result.push('-');
+        }
+        result.push(' ');
+
+        if self.en_passant_location.is_some() {
+            match self.en_passant_location.unwrap().0 {
+                0 => result.push('a'),
+                1 => result.push('b'),
+                2 => result.push('c'),
+                3 => result.push('d'),
+                4 => result.push('e'),
+                5 => result.push('f'),
+                6 => result.push('g'),
+                7 => result.push('h'),
+                _ => panic!("position file got corrupted"),
+            }
+            match self.en_passant_location.unwrap().1 {
+                0 => result.push('1'),
+                1 => result.push('2'),
+                2 => result.push('3'),
+                3 => result.push('4'),
+                4 => result.push('5'),
+                5 => result.push('6'),
+                6 => result.push('7'),
+                7 => result.push('8'),
+                _ => panic!("position rank got corrupted"),
+            }
+        } else {
+            result.push('-');
+        }
+        result.push(' ');
+
+        result.push_str(&self.half_move_clock.to_string());
+        result.push(' ');
+
+        result.push_str(&self.full_move_count.to_string());
+        result
     }
 }
 
@@ -303,5 +400,25 @@ mod tests {
     #[test]
     fn make_new_game() {
         let dut = GameState::new_game();
+        let new_game_string =
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string();
+        assert_eq!(dut.get_fen(), new_game_string);
+
+        let game_string_0 =
+            "1r4k1/7p/3p1bp1/p1pP4/P1P1prP1/1N2R2P/1P1N1PK1/8 b - - 3 31".to_string();
+        let dut_0 = GameState::from_fen(&game_string_0).expect("Should parse this string");
+        let r_0 = dut_0.get_fen();
+        assert_eq!(r_0, game_string_0);
+
+        let game_string_1 =
+            "r1bq1rk1/ppp2ppp/2n5/2bp4/4n3/1P2PNP1/PBP2PBP/RN1Q1RK1 b - - 2 9".to_string();
+        let dut_1 = GameState::from_fen(&game_string_1).expect("Should parse this string");
+        let r_1 = dut_1.get_fen();
+        assert_eq!(r_1, game_string_1);
+
+        let game_string_2 = "8/bpp1k2p/p2pP1p1/P5q1/1P5N/8/6PP/5Q1K b - - 0 35".to_string();
+        let dut_2 = GameState::from_fen(&game_string_2).expect("Should parse this string");
+        let r_2 = dut_2.get_fen();
+        assert_eq!(r_2, game_string_2);
     }
 }
