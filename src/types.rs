@@ -1,6 +1,8 @@
+use std::fmt::Debug;
+
 use crate::errors::*;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Class {
     Pawn,
     Knight,
@@ -10,7 +12,7 @@ pub enum Class {
     King,
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum Affiliation {
     Dark,
     Light,
@@ -30,7 +32,7 @@ pub type BoardLocation = (i8, i8);
 ///
 /// * `Result<BoardLocation, Errors>` - Returns the new board location if within bounds, otherwise returns an error.
 pub fn move_board_location(
-    x: BoardLocation,
+    x: &BoardLocation,
     d_file: i8,
     d_rank: i8,
 ) -> Result<BoardLocation, Errors> {
@@ -42,13 +44,13 @@ pub fn move_board_location(
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct PieceRecord {
     pub class: Class,
     pub affiliation: Affiliation,
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct PieceRegister {
     buffer: [[Option<PieceRecord>; 8]; 8],
 }
@@ -63,7 +65,7 @@ impl PieceRegister {
     /// # Returns
     ///
     /// * `&mut Option<PieceRecord>` - A mutable reference to the piece record at the specified location.
-    pub fn at(&mut self, x: BoardLocation) -> &mut Option<PieceRecord> {
+    pub fn at(&mut self, x: &BoardLocation) -> &mut Option<PieceRecord> {
         &mut self.buffer[x.0 as usize][x.1 as usize]
     }
 
@@ -76,7 +78,7 @@ impl PieceRegister {
     /// # Returns
     ///
     /// * `&Option<PieceRecord>` - A reference to the piece record at the specified location.
-    pub fn view(&self, x: BoardLocation) -> &Option<PieceRecord> {
+    pub fn view(&self, x: &BoardLocation) -> &Option<PieceRecord> {
         &self.buffer[x.0 as usize][x.1 as usize]
     }
 
@@ -90,7 +92,7 @@ impl PieceRegister {
     /// # Returns
     ///
     /// * `Result<(), Errors>` - Returns `Ok(())` if the piece record was added successfully, otherwise returns an error.
-    pub fn add_piece_record(&mut self, x: PieceRecord, y: BoardLocation) -> Result<(), Errors> {
+    pub fn add_piece_record(&mut self, x: PieceRecord, y: &BoardLocation) -> Result<(), Errors> {
         let _z = self.at(y);
         if _z.is_some() {
             return Err(Errors::BoardLocationOccupied);
@@ -108,7 +110,7 @@ impl PieceRegister {
     /// # Returns
     ///
     /// * `Option<PieceRecord>` - Returns the removed piece record if there was one, otherwise returns `None`.
-    pub fn remove_piece_record(&mut self, y: BoardLocation) -> Option<PieceRecord> {
+    pub fn remove_piece_record(&mut self, y: &BoardLocation) -> Option<PieceRecord> {
         let z = *self.view(y);
         *self.at(y) = None;
         z

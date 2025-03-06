@@ -46,8 +46,8 @@ impl GameState {
                             class: Class::Rook,
                             affiliation: Affiliation::Dark,
                         };
-                        piece_register.add_piece_record(x, location)?;
-                        location = match move_board_location(location, 1, 0) {
+                        piece_register.add_piece_record(x, &location)?;
+                        location = match move_board_location(&location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -57,8 +57,8 @@ impl GameState {
                             class: Class::Knight,
                             affiliation: Affiliation::Dark,
                         };
-                        piece_register.add_piece_record(x, location)?;
-                        location = match move_board_location(location, 1, 0) {
+                        piece_register.add_piece_record(x, &location)?;
+                        location = match move_board_location(&location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -68,8 +68,8 @@ impl GameState {
                             class: Class::Bishop,
                             affiliation: Affiliation::Dark,
                         };
-                        piece_register.add_piece_record(x, location)?;
-                        location = match move_board_location(location, 1, 0) {
+                        piece_register.add_piece_record(x, &location)?;
+                        location = match move_board_location(&location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -79,8 +79,8 @@ impl GameState {
                             class: Class::Queen,
                             affiliation: Affiliation::Dark,
                         };
-                        piece_register.add_piece_record(x, location)?;
-                        location = match move_board_location(location, 1, 0) {
+                        piece_register.add_piece_record(x, &location)?;
+                        location = match move_board_location(&location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -90,8 +90,8 @@ impl GameState {
                             class: Class::King,
                             affiliation: Affiliation::Dark,
                         };
-                        piece_register.add_piece_record(x, location)?;
-                        location = match move_board_location(location, 1, 0) {
+                        piece_register.add_piece_record(x, &location)?;
+                        location = match move_board_location(&location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -101,8 +101,8 @@ impl GameState {
                             class: Class::Pawn,
                             affiliation: Affiliation::Dark,
                         };
-                        piece_register.add_piece_record(x, location)?;
-                        location = match move_board_location(location, 1, 0) {
+                        piece_register.add_piece_record(x, &location)?;
+                        location = match move_board_location(&location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -112,8 +112,8 @@ impl GameState {
                             class: Class::Pawn,
                             affiliation: Affiliation::Light,
                         };
-                        piece_register.add_piece_record(x, location)?;
-                        location = match move_board_location(location, 1, 0) {
+                        piece_register.add_piece_record(x, &location)?;
+                        location = match move_board_location(&location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -123,8 +123,8 @@ impl GameState {
                             class: Class::Rook,
                             affiliation: Affiliation::Light,
                         };
-                        piece_register.add_piece_record(x, location)?;
-                        location = match move_board_location(location, 1, 0) {
+                        piece_register.add_piece_record(x, &location)?;
+                        location = match move_board_location(&location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -134,8 +134,8 @@ impl GameState {
                             class: Class::Knight,
                             affiliation: Affiliation::Light,
                         };
-                        piece_register.add_piece_record(x, location)?;
-                        location = match move_board_location(location, 1, 0) {
+                        piece_register.add_piece_record(x, &location)?;
+                        location = match move_board_location(&location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -145,8 +145,8 @@ impl GameState {
                             class: Class::Bishop,
                             affiliation: Affiliation::Light,
                         };
-                        piece_register.add_piece_record(x, location)?;
-                        location = match move_board_location(location, 1, 0) {
+                        piece_register.add_piece_record(x, &location)?;
+                        location = match move_board_location(&location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -156,8 +156,8 @@ impl GameState {
                             class: Class::Queen,
                             affiliation: Affiliation::Light,
                         };
-                        piece_register.add_piece_record(x, location)?;
-                        location = match move_board_location(location, 1, 0) {
+                        piece_register.add_piece_record(x, &location)?;
+                        location = match move_board_location(&location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
@@ -167,21 +167,21 @@ impl GameState {
                             class: Class::King,
                             affiliation: Affiliation::Light,
                         };
-                        piece_register.add_piece_record(x, location)?;
-                        location = match move_board_location(location, 1, 0) {
+                        piece_register.add_piece_record(x, &location)?;
+                        location = match move_board_location(&location, 1, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => location,
                         }
                     }
                     '/' => {
-                        location = match move_board_location(location, 0, -1) {
+                        location = match move_board_location(&location, 0, -1) {
                             Ok(new_location) => (0, new_location.1),
                             Err(_) => location,
                         }
                     }
                     '1'..='8' => {
                         let x = i.to_digit(10).expect("This char should parse") as i8;
-                        location = match move_board_location(location, x, 0) {
+                        location = match move_board_location(&location, x, 0) {
                             Ok(new_location) => new_location,
                             Err(_) => (7, location.1),
                         }
@@ -314,7 +314,7 @@ impl GameState {
         for i in (0..8).rev() {
             let mut space_count: u8 = 0;
             for j in 0..8 {
-                if let Some(x) = self.piece_register.view((j, i)) {
+                if let Some(x) = self.piece_register.view(&(j, i)) {
                     if space_count > 0 {
                         result.push(space_count.to_string().chars().next().unwrap());
                     }
