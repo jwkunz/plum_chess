@@ -15,43 +15,53 @@ pub enum MoveSpecialness {
 }
 
 #[derive(Clone, Debug)]
-pub enum CollisionType {
-    NoCollision,           // Empty square
-    OwnSidePiece,          // An own side piece collision
-    OtherSideRegularPiece, // Non-king occupied square of other side
-    OtherSideKingPiece,    // King occupied square of other side
+pub enum Occupancy {
+    Empty,        // Empty square
+    EnemyRegular, // Non-king occupied square of other side
+    EnemyKing,    // King occupied square of other side
 }
 
 #[derive(Clone, Debug)]
 pub struct ChessMoveDescription {
     pub start: BoardLocation,
     pub stop: BoardLocation,
-    pub move_type: MoveSpecialness,
-    pub collision_type: CollisionType,
+    pub move_specialness: MoveSpecialness,
+    pub stop_occupancy: Occupancy,
 }
 
 type ListOfMoves = LinkedList<ChessMoveDescription>;
 
-pub fn does_move_create_check(game: &GameState, candidate_move: &ChessMoveDescription) -> bool {
+/// This function will apply the chess_move to a game to create a new game state
+pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMoveDescription) -> GameState {
+    game.clone()
+}
+
+// This function checks if a given game state allows capturing an enemy king in the given turn
+// Depending on whose turn is active this can be used to inspect for "check"
+fn can_capture_enemy_king(game: &GameState) -> bool {
     true
 }
 
-fn get_forward_direction(game: &GameState) -> i8 {
-    match game.turn {
+// Returns the vector for forward depending on whose turn it is
+fn get_forward_direction_for_turn(turn: &Affiliation) -> i8 {
+    match turn {
         Affiliation::Dark => -1,
         Affiliation::Light => 1,
     }
 }
 
-// Common pawn move actions associated with a candidate move
-fn pawn_move_helper(
+// Considers start and stop as a potential move
+// and if feasible will add it to result with appropriate context
+// Returns true if something was added, false if not
+// Does not inspect rules for check
+fn try_add_move_pawn(
     game: &GameState,
     start: &BoardLocation,
     stop: &BoardLocation,
     result: &mut ListOfMoves,
-) {
+) -> bool {
     // Assume no collision occurs
-    let mut collision_type = CollisionType::NoCollision;
+    let mut occupancy_type = Occupancy::Empty;
     // Unless
     if let Some(target) = game.piece_register.view(stop) {
         // Something was at the stop location
@@ -59,24 +69,23 @@ fn pawn_move_helper(
         // Look if the move was forward
         if start.0 == stop.0 {
             // Cannot capture moving forward
-            return;
+            return false;
         }
 
         // What kind of piece collision was it?
-        collision_type = if game.turn == target.affiliation {
-            //CollisionType::OwnSidePiece
-            return;
+        occupancy_type = if game.turn == target.affiliation {
+            return false; // Collide with teammate, not a move
         } else {
             match target.class {
-                Class::King => CollisionType::OtherSideKingPiece,
-                _ => CollisionType::OtherSideRegularPiece,
+                Class::King => Occupancy::EnemyKing,
+                _ => Occupancy::EnemyRegular,
             }
         };
     } else {
         // Look if the move was diagonal
         if start.0 != stop.0 {
             // Cannot move diagonal without capture
-            return;
+            return false;
         }
     }
     // Look for promotion on back rank
@@ -87,53 +96,62 @@ fn pawn_move_helper(
         result.push_back(ChessMoveDescription {
             start: *start,
             stop: *stop,
-            move_type: MoveSpecialness::Promote(Class::Queen),
-            collision_type: collision_type.clone(),
+            move_specialness: MoveSpecialness::Promote(Class::Queen),
+            stop_occupancy: occupancy_type.clone(),
         });
         result.push_back(ChessMoveDescription {
             start: *start,
             stop: *stop,
-            move_type: MoveSpecialness::Promote(Class::Rook),
-            collision_type: collision_type.clone(),
+            move_specialness: MoveSpecialness::Promote(Class::Rook),
+            stop_occupancy: occupancy_type.clone(),
         });
         result.push_back(ChessMoveDescription {
             start: *start,
             stop: *stop,
-            move_type: MoveSpecialness::Promote(Class::Bishop),
-            collision_type: collision_type.clone(),
+            move_specialness: MoveSpecialness::Promote(Class::Bishop),
+            stop_occupancy: occupancy_type.clone(),
         });
         result.push_back(ChessMoveDescription {
             start: *start,
             stop: *stop,
-            move_type: MoveSpecialness::Promote(Class::Knight),
-            collision_type: collision_type.clone(),
+            move_specialness: MoveSpecialness::Promote(Class::Knight),
+            stop_occupancy: occupancy_type.clone(),
         });
+        true
     } else {
         // A regular move (capture or movement)
-        let move_type = if (stop.1 - start.1).abs() == 2 {
+
+        // Check for en passant move
+        let move_specialness = if (stop.1 - start.1).abs() == 2 {
             let en_passant_square = (start.0, (start.1 + stop.1) / 2);
             if game.piece_register.view(&en_passant_square).is_some() {
                 // Can't jump over a piece in the en passant spot
-                return;
+                return false;
             }
             MoveSpecialness::EnPassant(en_passant_square)
         } else {
             MoveSpecialness::Regular
         };
+
+        // Add move
         result.push_back(ChessMoveDescription {
             start: *start,
             stop: *stop,
-            move_type,
-            collision_type: collision_type.clone(),
+            move_specialness,
+            stop_occupancy: occupancy_type.clone(),
         });
-    };
+        true
+    }
 }
 
-pub fn generate_pawn_moves_till_collide(
+// Generates all possible move before evaluating for check
+pub fn generate_potential_moves_pawn(
     game: &GameState,
     start: &BoardLocation,
 ) -> Result<ListOfMoves, Errors> {
     let mut result = LinkedList::new();
+
+    // Check if start location piece is actually a pawn
     if let Some(x) = game.piece_register.view(start) {
         match x.class {
             Class::Pawn => (),
@@ -143,77 +161,95 @@ pub fn generate_pawn_moves_till_collide(
         return Err(Errors::MoveStartLocationIsNotValidPieceType);
     }
 
-    let forward_direction = get_forward_direction(game);
+    // Mark the forward direction
+    let forward_direction = get_forward_direction_for_turn(&game.turn);
+
+    // Try diagonal captures
     if let Ok(stop) = move_board_location(start, 1, forward_direction) {
-        pawn_move_helper(game, start, &stop, &mut result);
+        try_add_move_pawn(game, start, &stop, &mut result);
     }
     if let Ok(stop) = move_board_location(start, -1, forward_direction) {
-        pawn_move_helper(game, start, &stop, &mut result);
+        try_add_move_pawn(game, start, &stop, &mut result);
     }
+
+    // Try forward march
     if let Ok(stop) = move_board_location(start, 0, forward_direction) {
-        pawn_move_helper(game, start, &stop, &mut result);
+        try_add_move_pawn(game, start, &stop, &mut result);
     }
+
+    // Try en passant first move
     let start_square = match game.turn {
         Affiliation::Dark => 6,
         Affiliation::Light => 1,
     };
     if start_square == start.1 {
         if let Ok(stop) = move_board_location(start, 0, 2 * forward_direction) {
-            pawn_move_helper(game, start, &stop, &mut result);
+            try_add_move_pawn(game, start, &stop, &mut result);
         }
     }
+    // Return whatever was available
     Ok(result)
 }
-pub fn generate_knight_moves_till_collide(
+pub fn generate_potential_moves_knight(
     game: &GameState,
     start: &BoardLocation,
 ) -> Result<ListOfMoves, Errors> {
     Ok(LinkedList::new())
 }
-pub fn generate_bishop_moves_till_collide(
+pub fn generate_potential_moves_bishop(
     game: &GameState,
     start: &BoardLocation,
 ) -> Result<ListOfMoves, Errors> {
     Ok(LinkedList::new())
 }
-pub fn generate_rook_moves_till_collide(
+pub fn generate_potential_moves_rook(
     game: &GameState,
     start: &BoardLocation,
 ) -> Result<ListOfMoves, Errors> {
     Ok(LinkedList::new())
 }
-pub fn generate_queen_moves_till_collide(
+pub fn generate_potential_moves_queen(
     game: &GameState,
     start: &BoardLocation,
 ) -> Result<ListOfMoves, Errors> {
     Ok(LinkedList::new())
 }
-pub fn generate_king_moves_till_collide(
+pub fn generate_potential_moves_king(
     game: &GameState,
     start: &BoardLocation,
 ) -> Result<ListOfMoves, Errors> {
     Ok(LinkedList::new())
 }
 
+/// This function get's all possible moves for a given turn
 pub fn generate_all_moves(game: &GameState) -> Result<ListOfMoves, Errors> {
     let mut result = LinkedList::new();
+    // Go through all squares
     for (location, piece_record) in game.piece_register.iter() {
+        // If the piece belongs to the current turn
         if piece_record.affiliation == game.turn {
-            let moves_till_collide = match piece_record.class {
-                crate::types::Class::Pawn => generate_pawn_moves_till_collide(game, &location)?,
-                crate::types::Class::Knight => generate_knight_moves_till_collide(game, &location)?,
-                crate::types::Class::Bishop => generate_bishop_moves_till_collide(game, &location)?,
-                crate::types::Class::Rook => generate_rook_moves_till_collide(game, &location)?,
-                crate::types::Class::Queen => generate_queen_moves_till_collide(game, &location)?,
-                crate::types::Class::King => generate_king_moves_till_collide(game, &location)?,
+            // Generate all the potential moves
+            let potential_moves = match piece_record.class {
+                crate::types::Class::Pawn => generate_potential_moves_pawn(game, &location)?,
+                crate::types::Class::Knight => generate_potential_moves_knight(game, &location)?,
+                crate::types::Class::Bishop => generate_potential_moves_bishop(game, &location)?,
+                crate::types::Class::Rook => generate_potential_moves_rook(game, &location)?,
+                crate::types::Class::Queen => generate_potential_moves_queen(game, &location)?,
+                crate::types::Class::King => generate_potential_moves_king(game, &location)?,
             };
-            for k in moves_till_collide {
-                if !does_move_create_check(game, &k) {
-                    result.push_back(k);
+            // Make sure potential moves don't violate rules
+            for k in potential_moves {
+                let trial_game = apply_move_to_game(game, &k);
+                // Verify that move did not allow a capture of king
+                if can_capture_enemy_king(&trial_game) {
+                    continue;
                 }
+                // All rules validated
+                result.push_back(k);
             }
         }
     }
+    // Return result
     Ok(result)
 }
 
@@ -223,26 +259,28 @@ mod tests {
     #[test]
     fn test_pawn_moves() -> Result<(), Errors> {
         let test_game = GameState::from_fen("3k4/8/8/8/8/8/4P3/3K4 w - - 0 1").unwrap();
-        let moves = generate_pawn_moves_till_collide(&test_game, &(4, 1))?;
+        let moves = generate_potential_moves_pawn(&test_game, &(4, 1))?;
         assert_eq!(moves.len(), 2);
 
         let test_game = GameState::from_fen("3k4/8/8/8/8/3p4/4P3/3K4 w - - 0 1").unwrap();
-        let moves = generate_pawn_moves_till_collide(&test_game, &(4, 1))?;
+        let moves = generate_potential_moves_pawn(&test_game, &(4, 1))?;
         assert_eq!(moves.len(), 3);
 
         let test_game = GameState::from_fen("3k4/4P3/8/8/8/8/8/3K4 w - - 0 1").unwrap();
-        let moves = generate_pawn_moves_till_collide(&test_game, &(4, 6))?;
+        let moves = generate_potential_moves_pawn(&test_game, &(4, 6))?;
         assert_eq!(moves.len(), 8);
 
         let test_game = GameState::from_fen("3k4/8/8/8/8/3pP3/4P3/3K4 w - - 0 1").unwrap();
-        let moves = generate_pawn_moves_till_collide(&test_game, &(4, 1))?;
+        let moves = generate_potential_moves_pawn(&test_game, &(4, 1))?;
         dbg!(moves.clone());
         assert_eq!(moves.len(), 1);
 
         let test_game = GameState::from_fen("3k4/8/8/8/8/3pP3/4P3/3K4 w - - 0 1").unwrap();
-        let moves = generate_pawn_moves_till_collide(&test_game, &(4, 2))?;
+        let moves = generate_potential_moves_pawn(&test_game, &(4, 2))?;
         dbg!(moves.clone());
         assert_eq!(moves.len(), 1);
+
+        // TODO test this case once check logic is implemented "3k4/8/8/8/6b1/3pP3/4P3/3K4 w - - 0 1"
 
         Ok(())
     }
