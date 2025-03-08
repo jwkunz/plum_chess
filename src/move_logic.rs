@@ -3,13 +3,13 @@ use std::{collections::LinkedList, io::ErrorKind};
 use crate::{
     errors::Errors,
     game_state::{self, GameState},
-    types::{move_board_location, Affiliation, BoardLocation, Class},
+    types::{move_board_location, BoardLocation, PieceClass, PieceTeam},
 };
 
 #[derive(Clone, Debug)]
 pub enum MoveSpecialness {
     Regular,                  // Used for moving and capturing
-    Promote(Class),           // Class is type to promote
+    Promote(PieceClass),      // Class is type to promote
     EnPassant(BoardLocation), // BoardLocation is behind pawn,
     Castling(BoardLocation),  // Board location is for rook,
 }
@@ -43,10 +43,27 @@ fn can_capture_enemy_king(game: &GameState) -> bool {
 }
 
 // Returns the vector for forward depending on whose turn it is
-fn get_forward_direction_for_turn(turn: &Affiliation) -> i8 {
+fn get_forward_direction_for_turn(turn: &PieceTeam) -> i8 {
     match turn {
-        Affiliation::Dark => -1,
-        Affiliation::Light => 1,
+        PieceTeam::Dark => -1,
+        PieceTeam::Light => 1,
+    }
+}
+
+// Checks if a location is given piece type
+fn verify_is_piece(
+    game: &GameState,
+    location: &BoardLocation,
+    class: PieceClass,
+) -> Result<(), Errors> {
+    if let Some(x) = game.piece_register.view(location) {
+        if std::mem::discriminant(&class) == std::mem::discriminant(&x.class) {
+            Ok(())
+        } else {
+            Err(Errors::MoveStartLocationIsNotValidPieceType)
+        }
+    } else {
+        Err(Errors::MoveStartLocationIsNotValidPieceType)
     }
 }
 
@@ -73,11 +90,11 @@ fn try_add_move_pawn(
         }
 
         // What kind of piece collision was it?
-        occupancy_type = if game.turn == target.affiliation {
+        occupancy_type = if game.turn == target.team {
             return false; // Collide with teammate, not a move
         } else {
             match target.class {
-                Class::King => Occupancy::EnemyKing,
+                PieceClass::King => Occupancy::EnemyKing,
                 _ => Occupancy::EnemyRegular,
             }
         };
@@ -89,32 +106,32 @@ fn try_add_move_pawn(
         }
     }
     // Look for promotion on back rank
-    if (game.turn == Affiliation::Light && stop.1 == 7)
-        || (game.turn == Affiliation::Dark && stop.1 == 0)
+    if (game.turn == PieceTeam::Light && stop.1 == 7)
+        || (game.turn == PieceTeam::Dark && stop.1 == 0)
     {
         // All the kinds of promotions
         result.push_back(ChessMoveDescription {
             start: *start,
             stop: *stop,
-            move_specialness: MoveSpecialness::Promote(Class::Queen),
+            move_specialness: MoveSpecialness::Promote(PieceClass::Queen),
             stop_occupancy: occupancy_type.clone(),
         });
         result.push_back(ChessMoveDescription {
             start: *start,
             stop: *stop,
-            move_specialness: MoveSpecialness::Promote(Class::Rook),
+            move_specialness: MoveSpecialness::Promote(PieceClass::Rook),
             stop_occupancy: occupancy_type.clone(),
         });
         result.push_back(ChessMoveDescription {
             start: *start,
             stop: *stop,
-            move_specialness: MoveSpecialness::Promote(Class::Bishop),
+            move_specialness: MoveSpecialness::Promote(PieceClass::Bishop),
             stop_occupancy: occupancy_type.clone(),
         });
         result.push_back(ChessMoveDescription {
             start: *start,
             stop: *stop,
-            move_specialness: MoveSpecialness::Promote(Class::Knight),
+            move_specialness: MoveSpecialness::Promote(PieceClass::Knight),
             stop_occupancy: occupancy_type.clone(),
         });
         true
@@ -152,14 +169,7 @@ pub fn generate_potential_moves_pawn(
     let mut result = LinkedList::new();
 
     // Check if start location piece is actually a pawn
-    if let Some(x) = game.piece_register.view(start) {
-        match x.class {
-            Class::Pawn => (),
-            _ => return Err(Errors::MoveStartLocationIsNotValidPieceType),
-        }
-    } else {
-        return Err(Errors::MoveStartLocationIsNotValidPieceType);
-    }
+    verify_is_piece(game, start, PieceClass::Pawn)?;
 
     // Mark the forward direction
     let forward_direction = get_forward_direction_for_turn(&game.turn);
@@ -179,8 +189,8 @@ pub fn generate_potential_moves_pawn(
 
     // Try en passant first move
     let start_square = match game.turn {
-        Affiliation::Dark => 6,
-        Affiliation::Light => 1,
+        PieceTeam::Dark => 6,
+        PieceTeam::Light => 1,
     };
     if start_square == start.1 {
         if let Ok(stop) = move_board_location(start, 0, 2 * forward_direction) {
@@ -190,11 +200,78 @@ pub fn generate_potential_moves_pawn(
     // Return whatever was available
     Ok(result)
 }
+
+// Considers start and stop as a potential move
+// and if feasible will add it to result with appropriate context
+// Returns true if something was added, false if not
+// Does not inspect rules for check
+fn try_add_move_generic(
+    game: &GameState,
+    start: &BoardLocation,
+    stop: &BoardLocation,
+    result: &mut ListOfMoves,
+) -> bool {
+    // Assume no collision occurs
+    let mut occupancy_type = Occupancy::Empty;
+    // Unless
+    if let Some(target) = game.piece_register.view(stop) {
+        // Something was at the stop location
+
+        // What kind of piece collision was it?
+        occupancy_type = if game.turn == target.team {
+            return false; // Collide with teammate, not a move
+        } else {
+            match target.class {
+                PieceClass::King => Occupancy::EnemyKing,
+                _ => Occupancy::EnemyRegular,
+            }
+        };
+    }
+
+    // A regular move (capture or movement)
+    // Add move
+    result.push_back(ChessMoveDescription {
+        start: *start,
+        stop: *stop,
+        move_specialness: MoveSpecialness::Regular,
+        stop_occupancy: occupancy_type.clone(),
+    });
+    true
+}
+
 pub fn generate_potential_moves_knight(
     game: &GameState,
     start: &BoardLocation,
 ) -> Result<ListOfMoves, Errors> {
-    Ok(LinkedList::new())
+    let mut result = LinkedList::new();
+    // Check if start location piece is actually a knight
+    verify_is_piece(game, start, PieceClass::Knight)?;
+    // Try all 8 knight moves
+    if let Ok(stop) = move_board_location(start, 2, 1) {
+        try_add_move_generic(game, start, &stop, &mut result);
+    };
+    if let Ok(stop) = move_board_location(start, 2, -1) {
+        try_add_move_generic(game, start, &stop, &mut result);
+    };
+    if let Ok(stop) = move_board_location(start, -2, 1) {
+        try_add_move_generic(game, start, &stop, &mut result);
+    };
+    if let Ok(stop) = move_board_location(start, -2, -1) {
+        try_add_move_generic(game, start, &stop, &mut result);
+    };
+    if let Ok(stop) = move_board_location(start, 1, 2) {
+        try_add_move_generic(game, start, &stop, &mut result);
+    };
+    if let Ok(stop) = move_board_location(start, -1, 2) {
+        try_add_move_generic(game, start, &stop, &mut result);
+    };
+    if let Ok(stop) = move_board_location(start, 1, -2) {
+        try_add_move_generic(game, start, &stop, &mut result);
+    };
+    if let Ok(stop) = move_board_location(start, -1, -2) {
+        try_add_move_generic(game, start, &stop, &mut result);
+    };
+    Ok(result)
 }
 pub fn generate_potential_moves_bishop(
     game: &GameState,
@@ -227,15 +304,19 @@ pub fn generate_all_moves(game: &GameState) -> Result<ListOfMoves, Errors> {
     // Go through all squares
     for (location, piece_record) in game.piece_register.iter() {
         // If the piece belongs to the current turn
-        if piece_record.affiliation == game.turn {
+        if piece_record.team == game.turn {
             // Generate all the potential moves
             let potential_moves = match piece_record.class {
-                crate::types::Class::Pawn => generate_potential_moves_pawn(game, &location)?,
-                crate::types::Class::Knight => generate_potential_moves_knight(game, &location)?,
-                crate::types::Class::Bishop => generate_potential_moves_bishop(game, &location)?,
-                crate::types::Class::Rook => generate_potential_moves_rook(game, &location)?,
-                crate::types::Class::Queen => generate_potential_moves_queen(game, &location)?,
-                crate::types::Class::King => generate_potential_moves_king(game, &location)?,
+                crate::types::PieceClass::Pawn => generate_potential_moves_pawn(game, &location)?,
+                crate::types::PieceClass::Knight => {
+                    generate_potential_moves_knight(game, &location)?
+                }
+                crate::types::PieceClass::Bishop => {
+                    generate_potential_moves_bishop(game, &location)?
+                }
+                crate::types::PieceClass::Rook => generate_potential_moves_rook(game, &location)?,
+                crate::types::PieceClass::Queen => generate_potential_moves_queen(game, &location)?,
+                crate::types::PieceClass::King => generate_potential_moves_king(game, &location)?,
             };
             // Make sure potential moves don't violate rules
             for k in potential_moves {
@@ -272,16 +353,34 @@ mod tests {
 
         let test_game = GameState::from_fen("3k4/8/8/8/8/3pP3/4P3/3K4 w - - 0 1").unwrap();
         let moves = generate_potential_moves_pawn(&test_game, &(4, 1))?;
-        dbg!(moves.clone());
         assert_eq!(moves.len(), 1);
 
         let test_game = GameState::from_fen("3k4/8/8/8/8/3pP3/4P3/3K4 w - - 0 1").unwrap();
         let moves = generate_potential_moves_pawn(&test_game, &(4, 2))?;
-        dbg!(moves.clone());
         assert_eq!(moves.len(), 1);
+
+        let test_game =
+            GameState::from_fen("6k1/7p/3p2p1/p2P4/P1PpprP1/1r5P/1P1N1PK1/8 w - - 0 34").unwrap();
+        let moves = generate_potential_moves_pawn(&test_game, &(1, 1))?;
+        assert_eq!(moves.len(), 0);
 
         // TODO test this case once check logic is implemented "3k4/8/8/8/6b1/3pP3/4P3/3K4 w - - 0 1"
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_knight_moves() -> Result<(), Errors> {
+        let test_game =
+            GameState::from_fen("6k1/7p/3p2p1/p2P4/P1PpprP1/1r5P/1P1N1PK1/8 w - - 0 34").unwrap();
+        let moves = generate_potential_moves_knight(&test_game, &(3, 1))?;
+        assert_eq!(moves.len(), 5);
+
+        let test_game =
+            GameState::from_fen("1r1b2k1/7p/3p2p1/p1pP4/P1P1prP1/1NR2N1P/1P3PK1/8 w - - 0 30")
+                .unwrap();
+        let moves = generate_potential_moves_knight(&test_game, &(5, 2))?;
+        assert_eq!(moves.len(), 8);
         Ok(())
     }
 }

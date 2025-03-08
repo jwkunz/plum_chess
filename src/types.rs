@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use crate::errors::*;
 
 #[derive(Copy, Clone, Debug)]
-pub enum Class {
+pub enum PieceClass {
     Pawn,
     Knight,
     Bishop,
@@ -13,7 +13,7 @@ pub enum Class {
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub enum Affiliation {
+pub enum PieceTeam {
     Dark,
     Light,
 }
@@ -46,8 +46,8 @@ pub fn move_board_location(
 
 #[derive(Copy, Clone, Debug)]
 pub struct PieceRecord {
-    pub class: Class,
-    pub affiliation: Affiliation,
+    pub class: PieceClass,
+    pub team: PieceTeam,
 }
 
 #[derive(Default, Clone, Debug)]

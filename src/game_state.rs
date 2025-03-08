@@ -11,7 +11,7 @@ pub struct GameState {
     pub en_passant_location: Option<BoardLocation>,
     pub half_move_clock: u16,
     pub full_move_count: u16,
-    pub turn: Affiliation,
+    pub turn: PieceTeam,
 }
 
 impl GameState {
@@ -43,8 +43,8 @@ impl GameState {
                 match i {
                     'r' => {
                         let x = PieceRecord {
-                            class: Class::Rook,
-                            affiliation: Affiliation::Dark,
+                            class: PieceClass::Rook,
+                            team: PieceTeam::Dark,
                         };
                         piece_register.add_piece_record(x, &location)?;
                         location = match move_board_location(&location, 1, 0) {
@@ -54,8 +54,8 @@ impl GameState {
                     }
                     'n' => {
                         let x = PieceRecord {
-                            class: Class::Knight,
-                            affiliation: Affiliation::Dark,
+                            class: PieceClass::Knight,
+                            team: PieceTeam::Dark,
                         };
                         piece_register.add_piece_record(x, &location)?;
                         location = match move_board_location(&location, 1, 0) {
@@ -65,8 +65,8 @@ impl GameState {
                     }
                     'b' => {
                         let x = PieceRecord {
-                            class: Class::Bishop,
-                            affiliation: Affiliation::Dark,
+                            class: PieceClass::Bishop,
+                            team: PieceTeam::Dark,
                         };
                         piece_register.add_piece_record(x, &location)?;
                         location = match move_board_location(&location, 1, 0) {
@@ -76,8 +76,8 @@ impl GameState {
                     }
                     'q' => {
                         let x = PieceRecord {
-                            class: Class::Queen,
-                            affiliation: Affiliation::Dark,
+                            class: PieceClass::Queen,
+                            team: PieceTeam::Dark,
                         };
                         piece_register.add_piece_record(x, &location)?;
                         location = match move_board_location(&location, 1, 0) {
@@ -87,8 +87,8 @@ impl GameState {
                     }
                     'k' => {
                         let x = PieceRecord {
-                            class: Class::King,
-                            affiliation: Affiliation::Dark,
+                            class: PieceClass::King,
+                            team: PieceTeam::Dark,
                         };
                         piece_register.add_piece_record(x, &location)?;
                         location = match move_board_location(&location, 1, 0) {
@@ -98,8 +98,8 @@ impl GameState {
                     }
                     'p' => {
                         let x = PieceRecord {
-                            class: Class::Pawn,
-                            affiliation: Affiliation::Dark,
+                            class: PieceClass::Pawn,
+                            team: PieceTeam::Dark,
                         };
                         piece_register.add_piece_record(x, &location)?;
                         location = match move_board_location(&location, 1, 0) {
@@ -109,8 +109,8 @@ impl GameState {
                     }
                     'P' => {
                         let x = PieceRecord {
-                            class: Class::Pawn,
-                            affiliation: Affiliation::Light,
+                            class: PieceClass::Pawn,
+                            team: PieceTeam::Light,
                         };
                         piece_register.add_piece_record(x, &location)?;
                         location = match move_board_location(&location, 1, 0) {
@@ -120,8 +120,8 @@ impl GameState {
                     }
                     'R' => {
                         let x = PieceRecord {
-                            class: Class::Rook,
-                            affiliation: Affiliation::Light,
+                            class: PieceClass::Rook,
+                            team: PieceTeam::Light,
                         };
                         piece_register.add_piece_record(x, &location)?;
                         location = match move_board_location(&location, 1, 0) {
@@ -131,8 +131,8 @@ impl GameState {
                     }
                     'N' => {
                         let x = PieceRecord {
-                            class: Class::Knight,
-                            affiliation: Affiliation::Light,
+                            class: PieceClass::Knight,
+                            team: PieceTeam::Light,
                         };
                         piece_register.add_piece_record(x, &location)?;
                         location = match move_board_location(&location, 1, 0) {
@@ -142,8 +142,8 @@ impl GameState {
                     }
                     'B' => {
                         let x = PieceRecord {
-                            class: Class::Bishop,
-                            affiliation: Affiliation::Light,
+                            class: PieceClass::Bishop,
+                            team: PieceTeam::Light,
                         };
                         piece_register.add_piece_record(x, &location)?;
                         location = match move_board_location(&location, 1, 0) {
@@ -153,8 +153,8 @@ impl GameState {
                     }
                     'Q' => {
                         let x = PieceRecord {
-                            class: Class::Queen,
-                            affiliation: Affiliation::Light,
+                            class: PieceClass::Queen,
+                            team: PieceTeam::Light,
                         };
                         piece_register.add_piece_record(x, &location)?;
                         location = match move_board_location(&location, 1, 0) {
@@ -164,8 +164,8 @@ impl GameState {
                     }
                     'K' => {
                         let x = PieceRecord {
-                            class: Class::King,
-                            affiliation: Affiliation::Light,
+                            class: PieceClass::King,
+                            team: PieceTeam::Light,
                         };
                         piece_register.add_piece_record(x, &location)?;
                         location = match move_board_location(&location, 1, 0) {
@@ -196,8 +196,8 @@ impl GameState {
         if let Some(turn_field) = fields.next() {
             if let Some(c) = turn_field.chars().next() {
                 turn = match c {
-                    'w' => Affiliation::Light,
-                    'b' => Affiliation::Dark,
+                    'w' => PieceTeam::Light,
+                    'b' => PieceTeam::Dark,
                     _ => return Err(Errors::InvalidFENstring),
                 }
             } else {
@@ -318,22 +318,22 @@ impl GameState {
                     if space_count > 0 {
                         result.push(space_count.to_string().chars().next().unwrap());
                     }
-                    let c: char = match x.affiliation {
-                        Affiliation::Light => match x.class {
-                            Class::Bishop => 'B',
-                            Class::King => 'K',
-                            Class::Knight => 'N',
-                            Class::Pawn => 'P',
-                            Class::Queen => 'Q',
-                            Class::Rook => 'R',
+                    let c: char = match x.team {
+                        PieceTeam::Light => match x.class {
+                            PieceClass::Bishop => 'B',
+                            PieceClass::King => 'K',
+                            PieceClass::Knight => 'N',
+                            PieceClass::Pawn => 'P',
+                            PieceClass::Queen => 'Q',
+                            PieceClass::Rook => 'R',
                         },
-                        Affiliation::Dark => match x.class {
-                            Class::Bishop => 'b',
-                            Class::King => 'k',
-                            Class::Knight => 'n',
-                            Class::Pawn => 'p',
-                            Class::Queen => 'q',
-                            Class::Rook => 'r',
+                        PieceTeam::Dark => match x.class {
+                            PieceClass::Bishop => 'b',
+                            PieceClass::King => 'k',
+                            PieceClass::Knight => 'n',
+                            PieceClass::Pawn => 'p',
+                            PieceClass::Queen => 'q',
+                            PieceClass::Rook => 'r',
                         },
                     };
                     result.push(c);
@@ -352,8 +352,8 @@ impl GameState {
 
         result.push(' ');
         match self.turn {
-            Affiliation::Dark => result.push('b'),
-            Affiliation::Light => result.push('w'),
+            PieceTeam::Dark => result.push('b'),
+            PieceTeam::Light => result.push('w'),
         };
         result.push(' ');
 
@@ -420,16 +420,16 @@ impl GameState {
         let mut score = 0;
         for (_, piece_record) in self.piece_register.iter() {
             let piece_value = match piece_record.class {
-                Class::Pawn => 1,
-                Class::Knight => 3,
-                Class::Bishop => 3,
-                Class::Rook => 5,
-                Class::Queen => 9,
-                Class::King => 0, // Kings are ignored
+                PieceClass::Pawn => 1,
+                PieceClass::Knight => 3,
+                PieceClass::Bishop => 3,
+                PieceClass::Rook => 5,
+                PieceClass::Queen => 9,
+                PieceClass::King => 0, // Kings are ignored
             };
-            score += match piece_record.affiliation {
-                Affiliation::Light => piece_value,
-                Affiliation::Dark => -piece_value,
+            score += match piece_record.team {
+                PieceTeam::Light => piece_value,
+                PieceTeam::Dark => -piece_value,
             };
         }
         score
