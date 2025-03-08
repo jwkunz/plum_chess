@@ -382,11 +382,28 @@ pub fn generate_potential_moves_queen(
     // Return
     Ok(result)
 }
+
 pub fn generate_potential_moves_king(
     game: &GameState,
     start: &BoardLocation,
 ) -> Result<ListOfMoves, Errors> {
-    Ok(LinkedList::new())
+    let mut result = LinkedList::new();
+    // Check if start location piece is actually a knight
+    verify_is_piece_class_and_turn(game, start, PieceClass::King)?;
+    // Try all 8 king moves
+    for i in -1..2 {
+        for j in -1..2 {
+            if (i == 0) && (j == 0) {
+                continue;
+            }
+            if let Ok(stop) = move_board_location(start, i, j) {
+                if let Some(x) = check_move_collision(game, start, &stop) {
+                    result.push_back(x);
+                }
+            };
+        }
+    }
+    Ok(result)
 }
 
 /// This function get's all possible moves for a given turn
@@ -511,6 +528,17 @@ mod tests {
                 .unwrap();
         let moves = generate_potential_moves_queen(&test_game, &(3, 1))?;
         assert_eq!(moves.len(), 12);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_king_moves() -> Result<(), Errors> {
+        let test_game =
+            GameState::from_fen("r3qrk1/pp3pb1/2pn1R1p/4P2Q/3p4/2NB3P/PPP3P1/R5K1 w - - 0 21")
+                .unwrap();
+        let moves = generate_potential_moves_king(&test_game, &(6, 0))?;
+        assert_eq!(moves.len(), 4);
 
         Ok(())
     }
