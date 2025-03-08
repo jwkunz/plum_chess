@@ -1,4 +1,4 @@
-use std::{collections::LinkedList, io::ErrorKind};
+use std::{collections::LinkedList, io::ErrorKind, mem};
 
 use crate::{
     errors::Errors,
@@ -206,15 +206,13 @@ pub fn generate_potential_moves_pawn(
 }
 
 // Considers start and stop as a potential move
-// and if feasible will add it to result with appropriate context
-// Returns true if something was added, false if not
+// and if feasible based on collision
 // Does not inspect rules for check
-fn try_add_move_generic(
+fn check_move_collision(
     game: &GameState,
     start: &BoardLocation,
     stop: &BoardLocation,
-    result: &mut ListOfMoves,
-) -> bool {
+) -> Option<ChessMoveDescription> {
     // Assume no collision occurs
     let mut occupancy_type = Occupancy::Empty;
     // Unless
@@ -223,7 +221,7 @@ fn try_add_move_generic(
 
         // What kind of piece collision was it?
         occupancy_type = if game.turn == target.team {
-            return false; // Collide with teammate, not a move
+            return None; // Collide with teammate, not a move
         } else {
             match target.class {
                 PieceClass::King => Occupancy::EnemyKing,
@@ -231,16 +229,12 @@ fn try_add_move_generic(
             }
         };
     }
-
-    // A regular move (capture or movement)
-    // Add move
-    result.push_back(ChessMoveDescription {
+    Some(ChessMoveDescription {
         start: *start,
         stop: *stop,
         move_specialness: MoveSpecialness::Regular,
         stop_occupancy: occupancy_type.clone(),
-    });
-    true
+    })
 }
 
 pub fn generate_potential_moves_knight(
@@ -252,30 +246,73 @@ pub fn generate_potential_moves_knight(
     verify_is_piece_class_and_turn(game, start, PieceClass::Knight)?;
     // Try all 8 knight moves
     if let Ok(stop) = move_board_location(start, 2, 1) {
-        try_add_move_generic(game, start, &stop, &mut result);
+        if let Some(x) = check_move_collision(game, start, &stop) {
+            result.push_back(x);
+        }
     };
     if let Ok(stop) = move_board_location(start, 2, -1) {
-        try_add_move_generic(game, start, &stop, &mut result);
+        if let Some(x) = check_move_collision(game, start, &stop) {
+            result.push_back(x);
+        }
     };
     if let Ok(stop) = move_board_location(start, -2, 1) {
-        try_add_move_generic(game, start, &stop, &mut result);
+        if let Some(x) = check_move_collision(game, start, &stop) {
+            result.push_back(x);
+        }
     };
     if let Ok(stop) = move_board_location(start, -2, -1) {
-        try_add_move_generic(game, start, &stop, &mut result);
+        if let Some(x) = check_move_collision(game, start, &stop) {
+            result.push_back(x);
+        }
     };
     if let Ok(stop) = move_board_location(start, 1, 2) {
-        try_add_move_generic(game, start, &stop, &mut result);
+        if let Some(x) = check_move_collision(game, start, &stop) {
+            result.push_back(x);
+        }
     };
     if let Ok(stop) = move_board_location(start, -1, 2) {
-        try_add_move_generic(game, start, &stop, &mut result);
+        if let Some(x) = check_move_collision(game, start, &stop) {
+            result.push_back(x);
+        }
     };
     if let Ok(stop) = move_board_location(start, 1, -2) {
-        try_add_move_generic(game, start, &stop, &mut result);
+        if let Some(x) = check_move_collision(game, start, &stop) {
+            result.push_back(x);
+        }
     };
     if let Ok(stop) = move_board_location(start, -1, -2) {
-        try_add_move_generic(game, start, &stop, &mut result);
+        if let Some(x) = check_move_collision(game, start, &stop) {
+            result.push_back(x);
+        }
     };
     Ok(result)
+}
+
+// Helper for follow move vector until edge of board or enemy collision
+fn follow_move_vector(
+    game: &GameState,
+    start: &BoardLocation,
+    dx: i8,
+    dy: i8,
+    result: &mut LinkedList<ChessMoveDescription>,
+) {
+    for distance in 1..8 {
+        if let Ok(stop) = move_board_location(start, dx * distance, dy * distance) {
+            if let Some(x) = check_move_collision(game, start, &stop) {
+                match x.stop_occupancy {
+                    Occupancy::Empty => result.push_back(x),
+                    _ => {
+                        result.push_back(x);
+                        break;
+                    }
+                }
+            } else {
+                break;
+            }
+        } else {
+            break;
+        };
+    }
 }
 
 pub fn generate_potential_moves_bishop(
@@ -286,60 +323,64 @@ pub fn generate_potential_moves_bishop(
     // Check if start location piece is actually a bishop
     verify_is_piece_class_and_turn(game, start, PieceClass::Bishop)?;
     // Try all 4 bishop directions until collision
-
     // Up right
-    for distance in 1..8 {
-        if let Ok(stop) = move_board_location(start, distance, distance) {
-            if !try_add_move_generic(game, start, &stop, &mut result) {
-                break;
-            };
-        } else {
-            break;
-        };
-    }
+    follow_move_vector(game, start, 1, 1, &mut result);
     // Down right
-    for distance in 1..8 {
-        if let Ok(stop) = move_board_location(start, distance, -distance) {
-            if !try_add_move_generic(game, start, &stop, &mut result) {
-                break;
-            };
-        } else {
-            break;
-        };
-    }
+    follow_move_vector(game, start, -1, 1, &mut result);
     // Up left
-    for distance in 1..8 {
-        if let Ok(stop) = move_board_location(start, -distance, distance) {
-            if !try_add_move_generic(game, start, &stop, &mut result) {
-                break;
-            };
-        } else {
-            break;
-        };
-    }
+    follow_move_vector(game, start, 1, -1, &mut result);
     // Down left
-    for distance in 1..8 {
-        if let Ok(stop) = move_board_location(start, -distance, -distance) {
-            if !try_add_move_generic(game, start, &stop, &mut result) {
-                break;
-            };
-        } else {
-            break;
-        };
-    }
+    follow_move_vector(game, start, -1, -1, &mut result);
+    // Return
     Ok(result)
 }
+
 pub fn generate_potential_moves_rook(
     game: &GameState,
     start: &BoardLocation,
 ) -> Result<ListOfMoves, Errors> {
-    Ok(LinkedList::new())
+    let mut result = LinkedList::new();
+    // Check if start location piece is actually a bishop
+    verify_is_piece_class_and_turn(game, start, PieceClass::Rook)?;
+    // Try all 4 rook directions until collision
+    // Up
+    follow_move_vector(game, start, 1, 0, &mut result);
+    // Down
+    follow_move_vector(game, start, -1, 0, &mut result);
+    // Left
+    follow_move_vector(game, start, 0, -1, &mut result);
+    // Right
+    follow_move_vector(game, start, 0, 1, &mut result);
+    // Return
+    Ok(result)
 }
 pub fn generate_potential_moves_queen(
     game: &GameState,
     start: &BoardLocation,
 ) -> Result<ListOfMoves, Errors> {
-    Ok(LinkedList::new())
+    let mut result = LinkedList::new();
+    // Check if start location piece is actually a queen
+    verify_is_piece_class_and_turn(game, start, PieceClass::Queen)?;
+    // Try all 4 rook directions until collision
+    // Up
+    follow_move_vector(game, start, 1, 0, &mut result);
+    // Down
+    follow_move_vector(game, start, -1, 0, &mut result);
+    // Left
+    follow_move_vector(game, start, 0, -1, &mut result);
+    // Right
+    follow_move_vector(game, start, 0, 1, &mut result);
+    // Try all 4 bishop directions until collision
+    // Up right
+    follow_move_vector(game, start, 1, 1, &mut result);
+    // Down right
+    follow_move_vector(game, start, -1, 1, &mut result);
+    // Up left
+    follow_move_vector(game, start, 1, -1, &mut result);
+    // Down left
+    follow_move_vector(game, start, -1, -1, &mut result);
+    // Return
+    Ok(result)
 }
 pub fn generate_potential_moves_king(
     game: &GameState,
@@ -449,6 +490,27 @@ mod tests {
         .unwrap();
         let moves = generate_potential_moves_bishop(&test_game, &(5, 3))?;
         assert_eq!(moves.len(), 10);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_rook_moves() -> Result<(), Errors> {
+        let test_game =
+            GameState::from_fen("4k2r/5ppp/p1nrp3/8/2R5/1P6/P4PPP/5R1K w k - 0 25").unwrap();
+        let moves = generate_potential_moves_rook(&test_game, &(2, 3))?;
+        assert_eq!(moves.len(), 12);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_queen_moves() -> Result<(), Errors> {
+        let test_game =
+            GameState::from_fen("r3k2r/1p1b1ppp/p1nBpn2/3q4/8/5N2/PPPQBPPP/R3K2R w KQkq - 2 13")
+                .unwrap();
+        let moves = generate_potential_moves_queen(&test_game, &(3, 1))?;
+        assert_eq!(moves.len(), 12);
 
         Ok(())
     }
