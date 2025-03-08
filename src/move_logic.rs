@@ -51,19 +51,23 @@ fn get_forward_direction_for_turn(turn: &PieceTeam) -> i8 {
 }
 
 // Checks if a location is given piece type
-fn verify_is_piece(
+fn verify_is_piece_class_and_turn(
     game: &GameState,
     location: &BoardLocation,
     class: PieceClass,
 ) -> Result<(), Errors> {
     if let Some(x) = game.piece_register.view(location) {
         if std::mem::discriminant(&class) == std::mem::discriminant(&x.class) {
-            Ok(())
+            if std::mem::discriminant(&game.turn) == std::mem::discriminant(&x.team) {
+                Ok(())
+            } else {
+                Err(Errors::InvalidMoveStartCondition)
+            }
         } else {
-            Err(Errors::MoveStartLocationIsNotValidPieceType)
+            Err(Errors::InvalidMoveStartCondition)
         }
     } else {
-        Err(Errors::MoveStartLocationIsNotValidPieceType)
+        Err(Errors::InvalidMoveStartCondition)
     }
 }
 
@@ -169,7 +173,7 @@ pub fn generate_potential_moves_pawn(
     let mut result = LinkedList::new();
 
     // Check if start location piece is actually a pawn
-    verify_is_piece(game, start, PieceClass::Pawn)?;
+    verify_is_piece_class_and_turn(game, start, PieceClass::Pawn)?;
 
     // Mark the forward direction
     let forward_direction = get_forward_direction_for_turn(&game.turn);
@@ -245,7 +249,7 @@ pub fn generate_potential_moves_knight(
 ) -> Result<ListOfMoves, Errors> {
     let mut result = LinkedList::new();
     // Check if start location piece is actually a knight
-    verify_is_piece(game, start, PieceClass::Knight)?;
+    verify_is_piece_class_and_turn(game, start, PieceClass::Knight)?;
     // Try all 8 knight moves
     if let Ok(stop) = move_board_location(start, 2, 1) {
         try_add_move_generic(game, start, &stop, &mut result);
@@ -273,11 +277,57 @@ pub fn generate_potential_moves_knight(
     };
     Ok(result)
 }
+
 pub fn generate_potential_moves_bishop(
     game: &GameState,
     start: &BoardLocation,
 ) -> Result<ListOfMoves, Errors> {
-    Ok(LinkedList::new())
+    let mut result = LinkedList::new();
+    // Check if start location piece is actually a bishop
+    verify_is_piece_class_and_turn(game, start, PieceClass::Bishop)?;
+    // Try all 4 bishop directions until collision
+
+    // Up right
+    for distance in 1..8 {
+        if let Ok(stop) = move_board_location(start, distance, distance) {
+            if !try_add_move_generic(game, start, &stop, &mut result) {
+                break;
+            };
+        } else {
+            break;
+        };
+    }
+    // Down right
+    for distance in 1..8 {
+        if let Ok(stop) = move_board_location(start, distance, -distance) {
+            if !try_add_move_generic(game, start, &stop, &mut result) {
+                break;
+            };
+        } else {
+            break;
+        };
+    }
+    // Up left
+    for distance in 1..8 {
+        if let Ok(stop) = move_board_location(start, -distance, distance) {
+            if !try_add_move_generic(game, start, &stop, &mut result) {
+                break;
+            };
+        } else {
+            break;
+        };
+    }
+    // Down left
+    for distance in 1..8 {
+        if let Ok(stop) = move_board_location(start, -distance, -distance) {
+            if !try_add_move_generic(game, start, &stop, &mut result) {
+                break;
+            };
+        } else {
+            break;
+        };
+    }
+    Ok(result)
 }
 pub fn generate_potential_moves_rook(
     game: &GameState,
@@ -381,6 +431,25 @@ mod tests {
                 .unwrap();
         let moves = generate_potential_moves_knight(&test_game, &(5, 2))?;
         assert_eq!(moves.len(), 8);
+        Ok(())
+    }
+
+    #[test]
+    fn test_bishop_moves() -> Result<(), Errors> {
+        let test_game = GameState::from_fen(
+            "r2qk2r/1p1b1ppp/p1n1pn2/2b5/3P1B2/5N2/PPP1BPPP/R2QK2R w KQkq - 0 10",
+        )
+        .unwrap();
+        let moves = generate_potential_moves_bishop(&test_game, &(4, 1))?;
+        assert_eq!(moves.len(), 5);
+
+        let test_game = GameState::from_fen(
+            "r2qk2r/1p1b1ppp/p1n1pn2/2b5/3P1B2/5N2/PPP1BPPP/R2QK2R w KQkq - 0 10",
+        )
+        .unwrap();
+        let moves = generate_potential_moves_bishop(&test_game, &(5, 3))?;
+        assert_eq!(moves.len(), 10);
+
         Ok(())
     }
 }
