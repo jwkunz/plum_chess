@@ -1,8 +1,8 @@
-use std::{collections::LinkedList, io::ErrorKind, mem};
+use std::{collections::LinkedList, mem};
 
 use crate::{
     errors::Errors,
-    game_state::{self, GameState},
+    game_state::GameState,
     types::{move_board_location, BoardLocation, PieceClass, PieceTeam},
 };
 
@@ -33,13 +33,62 @@ type ListOfMoves = LinkedList<ChessMoveDescription>;
 
 /// This function will apply the chess_move to a game to create a new game state
 pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMoveDescription) -> GameState {
-    game.clone()
+    let mut result = game.clone();
+
+    let source_piece_temp = *result.piece_register.view(&chess_move.start);
+    {
+        let destination_piece_reference = result.piece_register.at(&chess_move.stop);
+        if destination_piece_reference.is_some() {
+            // A capture
+            result.half_move_clock = 0;
+        } else {
+            // No capture
+            result.half_move_clock += 1;
+        }
+        *destination_piece_reference = source_piece_temp;
+    }
+    *result.piece_register.at(&chess_move.start) = None;
+
+    result.turn = match result.turn {
+        PieceTeam::Dark => {
+            result.full_move_count += 1;
+            PieceTeam::Light
+        }
+        PieceTeam::Light => PieceTeam::Dark,
+    };
+    result
 }
 
 // This function checks if a given game state allows capturing an enemy king in the given turn
 // Depending on whose turn is active this can be used to inspect for "check"
-fn can_capture_enemy_king(game: &GameState) -> bool {
-    true
+fn can_capture_enemy_king(game: &GameState) -> Result<bool, Errors> {
+    // Go through all squares
+    for (location, piece_record) in game.piece_register.iter() {
+        // If the piece belongs to the current turn
+        if piece_record.team == game.turn {
+            // Generate all the potential moves
+            let potential_moves = match piece_record.class {
+                crate::types::PieceClass::Pawn => generate_potential_moves_pawn(game, &location)?,
+                crate::types::PieceClass::Knight => {
+                    generate_potential_moves_knight(game, &location)?
+                }
+                crate::types::PieceClass::Bishop => {
+                    generate_potential_moves_bishop(game, &location)?
+                }
+                crate::types::PieceClass::Rook => generate_potential_moves_rook(game, &location)?,
+                crate::types::PieceClass::Queen => generate_potential_moves_queen(game, &location)?,
+                crate::types::PieceClass::King => generate_potential_moves_king(game, &location)?,
+            };
+            // Look for a king collision
+            for k in potential_moves {
+                if mem::discriminant(&k.stop_occupancy) == mem::discriminant(&Occupancy::EnemyKing)
+                {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    Ok(false)
 }
 
 // Returns the vector for forward depending on whose turn it is
@@ -430,7 +479,8 @@ pub fn generate_all_moves(game: &GameState) -> Result<ListOfMoves, Errors> {
             for k in potential_moves {
                 let trial_game = apply_move_to_game(game, &k);
                 // Verify that move did not allow a capture of king
-                if can_capture_enemy_king(&trial_game) {
+                if can_capture_enemy_king(&trial_game)? {
+                    // Can't do move that puts your king in check
                     continue;
                 }
                 // All rules validated
@@ -471,8 +521,6 @@ mod tests {
             GameState::from_fen("6k1/7p/3p2p1/p2P4/P1PpprP1/1r5P/1P1N1PK1/8 w - - 0 34").unwrap();
         let moves = generate_potential_moves_pawn(&test_game, &(1, 1))?;
         assert_eq!(moves.len(), 0);
-
-        // TODO test this case once check logic is implemented "3k4/8/8/8/6b1/3pP3/4P3/3K4 w - - 0 1"
 
         Ok(())
     }
@@ -538,6 +586,15 @@ mod tests {
             GameState::from_fen("r3qrk1/pp3pb1/2pn1R1p/4P2Q/3p4/2NB3P/PPP3P1/R5K1 w - - 0 21")
                 .unwrap();
         let moves = generate_potential_moves_king(&test_game, &(6, 0))?;
+        assert_eq!(moves.len(), 4);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_moves() -> Result<(), Errors> {
+        let test_game = GameState::from_fen("3k4/8/8/8/6b1/3pP3/4P3/3K4 w - - 0 1").unwrap();
+        let moves = generate_all_moves(&test_game)?;
         assert_eq!(moves.len(), 4);
 
         Ok(())
