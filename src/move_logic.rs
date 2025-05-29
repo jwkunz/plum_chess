@@ -1,4 +1,4 @@
-use std::{collections::LinkedList, mem};
+use std::collections::LinkedList;
 
 use crate::{
     errors::Errors,
@@ -81,8 +81,7 @@ fn can_capture_enemy_king(game: &GameState) -> Result<bool, Errors> {
             };
             // Look for a king collision
             for k in potential_moves {
-                if mem::discriminant(&k.stop_occupancy) == mem::discriminant(&Occupancy::EnemyKing)
-                {
+                if matches!(k.stop_occupancy, Occupancy::EnemyKing) {
                     return Ok(true);
                 }
             }
@@ -437,7 +436,7 @@ pub fn generate_potential_moves_king(
     start: &BoardLocation,
 ) -> Result<ListOfMoves, Errors> {
     let mut result = LinkedList::new();
-    // Check if start location piece is actually a knight
+    // Check if start location piece is actually a king
     verify_is_piece_class_and_turn(game, start, PieceClass::King)?;
     // Try all 8 king moves
     for i in -1..2 {
