@@ -5,5 +5,6 @@ pub enum Errors {
     GameRuleError,
     BoardLocationOccupied,
     InvalidFENstring,
+    InvalidAlgebraic,
     InvalidMoveStartCondition,
 }

@@ -1,10 +1,9 @@
 use core::f32;
 use std::{
-    fmt::format,
-    sync::mpsc::{channel, Receiver, Sender}, thread, time::Duration,
+    error::Error, fmt::{format}, sync::mpsc::{channel, Receiver, Sender}, thread, time::Duration
 };
 
-use crate::uci;
+use crate::{chess_move_description::ChessMoveDescription, game_state::GameState, move_logic::apply_move_to_game};
 
 enum UCISetPositionValueTokens {
     Value((String, String)),
@@ -349,6 +348,7 @@ pub struct UCI {
     uci_state: UCIstate,
     command_rx: Receiver<String>,
     response_tx: Sender<String>,
+    position_to_analyze: Option<GameState>,
 }
 
 impl UCI {
@@ -357,6 +357,7 @@ impl UCI {
             uci_state: UCIstate::Startup,
             command_rx,
             response_tx,
+            position_to_analyze: None
         }
     }
 
@@ -549,7 +550,27 @@ impl UCI {
 
     // Setup a position
     fn setup_position(&mut self, pos : &PositionToken){
-        // TODO
+        match pos{
+            PositionToken::Fen(x) => {
+                if let Ok(game) = GameState::from_fen(x){
+                    self.position_to_analyze = Some(game);
+                }else{
+                    self.position_to_analyze = None;
+                }
+            },
+            // Parse all the moves
+            PositionToken::StartPosition(moves) =>{
+                let mut game = GameState::new_game();
+                  for move_description in moves{
+                      if let Some(m) = ChessMoveDescription::from_long_algebraic(move_description){
+                        game = apply_move_to_game(&game,&m);
+                    }else{
+                        self.position_to_analyze = None;
+                    }
+                  }    
+                self.position_to_analyze = Some(game);
+            }
+        }
     }   
 
     // GO command
@@ -561,6 +582,8 @@ impl UCI {
     fn poll_calculate_check_if_done(&mut self) -> bool{
         // Sleep briefly to avoid busy-waiting
         thread::sleep(Duration::from_millis(10));
+
+
         self.give_response(generate_response(ResponseTokens::BestMove("h7h5".into())));
         true
     }

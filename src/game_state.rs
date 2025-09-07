@@ -1,5 +1,7 @@
+use crate::board_location::{move_board_location, BoardLocation};
 use crate::errors::Errors;
-use crate::types::*;
+use crate::piece_register::PieceRegister;
+use crate::piece_types::*;
 
 #[derive(Clone)]
 pub struct GameState {
