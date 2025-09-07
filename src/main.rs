@@ -1,12 +1,29 @@
+use std::fs::OpenOptions;
 use std::io::{self, BufRead, Write};
 use std::sync::mpsc::channel;
 use std::thread;
 use std::time::Duration;
 
-mod uci;
-use uci::UCI;
+use chrono::Local;
+
+use plum_chess::uci_interface::UCI;
+
+
 
 fn main() {
+    // Do logging
+    let log_file_name = "Plum_Chess_log.txt";
+    let time_format = "%Y-%m-%d %H:%M:%S%.3f";
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .write(true)      // open for writing
+        .truncate(true)   // clear the file if it exists
+        .open(log_file_name)
+    {
+        let timestamp = Local::now().format(time_format);
+        let _ = writeln!(file, "[{}] Starting Log", timestamp);
+    }
+
     let (command_tx, command_rx) = channel::<String>();
     let (response_tx, response_rx) = channel::<String>();
 
@@ -22,6 +39,11 @@ fn main() {
 
     thread::spawn(move || loop {
         while let Ok(response) = response_rx.try_recv() {
+            // Append the trimmed input to debug_log.txt
+            if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_file_name) {
+                let timestamp = Local::now().format(time_format);
+                let _ = writeln!(file, "[{}] Engine Said:{}", timestamp, response);
+            }
             println!("{}", response);
             io::stdout().flush().ok();
         }
@@ -40,6 +62,11 @@ fn main() {
             if n > 0 {
                 let trimmed = input.trim_end().to_string();
                 if !trimmed.is_empty() {
+                    // Append the trimmed input to debug_log.txt
+                    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_file_name) {
+                    let timestamp = Local::now().format(time_format);
+                    let _ = writeln!(file, "[{}] Engine Received:{}", timestamp, trimmed);
+                    }
                     let _ = command_tx.send(trimmed);
                 }
             }

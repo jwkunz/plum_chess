@@ -9,13 +9,13 @@ pub enum MoveSpecialness {
 }
 
 #[derive(Clone, Debug)]
-pub struct ChessMoveDescription {
+pub struct ChessMove {
     pub start: BoardLocation,
     pub stop: BoardLocation,
     pub move_specialness: MoveSpecialness,
 }
 
-impl ChessMoveDescription {
+impl ChessMove {
     /// Converts this move description to long algebraic notation (e.g., "e2e4", "e7e8q").
     pub fn to_long_algebraic(&self) -> String {
         fn square_to_str(loc: &(i8, i8)) -> String {
@@ -37,7 +37,7 @@ impl ChessMoveDescription {
         }
         s
     }
-    /// Attempts to create a ChessMoveDescription from a long algebraic notation string (e.g., "e2e4", "e7e8q").
+    /// Attempts to create a ChessMove from a long algebraic notation string (e.g., "e2e4", "e7e8q").
     /// Returns None if parsing fails.
     pub fn from_long_algebraic(x: &str) -> Option<Self> {
         // Must be at least 4 chars (e.g., e2e4), up to 5 (e.g., e7e8q)
@@ -80,7 +80,7 @@ impl ChessMoveDescription {
         };
 
         // We can't know stop_occupancy from notation alone, so default to Empty
-        Some(ChessMoveDescription {
+        Some(ChessMove {
             start,
             stop,
             move_specialness

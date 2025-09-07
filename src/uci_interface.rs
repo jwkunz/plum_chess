@@ -1,9 +1,12 @@
-use core::f32;
 use std::{
-    error::Error, fmt::{format}, sync::mpsc::{channel, Receiver, Sender}, thread, time::Duration
+    sync::mpsc::{Receiver, Sender},
+    thread,
+    time::Duration,
 };
 
-use crate::{chess_move_description::ChessMoveDescription, game_state::GameState, move_logic::apply_move_to_game};
+use rand::{thread_rng, seq::IteratorRandom};
+
+use crate::{chess_move::ChessMove, game_state::GameState, move_logic::{self, apply_move_to_game, generate_all_moves}};
 
 enum UCISetPositionValueTokens {
     Value((String, String)),
@@ -50,7 +53,7 @@ enum RegisterToken {
 
 enum PositionToken {
     Fen(String),
-    StartPosition(Vec<String>),
+    StartPosition,
 }
 enum GoTokens {
     SearchMoves(Vec<String>),
@@ -73,7 +76,7 @@ enum CommandTokens {
     SetOption(OptionToken),
     Register(RegisterToken),
     UciNewGame,
-    Position(PositionToken),
+    Position((PositionToken,Vec<String>)),
     Go(GoTokens),
     Stop,
     PonderHit,
@@ -147,16 +150,16 @@ fn parse_command(input: &str) -> Vec<CommandTokens> {
                 // Example: position startpos moves e2e4 e7e5
                 let mut fen = String::new();
                 let mut moves = Vec::new();
+                let mut position_token = PositionToken::StartPosition;
                 if let Some(next) = words.peek() {
                     if *next == "startpos" {
                         words.next();
-                        fen = "startpos".to_string();
                     } else if *next == "fen" {
                         words.next();
                         // Collect FEN string (6 fields)
                         let fen_fields: Vec<_> = words.by_ref().take(6).collect();
                         fen = fen_fields.join(" ");
-                        tokens.push(CommandTokens::Position(PositionToken::Fen(fen)));
+                        position_token = PositionToken::Fen(fen);
                     }
                 }
                 // Look for "moves"
@@ -165,7 +168,7 @@ fn parse_command(input: &str) -> Vec<CommandTokens> {
                     while let Some(mv) = words.next() {
                         moves.push(mv.to_string());
                     }
-                    tokens.push(CommandTokens::Position(PositionToken::StartPosition(moves)));
+                    tokens.push(CommandTokens::Position((position_token,moves)));
                 }
             }
             "go" => {
@@ -357,16 +360,14 @@ impl UCI {
             uci_state: UCIstate::Startup,
             command_rx,
             response_tx,
-            position_to_analyze: None
+            position_to_analyze: None,
         }
     }
 
     // Master state matchine
     pub fn tick(&mut self) {
-
         // Next state logic
         let next_state = match self.uci_state {
-            
             // Peform startup actions
             UCIstate::Startup => {
                 if let Some(x) = self.get_command() {
@@ -385,7 +386,7 @@ impl UCI {
                 } else {
                     self.uci_state
                 }
-            },
+            }
 
             // Waiting for external to send options and/or "is_ready"
             UCIstate::WaitStartup => {
@@ -394,13 +395,11 @@ impl UCI {
                     match commands.first() {
                         None => self.uci_state,
                         Some(token) => match token {
-                            CommandTokens::SetOption(opt) =>{
+                            CommandTokens::SetOption(opt) => {
                                 self.set_options(opt);
                                 self.uci_state
                             }
-                            CommandTokens::IsReady =>{
-                                UCIstate::WaitBootComplete
-                            }
+                            CommandTokens::IsReady => UCIstate::WaitBootComplete,
                             CommandTokens::Quit => {
                                 self.quit_cleanup();
                                 UCIstate::Startup
@@ -414,12 +413,12 @@ impl UCI {
             }
 
             // Check if the boot actions thread is done
-            UCIstate::WaitBootComplete =>{
-                if self.are_boot_actions_done(){
+            UCIstate::WaitBootComplete => {
+                if self.are_boot_actions_done() {
                     // Tell external that all is done
                     self.give_response(generate_response(ResponseTokens::ReadyOk));
                     UCIstate::Idle
-                }else{
+                } else {
                     // Wait for boot thread to finish
 
                     // Sleep briefly to avoid busy-waiting
@@ -439,15 +438,15 @@ impl UCI {
                                 // TODO
                                 self.uci_state
                             }
-                            CommandTokens::SetOption(opt) =>{
+                            CommandTokens::SetOption(opt) => {
                                 self.set_options(opt);
                                 self.uci_state
                             }
-                            CommandTokens::Position(pos) =>{
-                                self.setup_position(pos);
+                            CommandTokens::Position((position,moves)) => {
+                                self.setup_position(position,moves);
                                 self.uci_state
                             }
-                            CommandTokens::Go(go) =>{
+                            CommandTokens::Go(go) => {
                                 self.go_launch_calculate(go);
                                 UCIstate::MonitorCalculation
                             }
@@ -482,16 +481,15 @@ impl UCI {
                         },
                     }
                 } else {
-                    if self.poll_calculate_check_if_done(){
+                    if self.poll_calculate_check_if_done() {
                         // Done, go back to IDLE
                         UCIstate::Idle
-                    }else{
+                    } else {
                         // Keep waiting
                         self.uci_state
                     }
                 }
             }
-
         };
 
         // State updated
@@ -509,17 +507,15 @@ impl UCI {
     }
 
     // Use this for launching a thread with boot-up actions
-    fn launch_boot_actions(&mut self){
-
-    }
+    fn launch_boot_actions(&mut self) {}
 
     // Check if boot action thread is done
-    fn are_boot_actions_done(&mut self) -> bool{
+    fn are_boot_actions_done(&mut self) -> bool {
         true
     }
 
     // Handler for set_options
-    fn set_options(&mut self, opt : &OptionToken){
+    fn set_options(&mut self, opt: &OptionToken) {
         // TODO
     }
 
@@ -528,12 +524,12 @@ impl UCI {
 
     // Gives the name and author
     fn give_name_and_author(&mut self) {
-        self.give_response(
-            generate_response(ResponseTokens::ID(IDTokens::Name("Plum Chess".into()))),
-        );
-        self.give_response(
-            generate_response(ResponseTokens::ID(IDTokens::Author("jwkunz".into()))),
-        );
+        self.give_response(generate_response(ResponseTokens::ID(IDTokens::Name(
+            "Plum Chess".into(),
+        ))));
+        self.give_response(generate_response(ResponseTokens::ID(IDTokens::Author(
+            "jwkunz".into(),
+        ))));
     }
 
     // Gives changeable options
@@ -549,47 +545,61 @@ impl UCI {
     }
 
     // Setup a position
-    fn setup_position(&mut self, pos : &PositionToken){
-        match pos{
+    fn setup_position(&mut self,position : &PositionToken ,moves : &Vec<String>) {
+        let mut game : GameState;
+        match position {
             PositionToken::Fen(x) => {
-                if let Ok(game) = GameState::from_fen(x){
-                    self.position_to_analyze = Some(game);
-                }else{
+                if let Ok(g) = GameState::from_fen(x) {
+                    game = g;
+                } else {
                     self.position_to_analyze = None;
+                    return;
                 }
-            },
+            }
             // Parse all the moves
-            PositionToken::StartPosition(moves) =>{
-                let mut game = GameState::new_game();
-                  for move_description in moves{
-                      if let Some(m) = ChessMoveDescription::from_long_algebraic(move_description){
-                        game = apply_move_to_game(&game,&m);
-                    }else{
-                        self.position_to_analyze = None;
-                    }
-                  }    
-                self.position_to_analyze = Some(game);
+            PositionToken::StartPosition => {
+                game = GameState::new_game();
             }
         }
-    }   
+        
+        for move_description in moves {
+            if let Some(m) = ChessMove::from_long_algebraic(move_description) {
+                game = apply_move_to_game(&game, &m);
+            } else {
+                self.position_to_analyze = None;
+                return;
+            }
+        }  
 
-    // GO command
-    fn go_launch_calculate(&mut self, go : &GoTokens){
-
+        self.debug_print(&format!("Searching game:{}",game.get_fen()));
+        self.position_to_analyze = Some(game); 
     }
 
+    // GO command
+    fn go_launch_calculate(&mut self, go: &GoTokens) {}
+
     // Polls the calculate and checks if done
-    fn poll_calculate_check_if_done(&mut self) -> bool{
+    fn poll_calculate_check_if_done(&mut self) -> bool {
         // Sleep briefly to avoid busy-waiting
         thread::sleep(Duration::from_millis(10));
 
-
-        self.give_response(generate_response(ResponseTokens::BestMove("h7h5".into())));
-        true
+        if let Some(x) = self.position_to_analyze.clone(){
+            if let Ok(moves) = generate_all_moves(&x){
+                let mut rng = thread_rng();
+                if let Some(random_move) = moves.iter().choose(&mut rng) {
+                    self.give_response(generate_response(ResponseTokens::BestMove(random_move.description.to_long_algebraic())));
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     // Stop the calculation
-    fn force_stop_calculate(&mut self){
+    fn force_stop_calculate(&mut self) {}
 
+    // Used for debugging
+    fn debug_print(&mut self, x : &str){
+        self.give_response(generate_response(ResponseTokens::Info(InfoToken::String(format!("DEBUG:{x}")))));
     }
 }

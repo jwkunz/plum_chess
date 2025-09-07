@@ -1,7 +1,7 @@
 use std::collections::LinkedList;
 
 use crate::{
-    board_location::{move_board_location, BoardLocation}, chess_move_description::{ChessMoveDescription, MoveSpecialness}, errors::Errors, game_state::GameState, piece_types::{PieceClass, PieceTeam}
+    board_location::{move_board_location, BoardLocation}, chess_move::{ChessMove, MoveSpecialness}, errors::Errors, game_state::GameState, piece_types::{PieceClass, PieceTeam}
 };
 
 
@@ -16,7 +16,7 @@ pub enum Occupancy {
 
 #[derive(Clone, Debug)]
 pub struct ChessMoveDescriptionWithCollision {
-    pub description: ChessMoveDescription,
+    pub description: ChessMove,
     pub stop_occupancy: Occupancy,
 }
 
@@ -24,7 +24,7 @@ pub struct ChessMoveDescriptionWithCollision {
 type ListOfMoves = LinkedList<ChessMoveDescriptionWithCollision>;
 
 /// This function will apply the chess_move to a game to create a new game state
-pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMoveDescription) -> GameState {
+pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> GameState {
     let mut result = game.clone();
 
     let source_piece_temp = *result.piece_register.view(&chess_move.start);
@@ -155,7 +155,7 @@ fn try_add_move_pawn(
     {
         // All the kinds of promotions
         result.push_back(ChessMoveDescriptionWithCollision{
-            description: ChessMoveDescription{
+            description: ChessMove{
             start: *start,
             stop: *stop,
             move_specialness: MoveSpecialness::Promote(PieceClass::Queen)
@@ -164,7 +164,7 @@ fn try_add_move_pawn(
         });
         // All the kinds of promotions
         result.push_back(ChessMoveDescriptionWithCollision{
-            description: ChessMoveDescription{
+            description: ChessMove{
             start: *start,
             stop: *stop,
             move_specialness: MoveSpecialness::Promote(PieceClass::Rook)
@@ -173,7 +173,7 @@ fn try_add_move_pawn(
         });
         // All the kinds of promotions
         result.push_back(ChessMoveDescriptionWithCollision{
-            description: ChessMoveDescription{
+            description: ChessMove{
             start: *start,
             stop: *stop,
             move_specialness: MoveSpecialness::Promote(PieceClass::Bishop)
@@ -182,7 +182,7 @@ fn try_add_move_pawn(
         });
         // All the kinds of promotions
         result.push_back(ChessMoveDescriptionWithCollision{
-            description: ChessMoveDescription{
+            description: ChessMove{
             start: *start,
             stop: *stop,
             move_specialness: MoveSpecialness::Promote(PieceClass::Knight)
@@ -208,7 +208,7 @@ fn try_add_move_pawn(
         // Add move
         result.push_back(
             ChessMoveDescriptionWithCollision{
-            description:ChessMoveDescription {
+            description:ChessMove {
             start: *start,
             stop: *stop,
             move_specialness},
@@ -283,7 +283,7 @@ fn check_move_collision(
         };
     }
     Some(ChessMoveDescriptionWithCollision{
-            description:ChessMoveDescription {
+            description:ChessMove {
             start: *start,
             stop: *stop,
             move_specialness: MoveSpecialness::Regular},
