@@ -445,7 +445,7 @@ impl UCI {
                                 self.uci_state
                             }
                             CommandTokens::Position((position, moves)) => {
-                                self.setup_position(position, moves);
+                                let _ = self.setup_position(position, moves);
                                 self.uci_state
                             }
                             CommandTokens::Go(go) => {
@@ -560,15 +560,16 @@ impl UCI {
         }
 
         for move_description in moves {
-            if let Some(m) = ChessMove::from_long_algebraic(move_description) {
+            if let Ok(m) = ChessMove::from_long_algebraic(move_description) {
                 game = apply_move_to_game(&game, &m)?;
+                self.debug_print(&format!("Fen Trace: {}\n", game.get_fen()));
             } else {
                 self.position_to_analyze = None;
                 return Err(Errors::InvalidAlgebraic);
             }
         }
 
-        self.debug_print(&format!("Searching game:{}", game.get_fen()));
+        //self.debug_print(&format!("Searching game:{}", game.get_fen()));
         self.position_to_analyze = Some(game);
         Ok(())
     }

@@ -7,4 +7,5 @@ pub enum Errors {
     InvalidFENstring,
     InvalidAlgebraic,
     InvalidMoveStartCondition,
+    TryingToMoveNonExistantPiece
 }

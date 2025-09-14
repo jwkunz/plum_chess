@@ -1,4 +1,8 @@
-use crate::{board_location::BoardLocation, piece_types::PieceClass};
+use core::error;
+
+use rand::Error;
+
+use crate::{board_location::BoardLocation, errors::Errors, piece_types::PieceClass};
 
 #[derive(Clone, Debug)]
 pub enum MoveSpecialness {
@@ -39,10 +43,10 @@ impl ChessMove {
     }
     /// Attempts to create a ChessMove from a long algebraic notation string (e.g., "e2e4", "e7e8q").
     /// Returns None if parsing fails.
-    pub fn from_long_algebraic(x: &str) -> Option<Self> {
+    pub fn from_long_algebraic(x: &str) -> Result<Self,Errors> {
         // Must be at least 4 chars (e.g., e2e4), up to 5 (e.g., e7e8q)
         let x = x.trim();
-        if x.len() < 4 { return None; }
+        if x.len() < 4 { return Err(Errors::InvalidAlgebraic); }
         let bytes = x.as_bytes();
         // Parse start square
         let file_from = bytes[0] as char;
@@ -51,16 +55,16 @@ impl ChessMove {
         let rank_to = bytes[3] as char;
 
         // Helper to convert file/rank to BoardLocation
-        fn parse_square(file: char, rank: char) -> Option<BoardLocation> {
+        fn parse_square(file: char, rank: char) -> Result<BoardLocation,Errors> {
             let file_idx = match file {
                 'a'..='h' => (file as u8 - b'a') as u8,
-                _ => return None,
+                _ => return Err(Errors::InvalidAlgebraic),
             };
             let rank_idx = match rank {
                 '1'..='8' => (rank as u8 - b'1') as u8,
-                _ => return None,
+                _ => return Err(Errors::InvalidAlgebraic),
             };
-            Some((file_idx as i8, rank_idx as i8))
+            Ok((file_idx as i8, rank_idx as i8))
         }
 
         let start = parse_square(file_from, rank_from)?;
@@ -73,14 +77,15 @@ impl ChessMove {
                 'r' | 'R' => MoveSpecialness::Promote(PieceClass::Rook),
                 'b' | 'B' => MoveSpecialness::Promote(PieceClass::Bishop),
                 'n' | 'N' => MoveSpecialness::Promote(PieceClass::Knight),
-                _ => return None,
+                _ => return Err(Errors::InvalidAlgebraic),
             }
         } else {
+            // Need's game state to parse further!
             MoveSpecialness::Regular
         };
 
         // We can't know stop_occupancy from notation alone, so default to Empty
-        Some(ChessMove {
+        Ok(ChessMove {
             start,
             stop,
             move_specialness
