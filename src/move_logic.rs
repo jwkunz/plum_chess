@@ -27,30 +27,40 @@ type ListOfMoves = LinkedList<ChessMoveDescriptionWithCollision>;
 pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> Result<GameState, Errors> {
     let mut result = game.clone();
     if let Some(mut piece) = result.piece_register.remove_piece_record(&chess_move.start) {
-        // Update counters and turn
-        if matches!(piece.class,PieceClass::Pawn){
-            result.half_move_clock = 0;
-        }else{
-            result.half_move_clock += 1;
-        }
-        if matches!(piece.team,PieceTeam::Dark){
-            result.full_move_count += 1;
-            result.turn = PieceTeam::Light;
-        }else{
-            result.turn = PieceTeam::Dark;
-        }
 
-        let mut remove_castling_rights = false;
+        let mut remove_castling_kingside_rights = false;
+        let mut remove_castling_queenside_rights = false;
+        let mut capture_flag = false;
 
         // Do move
         match chess_move.move_specialness {
             MoveSpecialness::Regular => {
-                result
+
+                // Move the piece
+                capture_flag = result
                     .piece_register
                     .add_piece_record_overwrite(piece, &chess_move.stop)?;
-                // Remove rights
+
+                // Remove castling rights
                 if matches!(piece.class,PieceClass::King){
-                    remove_castling_rights = true;
+                    remove_castling_kingside_rights = true;
+                    remove_castling_queenside_rights = true;
+                }
+                // If a rook, pick the side to remove rights
+                if matches!(piece.class,PieceClass::Rook){
+                    if chess_move.start.0 == 0{
+                        if chess_move.start.1 == 7 && matches!(piece.team,PieceTeam::Dark){
+                            remove_castling_queenside_rights = true;
+                        }else if chess_move.start.1 == 0 && matches!(piece.team,PieceTeam::Light){
+                            remove_castling_queenside_rights = true;
+                        }   
+                    }else if  chess_move.start.0 == 7{
+                        if chess_move.start.1 == 7 && matches!(piece.team,PieceTeam::Dark){
+                            remove_castling_kingside_rights = true;
+                        }else if chess_move.start.1 == 0 && matches!(piece.team,PieceTeam::Light){
+                            remove_castling_kingside_rights = true;
+                        }  
+                    }
                 }
             }
             MoveSpecialness::Castling((rook_start, rook_stop)) => {
@@ -64,7 +74,8 @@ pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> Result<Ga
                         .piece_register
                         .add_piece_record_overwrite(rook_piece, &rook_stop)?;
                     // Flag rights removal
-                    remove_castling_rights = true;
+                    remove_castling_kingside_rights = true;
+                    remove_castling_queenside_rights = true;
                 }else{
                     return Err(Errors::InvalidMoveStartCondition);
                 }
@@ -72,21 +83,39 @@ pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> Result<Ga
             MoveSpecialness::EnPassant(behind_pawn) => {}
             MoveSpecialness::Promote(target_type) => {
                     piece.class = target_type;
-                    result
+                    capture_flag = result
                         .piece_register
                         .add_piece_record_overwrite(piece, &chess_move.stop)?;
                 } 
             }
 
             // Update castling rights
-            if remove_castling_rights{
+            if remove_castling_kingside_rights{
                 if matches!(piece.team,PieceTeam::Dark){
                     result.can_castle_king_dark = false;
-                    result.can_castle_queen_dark = false;
                 }else{
                     result.can_castle_king_light = false;
+                }
+            }
+            if remove_castling_queenside_rights{
+                if matches!(piece.team,PieceTeam::Dark){
+                    result.can_castle_queen_dark = false;
+                }else{
                     result.can_castle_queen_light = false;
                 }
+            }
+
+            // Update counters and turn
+            if matches!(piece.class,PieceClass::Pawn) || capture_flag{
+                result.half_move_clock = 0;
+            }else{
+                result.half_move_clock += 1;
+            }
+            if matches!(piece.team,PieceTeam::Dark){
+                result.full_move_count += 1;
+                result.turn = PieceTeam::Light;
+            }else{
+                result.turn = PieceTeam::Dark;
             }
 
     } else {
@@ -735,7 +764,7 @@ mod tests {
         let desired_fen = String::from("r1bqkb1r/pppp1ppp/2n2n2/1B2p3/4P3/5N2/PPPP1PPP/RNBQ1RK1 b kq - 5 4");
         assert_eq!(next_fen, desired_fen);
 
-        // Lost rights
+        // Lost rights 1
         let test_game = GameState::from_fen("r1bqk2r/pppp1ppp/2n2n2/1B2p3/1b2P3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 1 5").unwrap();
         let next_move = ChessMove {
             start: (4, 0),
@@ -745,6 +774,18 @@ mod tests {
         let next_game = apply_move_to_game(&test_game, &next_move)?;
         let next_fen = next_game.get_fen();
         let desired_fen = String::from("r1bqk2r/pppp1ppp/2n2n2/1B2p3/1b2P3/3P1N2/PPP2PPP/RNBQ1K1R b kq - 2 5");
+        assert_eq!(next_fen, desired_fen);
+
+        // Lost rights 2
+        let test_game = GameState::from_fen("r2Qkb1r/p1p2ppp/2p1bn2/4p3/4P3/2N2N2/PPP2PPP/R1B1K2R b KQkq - 0 8").unwrap();
+        let next_move = ChessMove {
+            start: (0, 7),
+            stop: (3, 7),
+            move_specialness: MoveSpecialness::Regular,
+        };
+        let next_game = apply_move_to_game(&test_game, &next_move)?;
+        let next_fen = next_game.get_fen();
+        let desired_fen = String::from("3rkb1r/p1p2ppp/2p1bn2/4p3/4P3/2N2N2/PPP2PPP/R1B1K2R w KQk - 0 9");
         assert_eq!(next_fen, desired_fen);
 
 

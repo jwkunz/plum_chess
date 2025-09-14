@@ -60,10 +60,16 @@ impl PieceRegister {
     ///
     /// # Returns
     ///
-    /// * `Result<(), Errors>` - Returns `Ok(())` if the piece record was added successfully, otherwise returns an error.
-    pub fn add_piece_record_overwrite(&mut self, x: PieceRecord, y: &BoardLocation) -> Result<(), Errors> {
+    /// * `Result<bool, Errors>` - Returns `Ok(occupied)` if the piece record was added successfully, otherwise returns an error.
+    /// 'occupied' is a true if there was a piece at y otherwise it is false
+    pub fn add_piece_record_overwrite(&mut self, x: PieceRecord, y: &BoardLocation) -> Result<bool, Errors> {
+        let _z = self.at(y);
+        let mut result = false;
+        if _z.is_some() {
+            result = true;
+        }
         *self.at(y) = Some(x);
-        Ok(())
+        Ok(result)
     }
 
 
