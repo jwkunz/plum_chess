@@ -51,6 +51,22 @@ impl PieceRegister {
         Ok(())
     }
 
+    /// Adds a piece record to the specified board location with overwrite if piece already present 
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - The piece record to add.
+    /// * `y` - The board location to add the piece record to.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(), Errors>` - Returns `Ok(())` if the piece record was added successfully, otherwise returns an error.
+    pub fn add_piece_record_overwrite(&mut self, x: PieceRecord, y: &BoardLocation) -> Result<(), Errors> {
+        *self.at(y) = Some(x);
+        Ok(())
+    }
+
+
     /// Removes a piece record from the specified board location.
     ///
     /// # Arguments

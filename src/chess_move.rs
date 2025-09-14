@@ -4,8 +4,8 @@ use crate::{board_location::BoardLocation, piece_types::PieceClass};
 pub enum MoveSpecialness {
     Regular,                  // Used for moving and capturing
     Promote(PieceClass),      // Class is type to promote
-    EnPassant(BoardLocation), // BoardLocation is behind pawn,
-    Castling(BoardLocation),  // Board location is for rook,
+    EnPassant(BoardLocation), // The current double step is vulnerable to en passant. BoardLocation is behind pawn to be captured,
+    Castling((BoardLocation,BoardLocation)),  // Board location is for rook (start,stop),
 }
 
 #[derive(Clone, Debug)]

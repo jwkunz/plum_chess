@@ -4,9 +4,11 @@ use std::{
     time::Duration,
 };
 
-use rand::{thread_rng, seq::IteratorRandom};
+use rand::{seq::IteratorRandom, thread_rng, Error};
 
-use crate::{chess_move::ChessMove, game_state::GameState, move_logic::{self, apply_move_to_game, generate_all_moves}};
+use crate::{
+    chess_move::ChessMove, errors::Errors, game_state::GameState, move_logic::{self, apply_move_to_game, generate_all_moves}
+};
 
 enum UCISetPositionValueTokens {
     Value((String, String)),
@@ -76,7 +78,7 @@ enum CommandTokens {
     SetOption(OptionToken),
     Register(RegisterToken),
     UciNewGame,
-    Position((PositionToken,Vec<String>)),
+    Position((PositionToken, Vec<String>)),
     Go(GoTokens),
     Stop,
     PonderHit,
@@ -168,7 +170,7 @@ fn parse_command(input: &str) -> Vec<CommandTokens> {
                     while let Some(mv) = words.next() {
                         moves.push(mv.to_string());
                     }
-                    tokens.push(CommandTokens::Position((position_token,moves)));
+                    tokens.push(CommandTokens::Position((position_token, moves)));
                 }
             }
             "go" => {
@@ -442,8 +444,8 @@ impl UCI {
                                 self.set_options(opt);
                                 self.uci_state
                             }
-                            CommandTokens::Position((position,moves)) => {
-                                self.setup_position(position,moves);
+                            CommandTokens::Position((position, moves)) => {
+                                self.setup_position(position, moves);
                                 self.uci_state
                             }
                             CommandTokens::Go(go) => {
@@ -545,61 +547,60 @@ impl UCI {
     }
 
     // Setup a position
-    fn setup_position(&mut self,position : &PositionToken ,moves : &Vec<String>) {
-        let mut game : GameState;
+    fn setup_position(&mut self, position: &PositionToken, moves: &Vec<String>) -> Result<(),Errors> {
+        let mut game: GameState;
         match position {
             PositionToken::Fen(x) => {
-                if let Ok(g) = GameState::from_fen(x) {
-                    game = g;
-                } else {
-                    self.position_to_analyze = None;
-                    return;
-                }
+                game = GameState::from_fen(x)?;
             }
             // Parse all the moves
             PositionToken::StartPosition => {
                 game = GameState::new_game();
             }
         }
-        
+
         for move_description in moves {
             if let Some(m) = ChessMove::from_long_algebraic(move_description) {
-                game = apply_move_to_game(&game, &m);
+                game = apply_move_to_game(&game, &m)?;
             } else {
                 self.position_to_analyze = None;
-                return;
+                return Err(Errors::InvalidAlgebraic);
             }
-        }  
+        }
 
-        self.debug_print(&format!("Searching game:{}",game.get_fen()));
-        self.position_to_analyze = Some(game); 
+        self.debug_print(&format!("Searching game:{}", game.get_fen()));
+        self.position_to_analyze = Some(game);
+        Ok(())
     }
 
     // GO command
-    fn go_launch_calculate(&mut self, go: &GoTokens) {}
+    fn go_launch_calculate(&mut self, go: &GoTokens) {
+        if let Some(x) = self.position_to_analyze.clone() {
+            if let Ok(moves) = generate_all_moves(&x) {
+                let mut rng = thread_rng();
+                if let Some(random_move) = moves.iter().choose(&mut rng) {
+                    self.give_response(generate_response(ResponseTokens::BestMove(
+                        random_move.description.to_long_algebraic(),
+                    )));
+                }
+            }
+        }
+    }
 
     // Polls the calculate and checks if done
     fn poll_calculate_check_if_done(&mut self) -> bool {
         // Sleep briefly to avoid busy-waiting
         thread::sleep(Duration::from_millis(10));
-
-        if let Some(x) = self.position_to_analyze.clone(){
-            if let Ok(moves) = generate_all_moves(&x){
-                let mut rng = thread_rng();
-                if let Some(random_move) = moves.iter().choose(&mut rng) {
-                    self.give_response(generate_response(ResponseTokens::BestMove(random_move.description.to_long_algebraic())));
-                    return true;
-                }
-            }
-        }
-        false
+        true
     }
 
     // Stop the calculation
     fn force_stop_calculate(&mut self) {}
 
     // Used for debugging
-    fn debug_print(&mut self, x : &str){
-        self.give_response(generate_response(ResponseTokens::Info(InfoToken::String(format!("DEBUG:{x}")))));
+    fn debug_print(&mut self, x: &str) {
+        self.give_response(generate_response(ResponseTokens::Info(InfoToken::String(
+            format!("DEBUG:{x}"),
+        ))));
     }
 }

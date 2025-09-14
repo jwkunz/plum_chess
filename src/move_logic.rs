@@ -1,10 +1,12 @@
 use std::collections::LinkedList;
 
 use crate::{
-    board_location::{move_board_location, BoardLocation}, chess_move::{ChessMove, MoveSpecialness}, errors::Errors, game_state::GameState, piece_types::{PieceClass, PieceTeam}
+    board_location::{move_board_location, BoardLocation},
+    chess_move::{ChessMove, MoveSpecialness},
+    errors::Errors,
+    game_state::GameState,
+    piece_types::{PieceClass, PieceTeam},
 };
-
-
 
 #[derive(Clone, Debug)]
 pub enum Occupancy {
@@ -13,42 +15,51 @@ pub enum Occupancy {
     EnemyKing,    // King occupied square of other side
 }
 
-
 #[derive(Clone, Debug)]
 pub struct ChessMoveDescriptionWithCollision {
     pub description: ChessMove,
     pub stop_occupancy: Occupancy,
 }
 
-
 type ListOfMoves = LinkedList<ChessMoveDescriptionWithCollision>;
 
 /// This function will apply the chess_move to a game to create a new game state
-pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> GameState {
+pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> Result<GameState, Errors> {
     let mut result = game.clone();
-
-    let source_piece_temp = *result.piece_register.view(&chess_move.start);
-    {
-        let destination_piece_reference = result.piece_register.at(&chess_move.stop);
-        if destination_piece_reference.is_some() {
-            // A capture
+    if let Some(mut piece) = result.piece_register.remove_piece_record(&chess_move.start) {
+        // Update counters and turn
+        if matches!(piece.class,PieceClass::Pawn){
             result.half_move_clock = 0;
-        } else {
-            // No capture
-            result.half_move_clock += 1;
         }
-        *destination_piece_reference = source_piece_temp;
-    }
-    *result.piece_register.at(&chess_move.start) = None;
-
-    result.turn = match result.turn {
-        PieceTeam::Dark => {
+        if matches!(piece.team,PieceTeam::Dark){
             result.full_move_count += 1;
-            PieceTeam::Light
+            result.turn = PieceTeam::Light;
+        }else{
+            result.turn = PieceTeam::Dark;
         }
-        PieceTeam::Light => PieceTeam::Dark,
+
+        // Do move
+        match chess_move.move_specialness {
+            MoveSpecialness::Regular => {
+                result
+                    .piece_register
+                    .add_piece_record_overwrite(piece, &chess_move.stop)?;
+            }
+            MoveSpecialness::Castling((rook_start, rook_stop)) => {}
+            MoveSpecialness::EnPassant(behind_pawn) => {}
+            MoveSpecialness::Promote(target_type) => {
+                    piece.class = target_type;
+                    result
+                        .piece_register
+                        .add_piece_record_overwrite(piece, &chess_move.stop)?;
+                } 
+            }
+
+    } else {
+        return Err(Errors::InvalidMoveStartCondition);
     };
-    result
+
+    Ok(result)
 }
 
 // This function checks if a given game state allows capturing an enemy king in the given turn
@@ -60,16 +71,24 @@ fn can_capture_enemy_king(game: &GameState) -> Result<bool, Errors> {
         if piece_record.team == game.turn {
             // Generate all the potential moves
             let potential_moves = match piece_record.class {
-                crate::piece_types::PieceClass::Pawn => generate_potential_moves_pawn(game, &location)?,
+                crate::piece_types::PieceClass::Pawn => {
+                    generate_potential_moves_pawn(game, &location)?
+                }
                 crate::piece_types::PieceClass::Knight => {
                     generate_potential_moves_knight(game, &location)?
                 }
                 crate::piece_types::PieceClass::Bishop => {
                     generate_potential_moves_bishop(game, &location)?
                 }
-                crate::piece_types::PieceClass::Rook => generate_potential_moves_rook(game, &location)?,
-                crate::piece_types::PieceClass::Queen => generate_potential_moves_queen(game, &location)?,
-                crate::piece_types::PieceClass::King => generate_potential_moves_king(game, &location)?,
+                crate::piece_types::PieceClass::Rook => {
+                    generate_potential_moves_rook(game, &location)?
+                }
+                crate::piece_types::PieceClass::Queen => {
+                    generate_potential_moves_queen(game, &location)?
+                }
+                crate::piece_types::PieceClass::King => {
+                    generate_potential_moves_king(game, &location)?
+                }
             };
             // Look for a king collision
             for k in potential_moves {
@@ -154,38 +173,38 @@ fn try_add_move_pawn(
         || (game.turn == PieceTeam::Dark && stop.1 == 0)
     {
         // All the kinds of promotions
-        result.push_back(ChessMoveDescriptionWithCollision{
-            description: ChessMove{
-            start: *start,
-            stop: *stop,
-            move_specialness: MoveSpecialness::Promote(PieceClass::Queen)
+        result.push_back(ChessMoveDescriptionWithCollision {
+            description: ChessMove {
+                start: *start,
+                stop: *stop,
+                move_specialness: MoveSpecialness::Promote(PieceClass::Queen),
             },
             stop_occupancy: occupancy_type.clone(),
         });
         // All the kinds of promotions
-        result.push_back(ChessMoveDescriptionWithCollision{
-            description: ChessMove{
-            start: *start,
-            stop: *stop,
-            move_specialness: MoveSpecialness::Promote(PieceClass::Rook)
+        result.push_back(ChessMoveDescriptionWithCollision {
+            description: ChessMove {
+                start: *start,
+                stop: *stop,
+                move_specialness: MoveSpecialness::Promote(PieceClass::Rook),
             },
             stop_occupancy: occupancy_type.clone(),
         });
         // All the kinds of promotions
-        result.push_back(ChessMoveDescriptionWithCollision{
-            description: ChessMove{
-            start: *start,
-            stop: *stop,
-            move_specialness: MoveSpecialness::Promote(PieceClass::Bishop)
+        result.push_back(ChessMoveDescriptionWithCollision {
+            description: ChessMove {
+                start: *start,
+                stop: *stop,
+                move_specialness: MoveSpecialness::Promote(PieceClass::Bishop),
             },
             stop_occupancy: occupancy_type.clone(),
         });
         // All the kinds of promotions
-        result.push_back(ChessMoveDescriptionWithCollision{
-            description: ChessMove{
-            start: *start,
-            stop: *stop,
-            move_specialness: MoveSpecialness::Promote(PieceClass::Knight)
+        result.push_back(ChessMoveDescriptionWithCollision {
+            description: ChessMove {
+                start: *start,
+                stop: *stop,
+                move_specialness: MoveSpecialness::Promote(PieceClass::Knight),
             },
             stop_occupancy: occupancy_type.clone(),
         });
@@ -195,7 +214,8 @@ fn try_add_move_pawn(
 
         // Check for en passant move
         let move_specialness = if (stop.1 - start.1).abs() == 2 {
-            let en_passant_square = (start.0, (start.1 + stop.1) / 2);
+            // Is a double step
+            let en_passant_square = (start.0, (start.1 + stop.1) / 2); // Right behind
             if game.piece_register.view(&en_passant_square).is_some() {
                 // Can't jump over a piece in the en passant spot
                 return false;
@@ -206,12 +226,12 @@ fn try_add_move_pawn(
         };
 
         // Add move
-        result.push_back(
-            ChessMoveDescriptionWithCollision{
-            description:ChessMove {
-            start: *start,
-            stop: *stop,
-            move_specialness},
+        result.push_back(ChessMoveDescriptionWithCollision {
+            description: ChessMove {
+                start: *start,
+                stop: *stop,
+                move_specialness,
+            },
             stop_occupancy: occupancy_type.clone(),
         });
         true
@@ -244,7 +264,7 @@ pub fn generate_potential_moves_pawn(
         try_add_move_pawn(game, start, &stop, &mut result);
     }
 
-    // Try en passant first move
+    // Try double step first move
     let start_square = match game.turn {
         PieceTeam::Dark => 6,
         PieceTeam::Light => 1,
@@ -282,11 +302,12 @@ fn check_move_collision(
             }
         };
     }
-    Some(ChessMoveDescriptionWithCollision{
-            description:ChessMove {
+    Some(ChessMoveDescriptionWithCollision {
+        description: ChessMove {
             start: *start,
             stop: *stop,
-            move_specialness: MoveSpecialness::Regular},
+            move_specialness: MoveSpecialness::Regular,
+        },
         stop_occupancy: occupancy_type.clone(),
     })
 }
@@ -457,6 +478,8 @@ pub fn generate_potential_moves_king(
             };
         }
     }
+    // Try castling
+
     Ok(result)
 }
 
@@ -469,20 +492,28 @@ pub fn generate_all_moves(game: &GameState) -> Result<ListOfMoves, Errors> {
         if piece_record.team == game.turn {
             // Generate all the potential moves
             let potential_moves = match piece_record.class {
-                crate::piece_types::PieceClass::Pawn => generate_potential_moves_pawn(game, &location)?,
+                crate::piece_types::PieceClass::Pawn => {
+                    generate_potential_moves_pawn(game, &location)?
+                }
                 crate::piece_types::PieceClass::Knight => {
                     generate_potential_moves_knight(game, &location)?
                 }
                 crate::piece_types::PieceClass::Bishop => {
                     generate_potential_moves_bishop(game, &location)?
                 }
-                crate::piece_types::PieceClass::Rook => generate_potential_moves_rook(game, &location)?,
-                crate::piece_types::PieceClass::Queen => generate_potential_moves_queen(game, &location)?,
-                crate::piece_types::PieceClass::King => generate_potential_moves_king(game, &location)?,
+                crate::piece_types::PieceClass::Rook => {
+                    generate_potential_moves_rook(game, &location)?
+                }
+                crate::piece_types::PieceClass::Queen => {
+                    generate_potential_moves_queen(game, &location)?
+                }
+                crate::piece_types::PieceClass::King => {
+                    generate_potential_moves_king(game, &location)?
+                }
             };
             // Make sure potential moves don't violate rules
             for k in potential_moves {
-                let trial_game = apply_move_to_game(game, &k.description);
+                let trial_game = apply_move_to_game(game, &k.description)?;
                 // Verify that move did not allow a capture of king
                 if can_capture_enemy_king(&trial_game)? {
                     // Can't do move that puts your king in check
@@ -604,4 +635,59 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_back_row_stuff() -> Result<(), Errors> {
+        let test_game =
+            GameState::from_fen("1rb5/3k1p2/1p1P4/p3p1bP/P2n4/3RN2P/2R4K/1q3n2 w - - 8 53")
+                .unwrap();
+        let moves = generate_all_moves(&test_game)?;
+        assert_eq!(moves.len(), 4);
+
+        let test_game =
+            GameState::from_fen("3kn2Q/8/b7/p3p1P1/1r2P1p1/6p1/2BK4/8 b - - 6 90").unwrap();
+        let moves = generate_all_moves(&test_game)?;
+        assert_eq!(moves.len(), 24);
+
+        let test_game = GameState::from_fen("6kN/8/8/8/P7/8/1B5K/2b5 b - - 4 95").unwrap();
+        let moves = generate_all_moves(&test_game)?;
+        assert_eq!(moves.len(), 8);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_promotion() -> Result<(), Errors> {
+        // Simple Queen promotion
+        let test_game = GameState::from_fen("8/P1k5/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        let next_move = ChessMove {
+            start: (0, 6),
+            stop: (0, 7),
+            move_specialness: MoveSpecialness::Promote(PieceClass::Queen),
+        };
+        let next_game = apply_move_to_game(&test_game, &next_move)?;
+        let next_fen = next_game.get_fen();
+        let desired_fen = String::from("Q7/2k5/8/8/8/8/8/4K3 b - - 0 1");
+        assert_eq!(next_fen, desired_fen);
+
+        // Knight check promotion into check
+        let test_game = GameState::from_fen("7R/P1k5/7R/8/8/8/8/1Q1K4 w - - 0 1").unwrap();
+        let next_move = ChessMove {
+            start: (0, 6),
+            stop: (0, 7),
+            move_specialness: MoveSpecialness::Promote(PieceClass::Knight),
+        };
+        let next_game = apply_move_to_game(&test_game, &next_move)?;
+        let next_fen = next_game.get_fen();
+        let desired_fen = String::from("N6R/2k5/7R/8/8/8/8/1Q1K4 b - - 0 1");
+        assert_eq!(next_fen, desired_fen);
+        let next_moves = generate_all_moves(&next_game)?;        
+        assert_eq!(next_moves.len(),1);
+
+        Ok(())
+    }
+
+    // TODO
+    // Need to test castling (create, explore, and execute)
+    // Need to test en passant (create, exploration, and execute)
 }
