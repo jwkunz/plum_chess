@@ -40,12 +40,18 @@ pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> Result<Ga
             result.turn = PieceTeam::Dark;
         }
 
+        let mut remove_castling_rights = false;
+
         // Do move
         match chess_move.move_specialness {
             MoveSpecialness::Regular => {
                 result
                     .piece_register
                     .add_piece_record_overwrite(piece, &chess_move.stop)?;
+                // Remove rights
+                if matches!(piece.class,PieceClass::King){
+                    remove_castling_rights = true;
+                }
             }
             MoveSpecialness::Castling((rook_start, rook_stop)) => {
                 // Move King
@@ -57,18 +63,11 @@ pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> Result<Ga
                     result
                         .piece_register
                         .add_piece_record_overwrite(rook_piece, &rook_stop)?;
+                    // Flag rights removal
+                    remove_castling_rights = true;
                 }else{
                     return Err(Errors::InvalidMoveStartCondition);
                 }
-                // Update castling rights
-                if matches!(piece.team,PieceTeam::Dark){
-                    result.can_castle_king_dark = false;
-                    result.can_castle_queen_dark = false;
-                }else{
-                    result.can_castle_king_light = false;
-                    result.can_castle_queen_light = false;
-                }
-
             }
             MoveSpecialness::EnPassant(behind_pawn) => {}
             MoveSpecialness::Promote(target_type) => {
@@ -77,6 +76,17 @@ pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> Result<Ga
                         .piece_register
                         .add_piece_record_overwrite(piece, &chess_move.stop)?;
                 } 
+            }
+
+            // Update castling rights
+            if remove_castling_rights{
+                if matches!(piece.team,PieceTeam::Dark){
+                    result.can_castle_king_dark = false;
+                    result.can_castle_queen_dark = false;
+                }else{
+                    result.can_castle_king_light = false;
+                    result.can_castle_queen_light = false;
+                }
             }
 
     } else {
@@ -713,6 +723,7 @@ mod tests {
 
     #[test]
     fn test_castling() -> Result<(), Errors> {
+        // Simple case
         let test_game = GameState::from_fen("r1bqkb1r/pppp1ppp/2n2n2/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4").unwrap();
         let next_move = ChessMove {
             start: (4, 0),
@@ -723,6 +734,19 @@ mod tests {
         let next_fen = next_game.get_fen();
         let desired_fen = String::from("r1bqkb1r/pppp1ppp/2n2n2/1B2p3/4P3/5N2/PPPP1PPP/RNBQ1RK1 b kq - 5 4");
         assert_eq!(next_fen, desired_fen);
+
+        // Lost rights
+        let test_game = GameState::from_fen("r1bqk2r/pppp1ppp/2n2n2/1B2p3/1b2P3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 1 5").unwrap();
+        let next_move = ChessMove {
+            start: (4, 0),
+            stop: (5, 0),
+            move_specialness: MoveSpecialness::Regular,
+        };
+        let next_game = apply_move_to_game(&test_game, &next_move)?;
+        let next_fen = next_game.get_fen();
+        let desired_fen = String::from("r1bqk2r/pppp1ppp/2n2n2/1B2p3/1b2P3/3P1N2/PPP2PPP/RNBQ1K1R b kq - 2 5");
+        assert_eq!(next_fen, desired_fen);
+
 
         Ok(())
     }
