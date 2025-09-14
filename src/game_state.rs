@@ -359,24 +359,25 @@ impl GameState {
         };
         result.push(' ');
 
-        if self.can_castle_king_light {
-            result.push('K');
-        }
-        if self.can_castle_queen_light {
-            result.push('Q');
-        }
-        if self.can_castle_king_dark {
-            result.push('k');
-        }
-        if self.can_castle_queen_dark {
-            result.push('q');
-        }
         if !self.can_castle_king_dark
-            | !self.can_castle_queen_dark
-            | !self.can_castle_king_light
-            | !self.can_castle_queen_light
+            & !self.can_castle_queen_dark
+            & !self.can_castle_king_light
+            & !self.can_castle_queen_light
         {
             result.push('-');
+        } else {
+            if self.can_castle_king_light {
+                result.push('K');
+            }
+            if self.can_castle_queen_light {
+                result.push('Q');
+            }
+            if self.can_castle_king_dark {
+                result.push('k');
+            }
+            if self.can_castle_queen_dark {
+                result.push('q');
+            }
         }
         result.push(' ');
 

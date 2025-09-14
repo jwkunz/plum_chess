@@ -30,6 +30,8 @@ pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> Result<Ga
         // Update counters and turn
         if matches!(piece.class,PieceClass::Pawn){
             result.half_move_clock = 0;
+        }else{
+            result.half_move_clock += 1;
         }
         if matches!(piece.team,PieceTeam::Dark){
             result.full_move_count += 1;
@@ -45,7 +47,29 @@ pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> Result<Ga
                     .piece_register
                     .add_piece_record_overwrite(piece, &chess_move.stop)?;
             }
-            MoveSpecialness::Castling((rook_start, rook_stop)) => {}
+            MoveSpecialness::Castling((rook_start, rook_stop)) => {
+                // Move King
+                result
+                    .piece_register
+                    .add_piece_record_overwrite(piece, &chess_move.stop)?;
+                // Move rook
+                if let Some(rook_piece) = result.piece_register.remove_piece_record(&rook_start) {
+                    result
+                        .piece_register
+                        .add_piece_record_overwrite(rook_piece, &rook_stop)?;
+                }else{
+                    return Err(Errors::InvalidMoveStartCondition);
+                }
+                // Update castling rights
+                if matches!(piece.team,PieceTeam::Dark){
+                    result.can_castle_king_dark = false;
+                    result.can_castle_queen_dark = false;
+                }else{
+                    result.can_castle_king_light = false;
+                    result.can_castle_queen_light = false;
+                }
+
+            }
             MoveSpecialness::EnPassant(behind_pawn) => {}
             MoveSpecialness::Promote(target_type) => {
                     piece.class = target_type;
@@ -683,6 +707,22 @@ mod tests {
         assert_eq!(next_fen, desired_fen);
         let next_moves = generate_all_moves(&next_game)?;        
         assert_eq!(next_moves.len(),1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_castling() -> Result<(), Errors> {
+        let test_game = GameState::from_fen("r1bqkb1r/pppp1ppp/2n2n2/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4").unwrap();
+        let next_move = ChessMove {
+            start: (4, 0),
+            stop: (6, 0),
+            move_specialness: MoveSpecialness::Castling(((7,0),(5,0))),
+        };
+        let next_game = apply_move_to_game(&test_game, &next_move)?;
+        let next_fen = next_game.get_fen();
+        let desired_fen = String::from("r1bqkb1r/pppp1ppp/2n2n2/1B2p3/4P3/5N2/PPPP1PPP/RNBQ1RK1 b kq - 5 4");
+        assert_eq!(next_fen, desired_fen);
 
         Ok(())
     }
