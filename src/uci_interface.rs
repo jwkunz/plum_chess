@@ -560,9 +560,9 @@ impl UCI {
         }
 
         for move_description in moves {
-            if let Ok(m) = ChessMove::from_long_algebraic(move_description) {
+            if let Ok(m) = ChessMove::from_long_algebraic(&game, move_description) {
                 game = apply_move_to_game(&game, &m)?;
-                self.debug_print(&format!("Fen Trace: {}\n", game.get_fen()));
+                //self.debug_print(&format!("Fen Trace: {}\n", game.get_fen()));
             } else {
                 self.position_to_analyze = None;
                 return Err(Errors::InvalidAlgebraic);
@@ -575,13 +575,13 @@ impl UCI {
     }
 
     // GO command
-    fn go_launch_calculate(&mut self, go: &GoTokens) {
+    fn go_launch_calculate(&mut self, _go: &GoTokens) {
         if let Some(x) = self.position_to_analyze.clone() {
             if let Ok(moves) = generate_all_moves(&x) {
                 let mut rng = thread_rng();
                 if let Some(random_move) = moves.iter().choose(&mut rng) {
                     self.give_response(generate_response(ResponseTokens::BestMove(
-                        random_move.description.to_long_algebraic(),
+                        random_move.description.to_long_algebraic(&x),
                     )));
                 }
             }

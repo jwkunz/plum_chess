@@ -80,7 +80,14 @@ pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> Result<Ga
                     return Err(Errors::TryingToMoveNonExistantPiece);
                 }
             }
-            MoveSpecialness::EnPassant(behind_pawn) => {}
+            MoveSpecialness::EnPassant(behind_pawn) => {
+                // Move the piece
+                capture_flag = result
+                    .piece_register
+                    .add_piece_record_overwrite(piece, &chess_move.stop)?;
+                // Capture the other pawn
+                result.piece_register.remove_piece_record(&behind_pawn);
+            }
             MoveSpecialness::Promote(target_type) => {
                     piece.class = target_type;
                     capture_flag = result
@@ -799,33 +806,42 @@ mod tests {
 
     #[test]
     fn test_apply_lots_of_random_moves() -> Result<(),Errors>{
+
+        // Has promotion
         let mut test_game = GameState::from_fen("rnb1k1nr/pp3ppp/2p1p3/8/1BPqN3/8/PP3PPP/R2QKBNR b KQkq - 0 7").unwrap();
         let moves_string = String::from("d4e4 d1e2 b7b6 a1b1 g7g6 b1a1 e4c4 b4e7 c4e2 e1e2 h7h5 h2h3 h8h6 h3h4 b8d7 a2a3 g6g5 e7d8 g5g4 a1d1 a7a6 b2b4 h6h7 h1h3 f7f6 e2e3 d7f8 e3e2 h7a7 h3c3 a7b7 g1f3 g4f3 e2d2 e8d7 g2f3 f8g6 d8f6 e6e5 f1c4 b7c7 c4e6 d7e6 c3e3 e6d6 e3b3 c8d7 d1g1 a8c8 d2e2 d7e8 b3d3 d6e6 e2e1 a6a5 d3c3 g8e7 g1g4 a5a4 e1d1 g6f8 f6g7 e8g6 c3c5 g6e8 g7f6 e6d7 f6e7 h5g4 c5d5 d7e7 d5d6 c8b8 d6c6 c7b7 d1d2 e7d8 c6c3 b7c7 c3c1 b8a8 c1c6 a8c8 c6b6 g4f3 b6b8 c7a7 b8b6 f8h7 h4h5 e8f7 b6b7 c8a8 b7f7 a7a6 f7e7 d8e7 d2c3 h7f8 c3b2 e7d8 h5h6 d8c7 b2c3 c7d6 c3d3 a6a7 b4b5 a8c8 d3e3 d6e7 e3e4 e7f7 e4f3 c8c1 f3g4 c1f1 g4h5 a7b7 f2f3 b7b5 h5g5 b5d5 g5h5 f1f3 h6h7 f3a3 h7h8q a3h3 h5g5 f7e6 g5g4 h3g3 g4g3 d5c5 g3h3 c5d5 h3g3 d5d2 g3f3 d2d8 f3g4 e6d7 g4f5 f8g6 f5g5 d7c7 g5f6 d8d6 f6f5 d6d5 f5g5 d5d8 g5h6 d8h8 h6g5 c7b8 g5f5 b8b7 f5e6 h8g8 e6d6 g8c8 d6d5 b7b8 d5e6 c8c4 e6f6 a4a3 f6f5 c4f4 f5g6 f4f8 g6h7 f8f1 h7g7 f1f2 g7h8 f2f7 h8g8 f7f3 g8g7 f3h3 g7f6 h3h6 f6e7 b8c7 e7f8 h6h1 f8e7 h1d1 e7f6 d1d8 f6g6 d8d5 g6h7 c7d7 h7g7 a3a2 g7h8 d5b5 h8g8 a2a1n g8g7 b5c5 g7h8 c5c4 h8g8 d7e8 g8g7 c4c2 g7h7 c2c5 h7g7 c5c3 g7h6 e8d8 h6h7 c3h3 h7g6 h3c3 g6g7 d8c7 g7f7 c3a3 f7e8 c7c6 e8e7 a3a2 e7f8 a2f2 f8e8 c6b7 e8d8 f2d2 d8e8 b7b8 e8f8 d2d5 f8f7 b8b7 f7f6 e5e4 f6g7 d5g5 g7f6 g5g7 f6g7 b7b6 g7g6 b6c6 g6f5 c6d6 f5g5 d6d5 g5h4 d5e6 h4h3 e6f6 h3h4 e4e3 h4h3 f6g7 h3g3 g7h6 g3h3 e3e2 h3g4 h6g6 g4h4 g6g7 h4h5 g7f8 h5g6 f8g8 g6h5 e2e1q h5g4 g8f7");
         for token in moves_string.split_ascii_whitespace().into_iter(){
-            let current_move = ChessMove::from_long_algebraic(token)?;
+            let current_move = ChessMove::from_long_algebraic(&test_game,token)?;
             test_game = apply_move_to_game(&test_game, &current_move)?
         }
         let next_fen = test_game.get_fen();
         let desired_fen = String::from("8/5k2/8/8/6K1/8/8/n3q3 w - - 12 147");
         assert_eq!(next_fen, desired_fen);
 
-        //TODO This case breaks because parsing from long algebraic needs game state to determine if castling happened...
+        // Has castling
         let mut test_game = GameState::from_fen("r1bqk2r/pp1n1ppp/2pbpn2/3p4/2PP4/2NBPN2/PPQ2PPP/R1B1K2R b KQkq - 5 7").unwrap();
         let moves_string = String::from("e8g8 c4c5 d6c5 c2d1 g7g6 d1e2 d8b6 g2g4 c5b4 a1b1 a7a6 e3e4 f8e8 e1d2 g8g7 d3b5 g7f8");
         for token in moves_string.split_ascii_whitespace().into_iter(){
-            let current_move = ChessMove::from_long_algebraic(token)?;
-            dbg!(format!("Current FEN: {:?}",test_game.get_fen()));
-            dbg!(format!("Current Move: {:?}",current_move.clone()));
+            let current_move = ChessMove::from_long_algebraic(&test_game,token)?;
             test_game = apply_move_to_game(&test_game, &current_move)?
         }
         let next_fen = test_game.get_fen();
         let desired_fen = String::from("r1b1rk2/1p1n1p1p/pqp1pnp1/1B1p4/1b1PP1P1/2N2N2/PP1KQP1P/1RB4R w - - 5 16");
         assert_eq!(next_fen, desired_fen);
 
+        // Has en passant
+        let mut test_game = GameState::from_fen("r1bqkb1r/1p3ppp/2n1pn2/pBPp4/1P3B2/2P1P3/P4PPP/RN1QK1NR b KQkq - 0 7").unwrap();
+        let moves_string = String::from("c8d7 d1e2 a5b4 f2f3 f8c5 a2a4 b4a3 g2g4 d8b6 b5a6 a8a6 b1a3 c5a3 e1d1 d5d4 e2b5 b6b5");
+        for token in moves_string.split_ascii_whitespace().into_iter(){
+            let current_move = ChessMove::from_long_algebraic(&test_game,token)?;
+            test_game = apply_move_to_game(&test_game, &current_move)?;
+        }
+        let next_fen = test_game.get_fen();
+        let desired_fen = String::from("4k2r/1p1b1ppp/r1n1pn2/1q6/3p1BP1/b1P1PP2/7P/R2K2NR w k - 0 16");
+        assert_eq!(next_fen, desired_fen);
+
         Ok(())
     }
 
-    // TODO
-    // Need to test castling (create, explore, and execute)
-    // Need to test en passant (create, exploration, and execute)
+    // TODO need to verify that castling and en passant are available
 }
