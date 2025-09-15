@@ -4,10 +4,10 @@ use std::{
     time::Duration,
 };
 
-use rand::{seq::IteratorRandom, thread_rng, Error};
+use rand::{seq::IteratorRandom, thread_rng};
 
 use crate::{
-    chess_move::ChessMove, errors::Errors, game_state::GameState, move_logic::{self, apply_move_to_game, generate_all_moves}
+    chess_move::ChessMove, errors::Errors, game_state::GameState, move_logic::{apply_move_to_game, generate_all_moves}
 };
 
 enum UCISetPositionValueTokens {
@@ -344,10 +344,6 @@ enum UCIstate {
     Idle,
     MonitorCalculation,
 }
-
-enum OptionName {}
-
-enum OptionValue {}
 
 pub struct UCI {
     uci_state: UCIstate,

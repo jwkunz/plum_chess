@@ -699,6 +699,7 @@ mod tests {
             GameState::from_fen("8/5k2/8/8/6K1/8/8/n3q3 w - - 12 147")
                 .unwrap();
         let moves = generate_all_moves(&test_game)?;
+        assert_eq!(moves.len(), 6);
         Ok(())
     }
 

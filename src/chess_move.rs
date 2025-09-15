@@ -26,7 +26,7 @@ pub struct ChessMove {
 
 impl ChessMove {
     /// Converts this move description to long algebraic notation (e.g., "e2e4", "e7e8q").
-    pub fn to_long_algebraic(&self, game: &GameState) -> String {
+    pub fn to_long_algebraic(&self, _game: &GameState) -> String {
         fn square_to_str(loc: &(i8, i8)) -> String {
             let file = (b'a' + loc.0 as u8) as char;
             let rank = (b'1' + loc.1 as u8) as char;
