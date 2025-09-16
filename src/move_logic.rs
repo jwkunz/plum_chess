@@ -583,7 +583,24 @@ pub fn generate_potential_moves_king(
             };
         }
     }
-    // Try castling
+    // Try to add castling
+  
+    if (game.can_castle_king_dark && matches!(game.turn,PieceTeam::Dark)) || (game.can_castle_king_light && matches!(game.turn,PieceTeam::Light)){
+        // Make sure spaces are empty
+        if game.piece_register.view(&(start.0+1,start.1)).is_none()
+        && game.piece_register.view(&(start.0+2,start.1)).is_none(){
+            result.push_back(ChessMoveDescriptionWithCollision { description: ChessMove { start: *start, stop: (start.0+2,start.1), move_specialness: MoveSpecialness::Castling(((start.0+3,start.1),(start.0+1,start.1))) }, stop_occupancy: Occupancy::Empty });
+        }
+    }
+    if (game.can_castle_queen_dark && matches!(game.turn,PieceTeam::Dark)) || (game.can_castle_queen_light && matches!(game.turn,PieceTeam::Light)){
+        // Make sure spaces are empty
+        if game.piece_register.view(&(start.0-1,start.1)).is_none()
+        && game.piece_register.view(&(start.0-2,start.1)).is_none()
+        && game.piece_register.view(&(start.0-3,start.1)).is_none(){
+            result.push_back(ChessMoveDescriptionWithCollision { description: ChessMove { start: *start, stop: (start.0-2,start.1), move_specialness: MoveSpecialness::Castling(((start.0-4,start.1),(start.0-1,start.1))) }, stop_occupancy: Occupancy::Empty });
+        }
+    }
+    
 
     Ok(result)
 }
@@ -799,7 +816,7 @@ mod tests {
     }
 
     #[test]
-    fn test_castling() -> Result<(), Errors> {
+    fn test_castling_rights() -> Result<(), Errors> {
         // Simple case
         let test_game = GameState::from_fen("r1bqkb1r/pppp1ppp/2n2n2/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4").unwrap();
         let next_move = ChessMove {
@@ -836,6 +853,55 @@ mod tests {
         let desired_fen = String::from("3rkb1r/p1p2ppp/2p1bn2/4p3/4P3/2N2N2/PPP2PPP/R1B1K2R w KQk - 0 9");
         assert_eq!(next_fen, desired_fen);
 
+
+        Ok(())
+    }
+
+
+    #[test]
+    fn test_castling_offer() -> Result<(), Errors> {
+        // Simple castlings
+        let mut test_game = GameState::from_fen("r1bqkb1r/pppp1ppp/2n2n2/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4").unwrap();
+        let moves = generate_potential_moves_king(&test_game, &(4, 0))?;
+        assert_eq!(moves.len(),3);
+
+        // Execute castling
+        let current_move = ChessMove::from_long_algebraic(&test_game,"e1g1")?;
+        test_game = apply_move_to_game(&test_game, &current_move)?;
+        assert_eq!(test_game.get_fen(),"r1bqkb1r/pppp1ppp/2n2n2/1B2p3/4P3/5N2/PPPP1PPP/RNBQ1RK1 b kq - 5 4");
+
+        // Execute capture
+        let current_move = ChessMove::from_long_algebraic(&test_game,"f6e4")?;
+        test_game = apply_move_to_game(&test_game, &current_move)?;
+        assert_eq!(test_game.get_fen(),"r1bqkb1r/pppp1ppp/2n5/1B2p3/4n3/5N2/PPPP1PPP/RNBQ1RK1 w kq - 0 5");
+
+        // No more castling available
+        let moves = generate_potential_moves_king(&test_game, &(6, 0))?;
+        assert_eq!(moves.len(),1);
+
+        // All castling
+        let mut test_game = GameState::from_fen("r3k2r/ppp1qppp/2np1n2/1Bb1p3/4P1b1/2NP1N2/PPPBQPPP/R3K2R w KQkq - 4 8").unwrap();
+        let moves = generate_potential_moves_king(&test_game, &(4, 0))?;
+        assert_eq!(moves.len(),4);
+
+        // Execute castling
+        let current_move = ChessMove::from_long_algebraic(&test_game,"e1c1")?;
+        test_game = apply_move_to_game(&test_game, &current_move)?;
+        assert_eq!(test_game.get_fen(),"r3k2r/ppp1qppp/2np1n2/1Bb1p3/4P1b1/2NP1N2/PPPBQPPP/2KR3R b kq - 5 8");
+
+        // Execute castling
+        let current_move = ChessMove::from_long_algebraic(&test_game,"e8g8")?;
+        test_game = apply_move_to_game(&test_game, &current_move)?;
+        assert_eq!(test_game.get_fen(),"r4rk1/ppp1qppp/2np1n2/1Bb1p3/4P1b1/2NP1N2/PPPBQPPP/2KR3R w - - 6 9");
+
+        // No more castling
+        let moves = generate_potential_moves_king(&test_game, &(2, 0))?;
+        assert_eq!(moves.len(),1);
+
+        // Blocked castling
+        let mut test_game = GameState::from_fen("r3k2r/ppp1qppp/2Pp4/1B2p3/6b1/3P1N2/PbPBQPPP/R3K2R w KQkq - 0 11").unwrap();
+        let moves = generate_potential_moves_king(&test_game, &(4, 0))?;
+        assert_eq!(moves.len(),3);
 
         Ok(())
     }
@@ -899,5 +965,6 @@ mod tests {
     }
 
 
-    // TODO need to verify that castling and en passant are available
+
+
 }
