@@ -1,10 +1,10 @@
 use std::collections::LinkedList;
 
 use crate::{
-    board_location::{move_board_location, BoardLocation},
+    board_location::{self, move_board_location, BoardLocation},
     chess_move::{ChessMove, MoveSpecialness},
     errors::Errors,
-    game_state::GameState,
+    game_state::{self, GameState},
     piece_types::{PieceClass, PieceTeam},
 };
 
@@ -31,6 +31,7 @@ pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> Result<Ga
         let mut remove_castling_kingside_rights = false;
         let mut remove_castling_queenside_rights = false;
         let mut capture_flag = false;
+        let moving_a_pawn = matches!(piece.class,PieceClass::Pawn);
 
         // Do move
         match chess_move.move_specialness {
@@ -80,6 +81,14 @@ pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> Result<Ga
                     return Err(Errors::TryingToMoveNonExistantPiece);
                 }
             }
+            MoveSpecialness::DoubleStep(behind_pawn)=>{
+                // Move the piece
+                capture_flag = result
+                    .piece_register
+                    .add_piece_record_overwrite(piece, &chess_move.stop)?;
+                // Mark location
+                result.en_passant_location = Some(behind_pawn);
+            }
             MoveSpecialness::EnPassant(behind_pawn) => {
                 // Move the piece
                 capture_flag = result
@@ -94,6 +103,12 @@ pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> Result<Ga
                         .piece_register
                         .add_piece_record_overwrite(piece, &chess_move.stop)?;
                 } 
+            }
+
+            // If not a double step just added, clear the en passant flag
+            if !matches!(chess_move.move_specialness,MoveSpecialness::DoubleStep(_board_location)){
+                // Remove en passant
+                result.en_passant_location = None;
             }
 
             // Update castling rights
@@ -113,7 +128,7 @@ pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> Result<Ga
             }
 
             // Update counters and turn
-            if matches!(piece.class,PieceClass::Pawn) || capture_flag{
+            if moving_a_pawn || capture_flag{
                 result.half_move_clock = 0;
             }else{
                 result.half_move_clock += 1;
@@ -204,6 +219,7 @@ fn verify_is_piece_class_and_turn(
 // and if feasible will add it to result with appropriate context
 // Returns true if something was added, false if not
 // Does not inspect rules for check
+// Does not handle the en passant case, treat that elsewhere
 fn try_add_move_pawn(
     game: &GameState,
     start: &BoardLocation,
@@ -282,16 +298,19 @@ fn try_add_move_pawn(
     } else {
         // A regular move (capture or movement)
 
-        // Check for en passant move
-        let move_specialness = if (stop.1 - start.1).abs() == 2 {
+        
+        let move_specialness = 
+        // Check for double step move
+        if (stop.1 - start.1).abs() == 2 {
             // Is a double step
             let en_passant_square = (start.0, (start.1 + stop.1) / 2); // Right behind
             if game.piece_register.view(&en_passant_square).is_some() {
                 // Can't jump over a piece in the en passant spot
                 return false;
             }
-            MoveSpecialness::EnPassant(en_passant_square)
-        } else {
+            MoveSpecialness::DoubleStep(en_passant_square)
+        }
+        else {
             MoveSpecialness::Regular
         };
 
@@ -344,6 +363,22 @@ pub fn generate_potential_moves_pawn(
             try_add_move_pawn(game, start, &stop, &mut result);
         }
     }
+
+    // Manually try to add en passant
+    if let Some(behind_pawn) = game.en_passant_location{
+        // Behind pawn is diagonal to this pawn and no piece is there
+        if (start.1 + forward_direction == behind_pawn.1) && ((behind_pawn.0-start.0).abs() == 1) && game.piece_register.view(&behind_pawn).is_none(){
+            // Add en passant
+            result.push_back(
+                ChessMoveDescriptionWithCollision{
+                    description:ChessMove{
+                        start:*start,
+                        stop:behind_pawn,
+                        move_specialness:MoveSpecialness::EnPassant(behind_pawn)},
+                    stop_occupancy:Occupancy::Empty});
+        }
+    }
+
     // Return whatever was available
     Ok(result)
 }
@@ -843,6 +878,26 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_en_passant() -> Result<(), Errors> {
+        // Simple en passant
+        let mut test_game = GameState::from_fen("rnbqkbnr/ppp1pppp/8/8/3pP1P1/7P/PPPP1P2/RNBQKBNR b KQkq e3 0 3").unwrap();
+        let moves = generate_potential_moves_pawn(&test_game, &(3, 3))?;
+        assert_eq!(moves.len(),2);
+
+        // Move past another pawn
+        let current_move = ChessMove::from_long_algebraic(&test_game,"f2f3")?;
+        test_game = apply_move_to_game(&test_game, &current_move)?;
+        dbg!(test_game.get_fen());
+
+        // No more en passant will be available for this pawn
+        let moves = generate_potential_moves_pawn(&test_game, &(3, 3))?;
+        assert_eq!(moves.len(),1);
+
+        Ok(())
+    }
+
 
     // TODO need to verify that castling and en passant are available
 }

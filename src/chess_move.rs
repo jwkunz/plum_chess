@@ -13,7 +13,8 @@ use crate::{
 pub enum MoveSpecialness {
     Regular,                                  // Used for moving and capturing
     Promote(PieceClass),                      // Class is type to promote
-    EnPassant(BoardLocation), // The current double step is vulnerable to en passant. BoardLocation is behind pawn to be captured,
+    DoubleStep(BoardLocation), // The current double step is flagged vulnerable to en passant. BoardLocation is behind pawn to be captured
+    EnPassant(BoardLocation), // Board location indicates the piece capture by en passant
     Castling((BoardLocation, BoardLocation)), // Board location is for rook (start,stop),
 }
 
