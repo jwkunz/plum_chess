@@ -417,6 +417,7 @@ fn check_move_collision(
     })
 }
 
+// Generates all possible move before evaluating for check
 pub fn generate_potential_moves_knight(
     game: &GameState,
     start: &BoardLocation,
@@ -495,6 +496,7 @@ fn follow_move_vector(
     }
 }
 
+// Generates all possible move before evaluating for check
 pub fn generate_potential_moves_bishop(
     game: &GameState,
     start: &BoardLocation,
@@ -515,6 +517,7 @@ pub fn generate_potential_moves_bishop(
     Ok(result)
 }
 
+// Generates all possible move before evaluating for check
 pub fn generate_potential_moves_rook(
     game: &GameState,
     start: &BoardLocation,
@@ -534,6 +537,8 @@ pub fn generate_potential_moves_rook(
     // Return
     Ok(result)
 }
+
+// Generates all possible move before evaluating for check
 pub fn generate_potential_moves_queen(
     game: &GameState,
     start: &BoardLocation,
@@ -563,6 +568,8 @@ pub fn generate_potential_moves_queen(
     Ok(result)
 }
 
+// Generates all possible move before evaluating for check.
+// But, does inspect for check on castling because there is not a better place to do it
 pub fn generate_potential_moves_king(
     game: &GameState,
     start: &BoardLocation,
@@ -589,7 +596,15 @@ pub fn generate_potential_moves_king(
         // Make sure spaces are empty
         if game.piece_register.view(&(start.0+1,start.1)).is_none()
         && game.piece_register.view(&(start.0+2,start.1)).is_none(){
-            result.push_back(ChessMoveDescriptionWithCollision { description: ChessMove { start: *start, stop: (start.0+2,start.1), move_specialness: MoveSpecialness::Castling(((start.0+3,start.1),(start.0+1,start.1))) }, stop_occupancy: Occupancy::Empty });
+            // Try to move king across and see if there is check
+            let mut in_check = false;
+            for i in 0..=1{
+                let temp_game = apply_move_to_game(&game, &ChessMove{start: *start, stop: (start.0+i,start.1), move_specialness:MoveSpecialness::Regular})?;
+                in_check |= can_capture_enemy_king(&temp_game)?
+            }
+            if !in_check{
+                result.push_back(ChessMoveDescriptionWithCollision { description: ChessMove { start: *start, stop: (start.0+2,start.1), move_specialness: MoveSpecialness::Castling(((start.0+3,start.1),(start.0+1,start.1))) }, stop_occupancy: Occupancy::Empty });
+            }
         }
     }
     if (game.can_castle_queen_dark && matches!(game.turn,PieceTeam::Dark)) || (game.can_castle_queen_light && matches!(game.turn,PieceTeam::Light)){
@@ -597,7 +612,15 @@ pub fn generate_potential_moves_king(
         if game.piece_register.view(&(start.0-1,start.1)).is_none()
         && game.piece_register.view(&(start.0-2,start.1)).is_none()
         && game.piece_register.view(&(start.0-3,start.1)).is_none(){
-            result.push_back(ChessMoveDescriptionWithCollision { description: ChessMove { start: *start, stop: (start.0-2,start.1), move_specialness: MoveSpecialness::Castling(((start.0-4,start.1),(start.0-1,start.1))) }, stop_occupancy: Occupancy::Empty });
+            // Try to move king across and see if there is check
+            let mut in_check = false;
+            for i in 0..=2{
+                let temp_game = apply_move_to_game(&game, &ChessMove{start: *start, stop: (start.0-i,start.1), move_specialness:MoveSpecialness::Regular})?;
+                in_check |= can_capture_enemy_king(&temp_game)?
+            }
+            if !in_check{
+                result.push_back(ChessMoveDescriptionWithCollision { description: ChessMove { start: *start, stop: (start.0-2,start.1), move_specialness: MoveSpecialness::Castling(((start.0-4,start.1),(start.0-1,start.1))) }, stop_occupancy: Occupancy::Empty });
+            }
         }
     }
     
