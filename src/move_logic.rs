@@ -327,7 +327,7 @@ fn try_add_move_pawn(
     }
 }
 
-// Generates all possible move before evaluating for check
+// Generates all possible moves for a pawn before evaluating for check
 pub fn generate_potential_moves_pawn(
     game: &GameState,
     start: &BoardLocation,
@@ -383,41 +383,7 @@ pub fn generate_potential_moves_pawn(
     Ok(result)
 }
 
-// Considers start and stop as a potential move
-// and if feasible based on collision
-// Does not inspect rules for check
-fn check_move_collision(
-    game: &GameState,
-    start: &BoardLocation,
-    stop: &BoardLocation,
-) -> Option<ChessMoveDescriptionWithCollision> {
-    // Assume no collision occurs
-    let mut occupancy_type = Occupancy::Empty;
-    // Unless
-    if let Some(target) = game.piece_register.view(stop) {
-        // Something was at the stop location
-
-        // What kind of piece collision was it?
-        occupancy_type = if game.turn == target.team {
-            return None; // Collide with teammate, not a move
-        } else {
-            match target.class {
-                PieceClass::King => Occupancy::EnemyKing,
-                _ => Occupancy::EnemyRegular,
-            }
-        };
-    }
-    Some(ChessMoveDescriptionWithCollision {
-        description: ChessMove {
-            start: *start,
-            stop: *stop,
-            move_specialness: MoveSpecialness::Regular,
-        },
-        stop_occupancy: occupancy_type.clone(),
-    })
-}
-
-// Generates all possible move before evaluating for check
+// Generates all possible moves for knight before evaluating for check
 pub fn generate_potential_moves_knight(
     game: &GameState,
     start: &BoardLocation,
@@ -469,34 +435,7 @@ pub fn generate_potential_moves_knight(
     Ok(result)
 }
 
-// Helper for follow move vector until edge of board or enemy collision
-fn follow_move_vector(
-    game: &GameState,
-    start: &BoardLocation,
-    dx: i8,
-    dy: i8,
-    result: &mut LinkedList<ChessMoveDescriptionWithCollision>,
-) {
-    for distance in 1..8 {
-        if let Ok(stop) = move_board_location(start, dx * distance, dy * distance) {
-            if let Some(x) = check_move_collision(game, start, &stop) {
-                match x.stop_occupancy {
-                    Occupancy::Empty => result.push_back(x),
-                    _ => {
-                        result.push_back(x);
-                        break;
-                    }
-                }
-            } else {
-                break;
-            }
-        } else {
-            break;
-        };
-    }
-}
-
-// Generates all possible move before evaluating for check
+// Generates all possible moves for a bishop before evaluating for check
 pub fn generate_potential_moves_bishop(
     game: &GameState,
     start: &BoardLocation,
@@ -517,7 +456,7 @@ pub fn generate_potential_moves_bishop(
     Ok(result)
 }
 
-// Generates all possible move before evaluating for check
+// Generates all possible moves for a rook before evaluating for check
 pub fn generate_potential_moves_rook(
     game: &GameState,
     start: &BoardLocation,
@@ -538,7 +477,7 @@ pub fn generate_potential_moves_rook(
     Ok(result)
 }
 
-// Generates all possible move before evaluating for check
+// Generates all possible moves for a queen before evaluating for check
 pub fn generate_potential_moves_queen(
     game: &GameState,
     start: &BoardLocation,
@@ -568,7 +507,7 @@ pub fn generate_potential_moves_queen(
     Ok(result)
 }
 
-// Generates all possible move before evaluating for check.
+// Generates all possible move for a king before evaluating for check.
 // But, does inspect for check on castling because there is not a better place to do it
 pub fn generate_potential_moves_king(
     game: &GameState,
@@ -627,6 +566,70 @@ pub fn generate_potential_moves_king(
 
     Ok(result)
 }
+
+
+// Considers start and stop as a potential move
+// and if feasible based on collision
+// Does not inspect rules for check
+fn check_move_collision(
+    game: &GameState,
+    start: &BoardLocation,
+    stop: &BoardLocation,
+) -> Option<ChessMoveDescriptionWithCollision> {
+    // Assume no collision occurs
+    let mut occupancy_type = Occupancy::Empty;
+    // Unless
+    if let Some(target) = game.piece_register.view(stop) {
+        // Something was at the stop location
+
+        // What kind of piece collision was it?
+        occupancy_type = if game.turn == target.team {
+            return None; // Collide with teammate, not a move
+        } else {
+            match target.class {
+                PieceClass::King => Occupancy::EnemyKing,
+                _ => Occupancy::EnemyRegular,
+            }
+        };
+    }
+    Some(ChessMoveDescriptionWithCollision {
+        description: ChessMove {
+            start: *start,
+            stop: *stop,
+            move_specialness: MoveSpecialness::Regular,
+        },
+        stop_occupancy: occupancy_type.clone(),
+    })
+}
+
+// Helper for follow move vector until edge of board or enemy collision
+fn follow_move_vector(
+    game: &GameState,
+    start: &BoardLocation,
+    dx: i8,
+    dy: i8,
+    result: &mut LinkedList<ChessMoveDescriptionWithCollision>,
+) {
+    for distance in 1..8 {
+        if let Ok(stop) = move_board_location(start, dx * distance, dy * distance) {
+            if let Some(x) = check_move_collision(game, start, &stop) {
+                match x.stop_occupancy {
+                    Occupancy::Empty => result.push_back(x),
+                    _ => {
+                        result.push_back(x);
+                        break;
+                    }
+                }
+            } else {
+                break;
+            }
+        } else {
+            break;
+        };
+    }
+}
+
+
 
 /// This function get's all possible moves for a given turn
 pub fn generate_all_moves(game: &GameState) -> Result<ListOfMoves, Errors> {
@@ -940,7 +943,7 @@ mod tests {
             test_game = apply_move_to_game(&test_game, &current_move)?
         }
         let next_fen = test_game.get_fen();
-        let desired_fen = String::from("8/5k2/8/8/6K1/8/8/n3q3 w - - 12 147");
+        let desired_fen = String::from("8/5k2/8/8/6K1/8/8/n3q3 w - - 2 147");
         assert_eq!(next_fen, desired_fen);
 
         // Has castling
