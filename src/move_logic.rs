@@ -96,7 +96,7 @@ pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> Result<Ga
                     remove_castling_kingside_rights = true;
                     remove_castling_queenside_rights = true;
                 }else{
-                    return Err(Errors::TryingToMoveNonExistantPiece);
+                    return Err(Errors::TryingToMoveNonExistantPiece((rook_start,game.get_fen())));
                 }
             }
             MoveSpecialness::DoubleStep(behind_pawn)=>{
@@ -160,7 +160,7 @@ pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> Result<Ga
 
     } else {
         // If the piece to move does not exist, return an error.
-        return Err(Errors::TryingToMoveNonExistantPiece);
+        return Err(Errors::TryingToMoveNonExistantPiece((chess_move.start,game.get_fen())));
     };
 
     Ok(result)
@@ -1058,17 +1058,16 @@ mod tests {
     fn test_apply_lots_of_random_moves() -> Result<(),Errors>{
 
         // Has promotion
-        /*
-        let mut test_game = GameState::from_fen("rnb1k1nr/pp3ppp/2p1p3/8/1BPqN3/8/PP3PPP/R2QKBNR b KQkq - 0 7").unwrap();
-        let moves_string = String::from("d4e4 d1e2 b7b6 a1b1 g7g6 b1a1 e4c4 b4e7 c4e2 e1e2 h7h5 h2h3 h8h6 h3h4 b8d7 a2a3 g6g5 e7d8 g5g4 a1d1 a7a6 b2b4 h6h7 h1h3 f7f6 e2e3 d7f8 e3e2 h7a7 h3c3 a7b7 g1f3 g4f3 e2d2 e8d7 g2f3 f8g6 d8f6 e6e5 f1c4 b7c7 c4e6 d7e6 c3e3 e6d6 e3b3 c8d7 d1g1 a8c8 d2e2 d7e8 b3d3 d6e6 e2e1 a6a5 d3c3 g8e7 g1g4 a5a4 e1d1 g6f8 f6g7 e8g6 c3c5 g6e8 g7f6 e6d7 f6e7 h5g4 c5d5 d7e7 d5d6 c8b8 d6c6 c7b7 d1d2 e7d8 c3b2 e7f8 g4g3 d2d5 f8f7 b8b7 f7f6 e5e4 f6g7 d5g5 g7f6 g5g7 f6g7 b7b8 g7g6 b8c8 g6f5 c6b7 f5g5 d8d6 g5h4 d6e6 h4h3 e6f6 h3h4 f6g7 h3g4 g7h6 g4h4 g6g7 h4h5 g7f8 h5g6 f8g8 g6h5 e2e1q h5g4 g8f7");
+        let mut test_game = GameState::from_fen("r1bqk2r/pp2bppp/2np1n2/2p1p3/4P3/2P2NP1/PP1PQPBP/RNB2RK1 w kq - 1 8").unwrap();
+        let moves_string = String::from("f1d1 b7b6 d2d4 c8e6 d4e5 a7a5 e5f6 b6b5 f6e7 a8a7 e7d8n e8d8 d1d6 d8c8 d6c6 c8b8 e2b5 a7b7 c1f4");        
         for token in moves_string.split_ascii_whitespace().into_iter(){
             let current_move = ChessMove::from_long_algebraic(&test_game,token)?;
             test_game = apply_move_to_game(&test_game, &current_move)?
         }
         let next_fen = test_game.get_fen();
-        let desired_fen = String::from("8/5k2/8/8/6K1/8/8/n3q3 w - - 2 147");
+        let desired_fen = String::from("1k5r/1r3ppp/2R1b3/pQp5/4PB2/2P2NP1/PP3PBP/RN4K1 b - - 2 17");
         assert_eq!(next_fen, desired_fen);
-        */
+        
 
         // Has castling
         let mut test_game = GameState::from_fen("r1bqk2r/pp1n1ppp/2pbpn2/3p4/2PP4/2NBPN2/PPQ2PPP/R1B1K2R b KQkq - 5 7").unwrap();

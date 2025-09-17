@@ -150,7 +150,7 @@ impl ChessMove {
                 }
             } else {
                 // No piece at the start location.
-                return Err(Errors::TryingToMoveNonExistantPiece);
+                return Err(Errors::TryingToMoveNonExistantPiece((start,game.get_fen())));
             }
         };
 
