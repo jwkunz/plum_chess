@@ -10,12 +10,17 @@ use crate::{
     chess_move::ChessMove, errors::Errors, game_state::GameState, move_logic::{apply_move_to_game, generate_all_moves}
 };
 
+/// Tokens for setting position values in UCI options.
 enum UCISetPositionValueTokens {
+    /// Set a value (name, value).
     Value((String, String)),
+    /// Clear a named value.
     Clear(String),
+    /// Clear all values.
     ClearAll,
 }
 
+/// Types of UCI options.
 enum OptionTypeToken {
     Check,
     Spin,
@@ -24,6 +29,7 @@ enum OptionTypeToken {
     String,
 }
 
+/// Describes a property of a UCI option (e.g., default, min, max).
 enum OptionDescriptionToken {
     Default,
     Min,
@@ -31,6 +37,7 @@ enum OptionDescriptionToken {
     Var,
 }
 
+/// Represents all possible UCI options supported by the engine.
 enum OptionToken {
     Hash(u32),
     NalimovePath(String),
@@ -49,14 +56,18 @@ enum OptionToken {
     UCISetPositionValue(String),
 }
 
+/// Represents a register command for UCI.
 enum RegisterToken {
     Value(String),
 }
 
+/// Represents a position token: either a FEN string or the standard starting position.
 enum PositionToken {
     Fen(String),
     StartPosition,
 }
+
+/// Represents all possible tokens for the UCI "go" command.
 enum GoTokens {
     SearchMoves(Vec<String>),
     Ponder,
@@ -71,6 +82,8 @@ enum GoTokens {
     MoveTime(f32),
     Infinite,
 }
+
+/// Represents all possible UCI commands as tokens.
 enum CommandTokens {
     Uci,
     Debug(bool),
@@ -85,7 +98,13 @@ enum CommandTokens {
     Quit,
 }
 
-// Maps an input string to tokens
+/// Parses a UCI command string into a vector of command tokens.
+///
+/// # Arguments
+/// * `input` - The input string from the UCI protocol.
+///
+/// # Returns
+/// * `Vec<CommandTokens>` - The parsed command tokens.
 fn parse_command(input: &str) -> Vec<CommandTokens> {
     let mut tokens = Vec::new();
     let mut words = input.split_whitespace().peekable();
@@ -186,22 +205,26 @@ fn parse_command(input: &str) -> Vec<CommandTokens> {
     tokens
 }
 
+/// Represents the engine's ID tokens for UCI responses.
 enum IDTokens {
     Name(String),
     Author(String),
 }
 
+/// Represents copy protection status for UCI.
 enum CopyProtectionToken {
     Ok,
     Error,
 }
 
+/// Represents registration status for UCI.
 enum RegistrationToken {
     Ok,
     Error,
     Checking,
 }
 
+/// Represents a score in UCI info output.
 enum Score {
     CP(f32),
     Mate(u8),
@@ -209,6 +232,7 @@ enum Score {
     UpperBound,
 }
 
+/// Represents all possible info tokens for UCI "info" responses.
 enum InfoToken {
     Depth(u16),
     SelectionDepth(u16),
@@ -229,6 +253,7 @@ enum InfoToken {
     CurrentLine(Vec<String>, Vec<String>),
 }
 
+/// Represents all possible UCI responses as tokens.
 enum ResponseTokens {
     ID(IDTokens),
     UciOK,
@@ -240,7 +265,13 @@ enum ResponseTokens {
     Option(OptionToken),
 }
 
-// Maps a token to the correct string
+/// Converts a response token to its corresponding UCI protocol string.
+///
+/// # Arguments
+/// * `token` - The response token to convert.
+///
+/// # Returns
+/// * `String` - The UCI protocol string.
 fn generate_response(token: ResponseTokens) -> String {
     match token {
         ResponseTokens::ID(id_token) => match id_token {
@@ -336,6 +367,7 @@ fn generate_response(token: ResponseTokens) -> String {
     }
 }
 
+/// Represents the internal state of the UCI protocol handler.
 #[derive(Clone, Copy, Debug)]
 enum UCIstate {
     Startup,
@@ -345,14 +377,28 @@ enum UCIstate {
     MonitorCalculation,
 }
 
+/// The main UCI protocol handler struct.
+/// Manages the state machine, communication channels, and current analysis position.
 pub struct UCI {
+    /// The current state of the UCI protocol handler.
     uci_state: UCIstate,
+    /// Channel for receiving commands from the main thread.
     command_rx: Receiver<String>,
+    /// Channel for sending responses to the main thread.
     response_tx: Sender<String>,
+    /// The current position to analyze, if any.
     position_to_analyze: Option<GameState>,
 }
 
 impl UCI {
+    /// Creates a new UCI protocol handler.
+    ///
+    /// # Arguments
+    /// * `command_rx` - Receiver for incoming commands.
+    /// * `response_tx` - Sender for outgoing responses.
+    ///
+    /// # Returns
+    /// * `Self` - The initialized UCI handler.
     pub fn new(command_rx: Receiver<String>, response_tx: Sender<String>) -> Self {
         UCI {
             uci_state: UCIstate::Startup,
@@ -362,7 +408,8 @@ impl UCI {
         }
     }
 
-    // Master state matchine
+    /// Advances the UCI protocol state machine by one tick.
+    /// Handles incoming commands, state transitions, and engine actions.
     pub fn tick(&mut self) {
         // Next state logic
         let next_state = match self.uci_state {
@@ -494,33 +541,33 @@ impl UCI {
         self.uci_state = next_state;
     }
 
-    // Gets a command from the input
+    /// Gets a command from the input
     fn get_command(&mut self) -> Option<String> {
         self.command_rx.try_recv().ok()
     }
 
-    // Gives a response to the output
+    /// Gives a response to the output
     fn give_response(&mut self, response: String) {
         let _ = self.response_tx.send(response);
     }
 
-    // Use this for launching a thread with boot-up actions
+    /// Use this for launching a thread with boot-up actions
     fn launch_boot_actions(&mut self) {}
 
-    // Check if boot action thread is done
+    /// Check if boot action thread is done
     fn are_boot_actions_done(&mut self) -> bool {
         true
     }
 
-    // Handler for set_options
+    /// Handler for set_options
     fn set_options(&mut self, opt: &OptionToken) {
         // TODO
     }
 
-    // Use this for cleaning up state during a quite
+    /// Use this for cleaning up state during a quite
     fn quit_cleanup(&mut self) {}
 
-    // Gives the name and author
+    /// Gives the name and author
     fn give_name_and_author(&mut self) {
         self.give_response(generate_response(ResponseTokens::ID(IDTokens::Name(
             "Plum Chess".into(),
@@ -530,19 +577,19 @@ impl UCI {
         ))));
     }
 
-    // Gives changeable options
+    /// Gives changeable options
     fn give_options_that_can_change(&mut self) {
         // TODO add these changeable options
         self.give_response(generate_response(ResponseTokens::UciOK));
     }
 
-    // Initial response on bootup
+    /// Initial response on bootup
     fn respond_to_uci_init(&mut self) {
         self.give_name_and_author();
         self.give_options_that_can_change();
     }
 
-    // Setup a position
+    /// Setup a position
     fn setup_position(&mut self, position: &PositionToken, moves: &Vec<String>) -> Result<(),Errors> {
         let mut game: GameState;
         match position {
@@ -570,7 +617,7 @@ impl UCI {
         Ok(())
     }
 
-    // GO command
+    /// GO command
     fn go_launch_calculate(&mut self, _go: &GoTokens) {
         if let Some(x) = self.position_to_analyze.clone() {
             if let Ok(moves) = generate_all_moves(&x) {
@@ -584,17 +631,17 @@ impl UCI {
         }
     }
 
-    // Polls the calculate and checks if done
+    /// Polls the calculate and checks if done
     fn poll_calculate_check_if_done(&mut self) -> bool {
         // Sleep briefly to avoid busy-waiting
         thread::sleep(Duration::from_millis(10));
         true
     }
 
-    // Stop the calculation
+    /// Stop the calculation
     fn force_stop_calculate(&mut self) {}
 
-    // Used for debugging
+    /// Used for debugging
     fn debug_print(&mut self, x: &str) {
         self.give_response(generate_response(ResponseTokens::Info(InfoToken::String(
             format!("DEBUG:{x}"),

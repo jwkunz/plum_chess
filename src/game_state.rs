@@ -3,16 +3,27 @@ use crate::errors::Errors;
 use crate::piece_register::PieceRegister;
 use crate::piece_types::*;
 
+/// Represents the complete state of a chess game at a given moment.
+/// Includes piece positions, castling rights, en passant target, move clocks, and turn.
 #[derive(Clone)]
 pub struct GameState {
+    /// The register containing all pieces and their locations.
     pub piece_register: PieceRegister,
+    /// Whether light (white) can castle queenside.
     pub can_castle_queen_light: bool,
+    /// Whether light (white) can castle kingside.
     pub can_castle_king_light: bool,
+    /// Whether dark (black) can castle queenside.
     pub can_castle_queen_dark: bool,
+    /// Whether dark (black) can castle kingside.
     pub can_castle_king_dark: bool,
+    /// The en passant target square, if any.
     pub en_passant_location: Option<BoardLocation>,
+    /// The half-move clock (for the 50-move rule).
     pub half_move_clock: u16,
+    /// The full-move count (increments after black's move).
     pub full_move_count: u16,
+    /// The team whose turn it is to move.
     pub turn: PieceTeam,
 }
 
@@ -20,11 +31,9 @@ impl GameState {
     /// Creates a `GameState` from a FEN string.
     ///
     /// # Arguments
-    ///
     /// * `x` - A string slice that holds the FEN string.
     ///
     /// # Returns
-    ///
     /// * `Result<Self, Errors>` - Returns a `GameState` if the FEN string is valid, otherwise returns an error.
     pub fn from_fen(x: &str) -> Result<Self, Errors> {
         let mut piece_register = PieceRegister::default();
@@ -299,7 +308,6 @@ impl GameState {
     /// Creates a new `GameState` representing the starting position of a chess game.
     ///
     /// # Returns
-    ///
     /// * `Self` - Returns a `GameState` representing the starting position.
     pub fn new_game() -> Self {
         let new_game = String::from("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
@@ -309,7 +317,6 @@ impl GameState {
     /// Converts the current `GameState` to a FEN string.
     ///
     /// # Returns
-    ///
     /// * `String` - Returns a FEN string representing the current `GameState`.
     pub fn get_fen(&self) -> String {
         let mut result = String::new();
@@ -416,9 +423,10 @@ impl GameState {
         result
     }
 
-    /// Returns the score based on material.
-    /// + favors light
-    /// - favors dark
+    /// Returns the material score for the current position.
+    ///
+    /// # Returns
+    /// * `i8` - Positive favors light, negative favors dark.
     pub fn get_material_score(&self) -> i8 {
         let mut score = 0;
         for (_, piece_record) in self.piece_register.iter() {

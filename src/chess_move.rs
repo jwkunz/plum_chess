@@ -9,25 +9,44 @@ use crate::{
     piece_types::PieceClass,
 };
 
+/// Represents special move types in chess, such as promotion, castling, en passant, and double pawn step.
+/// Used to distinguish between regular moves and moves with special rules.
 #[derive(Clone, Debug)]
 pub enum MoveSpecialness {
-    Regular,                                  // Used for moving and capturing
-    Promote(PieceClass),                      // Class is type to promote
-    DoubleStep(BoardLocation), // The current double step is flagged vulnerable to en passant. BoardLocation is behind pawn to be captured
-    EnPassant(BoardLocation), // Board location indicates the piece capture by en passant
-    Castling((BoardLocation, BoardLocation)), // Board location is for rook (start,stop),
+    /// A regular move or capture.
+    Regular,
+    /// Promotion to a specific piece class (e.g., Queen, Rook, Bishop, Knight).
+    Promote(PieceClass),
+    /// Double pawn step; BoardLocation is the square behind the pawn, vulnerable to en passant.
+    DoubleStep(BoardLocation),
+    /// En passant capture; BoardLocation is the square of the captured pawn.
+    EnPassant(BoardLocation),
+    /// Castling move; tuple contains rook's (start, stop) locations.
+    Castling((BoardLocation, BoardLocation)),
 }
 
+/// Describes a chess move, including its start and stop locations and any special move type.
+/// Used for move generation, application, and notation conversion.
 #[derive(Clone, Debug)]
 pub struct ChessMove {
+    /// The starting square of the move.
     pub start: BoardLocation,
+    /// The destination square of the move.
     pub stop: BoardLocation,
+    /// The specialness of the move (regular, promotion, castling, etc.).
     pub move_specialness: MoveSpecialness,
 }
 
 impl ChessMove {
     /// Converts this move description to long algebraic notation (e.g., "e2e4", "e7e8q").
+    ///
+    /// # Arguments
+    /// * `_game` - The current game state (not used in this function, but may be useful for context).
+    ///
+    /// # Returns
+    /// * `String` - The move in long algebraic notation.
     pub fn to_long_algebraic(&self, _game: &GameState) -> String {
+        /// Helper function to convert a board location to algebraic notation (e.g., (4,1) -> "e2").
         fn square_to_str(loc: &(i8, i8)) -> String {
             let file = (b'a' + loc.0 as u8) as char;
             let rank = (b'1' + loc.1 as u8) as char;
@@ -38,6 +57,7 @@ impl ChessMove {
             square_to_str(&self.start),
             square_to_str(&self.stop)
         );
+        // Add promotion piece if this is a promotion move.
         if let MoveSpecialness::Promote(pc) = &self.move_specialness {
             let promo = match pc {
                 PieceClass::Queen => 'q',
@@ -51,8 +71,16 @@ impl ChessMove {
         }
         s
     }
+
     /// Attempts to create a ChessMove from a long algebraic notation string (e.g., "e2e4", "e7e8q").
-    /// Returns None if parsing fails.
+    ///
+    /// # Arguments
+    /// * `game` - The current game state (used to determine move specialness).
+    /// * `x` - The move in long algebraic notation.
+    ///
+    /// # Returns
+    /// * `Ok(ChessMove)` if parsing is successful.
+    /// * `Err(Errors)` if parsing fails or the move is invalid.
     pub fn from_long_algebraic(game: &GameState, x: &str) -> Result<Self, Errors> {
         // Must be at least 4 chars (e.g., e2e4), up to 5 (e.g., e7e8q)
         let x = x.trim();
@@ -66,7 +94,7 @@ impl ChessMove {
         let file_to = bytes[2] as char;
         let rank_to = bytes[3] as char;
 
-        // Helper to convert file/rank to BoardLocation
+        /// Helper to convert file/rank chars to BoardLocation.
         fn parse_square(file: char, rank: char) -> Result<BoardLocation, Errors> {
             let file_idx = match file {
                 'a'..='h' => (file as u8 - b'a') as u8,
@@ -82,10 +110,10 @@ impl ChessMove {
         let start = parse_square(file_from, rank_from)?;
         let stop = parse_square(file_to, rank_to)?;
 
-        // Figure out specialness
+        // Determine the specialness of the move based on the piece and notation.
         let move_specialness = {
             if let Some(piece) = game.piece_register.view(&start) {
-                // Is a promotion?
+                // Is this a promotion?
                 if x.len() == 5 {
                     match bytes[4] as char {
                         'q' | 'Q' => MoveSpecialness::Promote(PieceClass::Queen),
@@ -95,7 +123,7 @@ impl ChessMove {
                         _ => return Err(Errors::InvalidAlgebraic),
                     }
                 } else if matches!(piece.class, PieceClass::King) {
-                    // Castling detect
+                    // Detect castling based on notation and castling rights.
                     if x == "e1g1" && game.can_castle_king_light {
                         MoveSpecialness::Castling(((7, 0), (5, 0)))
                     } else if x == "e1c1" && game.can_castle_queen_light {
@@ -111,7 +139,7 @@ impl ChessMove {
                 } else {
                     // Not a king move
 
-                    // Is a pawn en passant?
+                    // Is this a pawn en passant capture?
                     if matches!(piece.class, PieceClass::Pawn) && start.0 != stop.0 && game.piece_register.view(&stop).is_none(){
                         // The location next door for en passant
                         MoveSpecialness::EnPassant((stop.0, start.1))
@@ -121,12 +149,12 @@ impl ChessMove {
                     }
                 }
             } else {
-                // Move does not apply to a piece
+                // No piece at the start location.
                 return Err(Errors::TryingToMoveNonExistantPiece);
             }
         };
 
-        // We can't know stop_occupancy from notation alone, so default to Empty
+        // We can't know stop_occupancy from notation alone, so default to Empty.
         Ok(ChessMove {
             start,
             stop,
