@@ -7,7 +7,12 @@ use std::{
 use rand::{seq::IteratorRandom, thread_rng};
 
 use crate::{
-    chess_move::ChessMove, errors::Errors, game_state::GameState, move_logic::{apply_move_to_game, generate_all_moves}
+    chess_engine_thread_trait::ChessEngineThreadTrait,
+    chess_move::ChessMove,
+    engine_random::EngineRandom,
+    errors::Errors,
+    game_state::GameState,
+    move_logic::{apply_move_to_game, generate_all_moves},
 };
 
 /// Tokens for setting position values in UCI options.
@@ -388,6 +393,8 @@ pub struct UCI {
     response_tx: Sender<String>,
     /// The current position to analyze, if any.
     position_to_analyze: Option<GameState>,
+    /// The chess engine instance
+    engine: Box<dyn ChessEngineThreadTrait>,
 }
 
 impl UCI {
@@ -405,6 +412,7 @@ impl UCI {
             command_rx,
             response_tx,
             position_to_analyze: None,
+            engine: Box::new(EngineRandom::new()),
         }
     }
 
@@ -491,7 +499,7 @@ impl UCI {
                                 let _ = self.setup_position(position, moves);
                                 self.uci_state
                             }
-                            CommandTokens::Go(go) => {
+                            CommandTokens::Go(go) => { // TODO handle all tokens not just one
                                 self.go_launch_calculate(go);
                                 UCIstate::MonitorCalculation
                             }
@@ -526,11 +534,9 @@ impl UCI {
                         },
                     }
                 } else {
-                    if self.poll_calculate_check_if_done() {
-                        // Done, go back to IDLE
+                    if self.poll_calculate_check_if_done_and_send(){
                         UCIstate::Idle
-                    } else {
-                        // Keep waiting
+                    }else{
                         self.uci_state
                     }
                 }
@@ -590,7 +596,11 @@ impl UCI {
     }
 
     /// Setup a position
-    fn setup_position(&mut self, position: &PositionToken, moves: &Vec<String>) -> Result<(),Errors> {
+    fn setup_position(
+        &mut self,
+        position: &PositionToken,
+        moves: &Vec<String>,
+    ) -> Result<(), Errors> {
         let mut game: GameState;
         match position {
             PositionToken::Fen(x) => {
@@ -619,27 +629,32 @@ impl UCI {
 
     /// GO command
     fn go_launch_calculate(&mut self, _go: &GoTokens) {
-        if let Some(x) = self.position_to_analyze.clone() {
-            if let Ok(moves) = generate_all_moves(&x) {
-                let mut rng = thread_rng();
-                if let Some(random_move) = moves.iter().choose(&mut rng) {
-                    self.give_response(generate_response(ResponseTokens::BestMove(
-                        random_move.description.to_long_algebraic(&x),
-                    )));
-                }
-            }
+        if let Some(game) = &self.position_to_analyze{
+            self.engine.setup(&game, 1.0);
+            self.engine.start_searching();
         }
     }
 
     /// Polls the calculate and checks if done
-    fn poll_calculate_check_if_done(&mut self) -> bool {
+    fn poll_calculate_check_if_done_and_send(&mut self) -> bool {
         // Sleep briefly to avoid busy-waiting
         thread::sleep(Duration::from_millis(10));
-        true
+        if self.engine.is_done_searching(){
+            if let Some(game) = &self.position_to_analyze {
+                if let Some(best_move) = self.engine.get_best_move() {
+                    self.give_response(generate_response(ResponseTokens::BestMove(
+                                        best_move.to_long_algebraic(&game))));
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// Stop the calculation
-    fn force_stop_calculate(&mut self) {}
+    fn force_stop_calculate(&mut self) {
+        self.engine.stop_searching();
+    }
 
     /// Used for debugging
     fn debug_print(&mut self, x: &str) {

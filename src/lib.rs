@@ -6,4 +6,5 @@ pub mod move_logic;
 pub mod piece_register;
 pub mod piece_types;
 pub mod uci_interface;
-
+pub mod chess_engine_thread_trait;
+pub mod engine_random;
