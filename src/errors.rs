@@ -1,4 +1,4 @@
-use crate::{board_location::BoardLocation, chess_move::ChessMove};
+use crate::{board_location::BoardLocation};
 
 /// Represents all possible error types that can occur in the chess engine.
 /// Used throughout the codebase for error handling and reporting.

@@ -1,6 +1,5 @@
 use std::time::Instant;
 
-use chrono::Duration;
 use rand::{seq::IteratorRandom, thread_rng};
 
 use crate::{

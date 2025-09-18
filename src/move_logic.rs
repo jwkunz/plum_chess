@@ -1,10 +1,10 @@
 use std::collections::LinkedList;
 
 use crate::{
-    board_location::{self, move_board_location, BoardLocation},
+    board_location::{move_board_location, BoardLocation},
     chess_move::{ChessMove, MoveSpecialness},
     errors::Errors,
-    game_state::{self, GameState},
+    game_state::{GameState},
     piece_types::{PieceClass, PieceTeam},
 };
 
