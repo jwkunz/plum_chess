@@ -1,4 +1,23 @@
-use crate::{chess_move::ChessMove, game_state::GameState};
+use std::{sync::mpsc};
+
+use crate::{chess_move::ChessMove, errors::Errors, game_state::GameState};
+
+#[derive(Debug)]
+pub enum EngineControlMessageType{
+    StartCalculating,
+    AreYouStillCalculating,
+    GiveMeYourBestMoveSoFar,
+    GiveMeAStringToLog,
+    StopNow,
+}
+#[derive(Debug)]
+pub enum EngineResponseMessageType{
+    BestMoveFound(Option<ChessMove>),
+    HadAnError(Errors),
+    StillCalculatingStatus(bool),
+    StringToLog(Option<String>),
+}
+
 
 /// Trait describing the minimal engine thread interface expected by the UCI handler.
 ///
@@ -14,39 +33,76 @@ use crate::{chess_move::ChessMove, game_state::GameState};
 /// - Call `start_searching` (may be synchronous or spawn a background thread).
 /// - Periodically call `is_done_searching` or let the UCI handler poll the engine.
 /// - Retrieve the result with `get_best_move`.
+/// 
 pub trait ChessEngineThreadTrait {
 
-    /// Prepare the engine for a search.
-    ///
-    /// - `game`: the position that should be searched (the engine may clone and store it).
-    /// - `calculation_time_s`: the requested calculation time in seconds (engines may ignore or adapt).
-    ///
-    /// This call should reset any prior search state so a subsequent `start_searching`
-    /// performs a fresh calculation for the provided position.
-    fn new(game: &GameState, calculation_time_s: f32) -> Self where Self: Sized;
+    fn new(
+        starting_position: GameState, 
+        calculation_time_s: f32, 
+        command_receiver : mpsc::Receiver<EngineControlMessageType>, 
+        response_sender : mpsc::Sender<EngineResponseMessageType>) -> Self where Self: Sized;
+    
+    fn record_start_time(&mut self);
 
-    /// Begin (or schedule) the search for the best move.
-    ///
-    /// Implementations may perform searching synchronously or spawn background work.
-    /// The UCI handler expects `is_done_searching` and `get_best_move` to reflect progress/results.
-    fn start_searching(&mut self);
+    fn compute_elapsed_micros(&self) -> u128;
 
-    /// Request the engine to stop searching as soon as practical.
-    ///
-    /// Engines should make a best effort to stop promptly and make partial results
-    /// available via `get_best_move` when appropriate.
-    fn stop_searching(&mut self);
+    fn set_status_calculating(&mut self, x : bool);
 
-    /// Query whether the current search is finished.
-    ///
-    /// Returns `true` when the engine has completed its search and any best-move
-    /// result is available via `get_best_move`.
-    fn is_done_searching(&self) -> bool;
+    fn get_status_calculating(&self) -> bool;
 
-    /// Obtain the best move found by the last completed search, if any.
-    ///
-    /// Returns `Some(ChessMove)` when a best move is available, or `None` if no move
-    /// was selected (for example, in a mate/stalemate/no-legal-move situation or
-    /// if setup/start_searching were not called).
-    fn get_best_move(&self) -> Option<ChessMove>;
+    fn get_command_receiver(&self) -> &mpsc::Receiver<EngineControlMessageType>;
+
+    fn get_response_sender(&self) -> &mpsc::Sender<EngineResponseMessageType>;
+
+    fn get_best_move_so_far(&self) -> Option<ChessMove>;
+
+    fn pop_next_string_to_log(&mut self) -> Option<String>;
+
+    fn add_string_to_print_log(&mut self, x : String) -> Result<(),Errors>;
+
+    fn get_calculation_time_as_micros(&self) -> u128;
+
+    fn tick(&mut self){
+        let mut message_in = None;
+        if let Ok(x) = self.get_command_receiver().try_recv(){
+            message_in = Some(x);
+        }
+
+        match message_in{
+            Some(EngineControlMessageType::StartCalculating)=>{
+                self.set_status_calculating(true);
+                self.record_start_time();
+            }
+            Some(EngineControlMessageType::AreYouStillCalculating) =>{
+                let _ = self.get_response_sender().send(EngineResponseMessageType::StillCalculatingStatus(self.get_status_calculating()));
+            }
+            Some(EngineControlMessageType::StopNow) => {
+                self.set_status_calculating(false);
+            },
+            Some(EngineControlMessageType::GiveMeYourBestMoveSoFar) => {
+                let _ = self.get_response_sender().send(EngineResponseMessageType::BestMoveFound(self.get_best_move_so_far()));
+            }
+            Some(EngineControlMessageType::GiveMeAStringToLog) => {
+                let log_string = self.pop_next_string_to_log();
+                let _ = self.get_response_sender().send(EngineResponseMessageType::StringToLog(log_string));
+            
+            }
+            _ => () // Ignore others
+        }
+
+        // Handle timeout
+        if self.compute_elapsed_micros() >= self.get_calculation_time_as_micros(){
+            self.set_status_calculating(false);
+        }
+
+        // Do calculation activities here
+        if self.get_status_calculating() {
+            if let Err(message) = self.calculating_callback(){
+                let _ = self.get_response_sender().send(EngineResponseMessageType::HadAnError(message));
+            }
+        }
+    }
+
+    fn calculating_callback(&mut self) -> Result<(),Errors>;
+
 }

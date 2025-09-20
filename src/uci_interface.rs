@@ -1,15 +1,21 @@
 use std::{
-    sync::mpsc::{Receiver, Sender},
-    thread,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver, Sender},
+        Arc,
+    },
+    thread::{self, Thread},
     time::Duration,
 };
 
 use rand::{seq::IteratorRandom, thread_rng};
 
 use crate::{
-    chess_engine_thread_trait::ChessEngineThreadTrait,
+    chess_engine_thread_trait::{
+        ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
+    },
     chess_move::ChessMove,
-    engine_random::{EngineRandom},
+    engine_random::{self, EngineRandom},
     errors::Errors,
     game_state::GameState,
     move_logic::{apply_move_to_game, generate_all_moves},
@@ -393,8 +399,10 @@ pub struct UCI {
     response_tx: Sender<String>,
     /// The current position to analyze, if any.
     position_to_analyze: Option<GameState>,
-    /// The chess engine instance
-    engine: Option<Box<dyn ChessEngineThreadTrait>>,
+    // Engine IO
+    command_sender: Option<mpsc::Sender<EngineControlMessageType>>,
+    response_receiver: Option<mpsc::Receiver<EngineResponseMessageType>>,
+    run_engine_thread: Option<Arc<AtomicBool>>,
 }
 
 impl UCI {
@@ -412,7 +420,9 @@ impl UCI {
             command_rx,
             response_tx,
             position_to_analyze: None,
-            engine: None,
+            command_sender: None,
+            response_receiver: None,
+            run_engine_thread: None,
         }
     }
 
@@ -499,7 +509,8 @@ impl UCI {
                                 let _ = self.setup_position(position, moves);
                                 self.uci_state
                             }
-                            CommandTokens::Go(go) => { // TODO handle all tokens not just one
+                            CommandTokens::Go(go) => {
+                                // TODO handle all tokens not just one
                                 self.go_launch_calculate(go);
                                 UCIstate::MonitorCalculation
                             }
@@ -534,9 +545,9 @@ impl UCI {
                         },
                     }
                 } else {
-                    if self.poll_calculate_check_if_done_and_send(){
+                    if self.attend_to_engine_see_if_done() {
                         UCIstate::Idle
-                    }else{
+                    } else {
                         self.uci_state
                     }
                 }
@@ -629,38 +640,70 @@ impl UCI {
 
     /// GO command
     fn go_launch_calculate(&mut self, _go: &GoTokens) {
-        if let Some(game) = &self.position_to_analyze{
-            let mut engine = Box::new(EngineRandom::new(&game, 1.0));
-            engine.start_searching();
-            self.engine = Some(engine);
-            self.debug_print("Engine launched".into());
+        if let Some(game) = &self.position_to_analyze {
+            let (command_sender, command_receiver) = mpsc::channel::<EngineControlMessageType>();
+            let (response_sender, response_receiver) = mpsc::channel::<EngineResponseMessageType>();
+            self.command_sender = Some(command_sender);
+            self.response_receiver = Some(response_receiver);
+            let mut engine = EngineRandom::new(game.clone(), 1.0, command_receiver, response_sender);
+            let run_engine_thread = Arc::new(AtomicBool::new(true));
+            self.run_engine_thread = Some(run_engine_thread.clone());
+            let _ = thread::spawn(move || {
+                while run_engine_thread.load(Ordering::Relaxed) {
+                    engine.tick();
+                    Duration::from_millis(10);
+                }
+            });
+            self.command_sender.as_ref().expect("").send(EngineControlMessageType::StartCalculating);
         }
     }
 
     /// Polls the calculate and checks if done
-    fn poll_calculate_check_if_done_and_send(&mut self) -> bool {
-        // Sleep briefly to avoid busy-waiting
-        thread::sleep(Duration::from_millis(10));
-        if let Some(x) = &self.engine{
-        if x.is_done_searching(){
-            self.debug_print("Engine done".into());
-            if let Some(game) = &self.position_to_analyze {
-                if let Some(best_move) = x.get_best_move() {
-                    self.give_response(generate_response(ResponseTokens::BestMove(
-                                        best_move.to_long_algebraic(&game))));
-                    return true;
+    fn attend_to_engine_see_if_done(&mut self) -> bool {
+        let mut done_status = false;
+        let response_timeout_ms = Duration::from_millis(100);
+        if let Some(cs) = &self.command_sender {
+            if let Some(rr) = &self.response_receiver {
+                let _ = cs.send(EngineControlMessageType::AreYouStillCalculating);
+                let calc_response = rr.recv_timeout(response_timeout_ms);
+                if matches!(
+                    calc_response,
+                    Ok(EngineResponseMessageType::StillCalculatingStatus(false))
+                ) {
+                    let _ = cs.send(EngineControlMessageType::GiveMeYourBestMoveSoFar);
+                    if let Ok(EngineResponseMessageType::BestMoveFound(Some(best_move))) =
+                        rr.recv_timeout(response_timeout_ms)
+                    {
+                        self.give_response(generate_response(ResponseTokens::BestMove(
+                            best_move.to_long_algebraic(
+                                &self
+                                    .position_to_analyze
+                                    .as_ref()
+                                    .expect("Game should be set"),
+                            ),
+                        )));
+                        done_status = true;
+                    }
+                }
+                let _ = cs.send(EngineControlMessageType::GiveMeAStringToLog);
+                if let Ok(EngineResponseMessageType::StringToLog(Some(s))) =
+                    rr.recv_timeout(response_timeout_ms)
+                {
+                    self.debug_print(&s);
                 }
             }
         }
-        self.debug_print("Engine not done yet");
-    }
-        false
+        done_status
     }
 
     /// Stop the calculation
     fn force_stop_calculate(&mut self) {
-        if let Some(engine) = self.engine.as_mut() {
-            engine.stop_searching();
+        if let Some(cs) = &self.command_sender {
+            if let Some(flag) = &self.run_engine_thread {
+                let _ = cs.send(EngineControlMessageType::StartCalculating);
+                thread::sleep(Duration::from_millis(100));
+                flag.store(false, Ordering::Relaxed);
+            }
         }
     }
 
