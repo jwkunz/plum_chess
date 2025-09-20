@@ -9,7 +9,7 @@ use rand::{seq::IteratorRandom, thread_rng};
 use crate::{
     chess_engine_thread_trait::ChessEngineThreadTrait,
     chess_move::ChessMove,
-    engine_random::EngineRandom,
+    engine_random::{EngineRandom},
     errors::Errors,
     game_state::GameState,
     move_logic::{apply_move_to_game, generate_all_moves},
@@ -394,7 +394,7 @@ pub struct UCI {
     /// The current position to analyze, if any.
     position_to_analyze: Option<GameState>,
     /// The chess engine instance
-    engine: Box<dyn ChessEngineThreadTrait>,
+    engine: Option<Box<dyn ChessEngineThreadTrait>>,
 }
 
 impl UCI {
@@ -412,7 +412,7 @@ impl UCI {
             command_rx,
             response_tx,
             position_to_analyze: None,
-            engine: Box::new(EngineRandom::new()),
+            engine: None,
         }
     }
 
@@ -548,12 +548,12 @@ impl UCI {
     }
 
     /// Gets a command from the input
-    fn get_command(&mut self) -> Option<String> {
+    fn get_command(&self) -> Option<String> {
         self.command_rx.try_recv().ok()
     }
 
     /// Gives a response to the output
-    fn give_response(&mut self, response: String) {
+    fn give_response(&self, response: String) {
         let _ = self.response_tx.send(response);
     }
 
@@ -561,7 +561,7 @@ impl UCI {
     fn launch_boot_actions(&mut self) {}
 
     /// Check if boot action thread is done
-    fn are_boot_actions_done(&mut self) -> bool {
+    fn are_boot_actions_done(&self) -> bool {
         true
     }
 
@@ -630,8 +630,10 @@ impl UCI {
     /// GO command
     fn go_launch_calculate(&mut self, _go: &GoTokens) {
         if let Some(game) = &self.position_to_analyze{
-            self.engine.setup(&game, 1.0);
-            self.engine.start_searching();
+            let mut engine = Box::new(EngineRandom::new(&game, 1.0));
+            engine.start_searching();
+            self.engine = Some(engine);
+            self.debug_print("Engine launched".into());
         }
     }
 
@@ -639,25 +641,31 @@ impl UCI {
     fn poll_calculate_check_if_done_and_send(&mut self) -> bool {
         // Sleep briefly to avoid busy-waiting
         thread::sleep(Duration::from_millis(10));
-        if self.engine.is_done_searching(){
+        if let Some(x) = &self.engine{
+        if x.is_done_searching(){
+            self.debug_print("Engine done".into());
             if let Some(game) = &self.position_to_analyze {
-                if let Some(best_move) = self.engine.get_best_move() {
+                if let Some(best_move) = x.get_best_move() {
                     self.give_response(generate_response(ResponseTokens::BestMove(
                                         best_move.to_long_algebraic(&game))));
                     return true;
                 }
             }
         }
+        self.debug_print("Engine not done yet");
+    }
         false
     }
 
     /// Stop the calculation
     fn force_stop_calculate(&mut self) {
-        self.engine.stop_searching();
+        if let Some(engine) = self.engine.as_mut() {
+            engine.stop_searching();
+        }
     }
 
     /// Used for debugging
-    fn debug_print(&mut self, x: &str) {
+    fn debug_print(&self, x: &str) {
         self.give_response(generate_response(ResponseTokens::Info(InfoToken::String(
             format!("DEBUG:{x}"),
         ))));

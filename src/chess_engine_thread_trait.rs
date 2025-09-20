@@ -15,12 +15,6 @@ use crate::{chess_move::ChessMove, game_state::GameState};
 /// - Periodically call `is_done_searching` or let the UCI handler poll the engine.
 /// - Retrieve the result with `get_best_move`.
 pub trait ChessEngineThreadTrait {
-    /// Create a new, uninitialized engine instance.
-    ///
-    /// Note: the `where Self: Sized` bound allows implementors to provide a
-    /// constructor while keeping the trait object-safe for the other methods.
-    /// Concrete types should initialize internal fields but need not start any threads.
-    fn new() -> Self where Self: Sized;
 
     /// Prepare the engine for a search.
     ///
@@ -29,7 +23,7 @@ pub trait ChessEngineThreadTrait {
     ///
     /// This call should reset any prior search state so a subsequent `start_searching`
     /// performs a fresh calculation for the provided position.
-    fn setup(&mut self, game: &GameState, calculation_time_s: f32);
+    fn new(game: &GameState, calculation_time_s: f32) -> Self where Self: Sized;
 
     /// Begin (or schedule) the search for the best move.
     ///
