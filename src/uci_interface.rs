@@ -546,6 +546,7 @@ impl UCI {
                     }
                 } else {
                     if self.attend_to_engine_see_if_done() {
+                        self.force_stop_calculate();
                         UCIstate::Idle
                     } else {
                         self.uci_state
@@ -651,10 +652,9 @@ impl UCI {
             let _ = thread::spawn(move || {
                 while run_engine_thread.load(Ordering::Relaxed) {
                     engine.tick();
-                    Duration::from_millis(10);
                 }
             });
-            self.command_sender.as_ref().expect("").send(EngineControlMessageType::StartCalculating);
+            let _ = self.command_sender.as_ref().expect("").send(EngineControlMessageType::StartCalculating);
         }
     }
 
@@ -700,8 +700,7 @@ impl UCI {
     fn force_stop_calculate(&mut self) {
         if let Some(cs) = &self.command_sender {
             if let Some(flag) = &self.run_engine_thread {
-                let _ = cs.send(EngineControlMessageType::StartCalculating);
-                thread::sleep(Duration::from_millis(100));
+                let _ = cs.send(EngineControlMessageType::StopNow);
                 flag.store(false, Ordering::Relaxed);
             }
         }

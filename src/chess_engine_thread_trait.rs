@@ -62,6 +62,7 @@ pub trait ChessEngineThreadTrait {
 
     fn get_calculation_time_as_micros(&self) -> u128;
 
+    /// The engine is designed to operate in polling time intervals, monitoring message traffic like so
     fn tick(&mut self){
         let mut message_in = None;
         if let Ok(x) = self.get_command_receiver().try_recv(){
@@ -103,6 +104,7 @@ pub trait ChessEngineThreadTrait {
         }
     }
 
+    /// This function is where you put the chess computing logic, called in repeated intervals
     fn calculating_callback(&mut self) -> Result<(),Errors>;
 
 }

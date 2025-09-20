@@ -1047,7 +1047,7 @@ mod tests {
         assert_eq!(moves.len(),1);
 
         // Blocked castling
-        let mut test_game = GameState::from_fen("r3k2r/ppp1qppp/2Pp4/1B2p3/6b1/3P1N2/PbPBQPPP/R3K2R w KQkq - 0 11").unwrap();
+        let test_game = GameState::from_fen("r3k2r/ppp1qppp/2Pp4/1B2p3/6b1/3P1N2/PbPBQPPP/R3K2R w KQkq - 0 11").unwrap();
         let moves = generate_potential_moves_king(&test_game, &(4, 0))?;
         assert_eq!(moves.len(),3);
 
