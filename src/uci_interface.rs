@@ -4,24 +4,24 @@ use std::{
         mpsc::{self, Receiver, Sender},
         Arc,
     },
-    thread::{self, Thread},
+    thread::{self},
     time::Duration,
 };
 
-use rand::{seq::IteratorRandom, thread_rng};
 
 use crate::{
     chess_engine_thread_trait::{
         ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
     },
     chess_move::ChessMove,
-    engine_random::{self, EngineRandom},
+    engine_random::{EngineRandom},
     errors::Errors,
     game_state::GameState,
-    move_logic::{apply_move_to_game, generate_all_moves},
+    move_logic::{apply_move_to_game},
 };
 
 /// Tokens for setting position values in UCI options.
+#[derive(Debug)]
 enum UCISetPositionValueTokens {
     /// Set a value (name, value).
     Value((String, String)),
@@ -32,6 +32,7 @@ enum UCISetPositionValueTokens {
 }
 
 /// Types of UCI options.
+#[derive(Debug)]
 enum OptionTypeToken {
     Check,
     Spin,
@@ -41,6 +42,7 @@ enum OptionTypeToken {
 }
 
 /// Describes a property of a UCI option (e.g., default, min, max).
+#[derive(Debug)]
 enum OptionDescriptionToken {
     Default,
     Min,
@@ -49,6 +51,7 @@ enum OptionDescriptionToken {
 }
 
 /// Represents all possible UCI options supported by the engine.
+#[derive(Debug)]
 enum OptionToken {
     Hash(u32),
     NalimovePath(String),
@@ -68,17 +71,20 @@ enum OptionToken {
 }
 
 /// Represents a register command for UCI.
+#[derive(Debug)]
 enum RegisterToken {
     Value(String),
 }
 
 /// Represents a position token: either a FEN string or the standard starting position.
+#[derive(Debug)]
 enum PositionToken {
     Fen(String),
     StartPosition,
 }
 
 /// Represents all possible tokens for the UCI "go" command.
+#[derive(Debug)]
 enum GoTokens {
     SearchMoves(Vec<String>),
     Ponder,
@@ -95,6 +101,7 @@ enum GoTokens {
 }
 
 /// Represents all possible UCI commands as tokens.
+#[derive(Debug)]
 enum CommandTokens {
     Uci,
     Debug(bool),
@@ -138,7 +145,7 @@ fn parse_command(input: &str) -> Vec<CommandTokens> {
             "setoption" => {
                 // Example: setoption name Hash value 32
                 let mut name = String::new();
-                let mut value = None;
+                let mut value = String::new();
                 while let Some(next) = words.peek() {
                     match *next {
                         "name" => {
@@ -159,18 +166,36 @@ fn parse_command(input: &str) -> Vec<CommandTokens> {
                             while let Some(&w) = words.peek() {
                                 value_parts.push(words.next().unwrap());
                             }
-                            value = Some(value_parts.join(" "));
+                            value = value_parts.join(" ");
                         }
                         _ => {
                             words.next();
                         }
                     }
                 }
-                // You may want to match name to OptionToken here
-                // For now, just push a generic SetOption
-                tokens.push(CommandTokens::SetOption(OptionToken::Hash(
-                    value.and_then(|v| v.parse().ok()).unwrap_or(0),
-                )));
+                if let Some(out_token) = match name.as_str(){
+                    "UCI_LimitStrength" =>  {
+                        if let Some(x) = match value.as_str() {
+                            "true" => Some(true),
+                             "false" => Some(false),
+                             _ => None
+                        }{
+                            Some(OptionToken::UCILimitStrength(x))
+                        }else{
+                            None
+                        }
+                    },
+                    "UCI_Elo" =>  {
+                        if let Ok(x) = value.parse::<u32>(){
+                            Some(OptionToken::UCIELO(x))
+                        }else{
+                            None
+                        }
+                    },
+                    _ => None
+                }{
+                    tokens.push(CommandTokens::SetOption(out_token));
+                }
             }
             "register" => {
                 // TODO: Parse register tokens
@@ -356,7 +381,7 @@ fn generate_response(token: ResponseTokens) -> String {
                 format!("option name UCI_LimitStrength type check default {}", val)
             }
             OptionToken::UCIELO(val) => {
-                format!("option name UCI_Elo type spin default {}", val)
+                format!("option name UCI_Elo type spin default {} min 1 max 20", val)
             }
             OptionToken::UCIAnalyzeMode(val) => {
                 format!("option name UCI_AnalyseMode type check default {}", val)
@@ -399,6 +424,9 @@ pub struct UCI {
     response_tx: Sender<String>,
     /// The current position to analyze, if any.
     position_to_analyze: Option<GameState>,
+    // Options
+    uci_limit_strength: bool,
+    uci_elo: u32,
     // Engine IO
     command_sender: Option<mpsc::Sender<EngineControlMessageType>>,
     response_receiver: Option<mpsc::Receiver<EngineResponseMessageType>>,
@@ -423,6 +451,8 @@ impl UCI {
             command_sender: None,
             response_receiver: None,
             run_engine_thread: None,
+            uci_limit_strength: true,
+            uci_elo: 1,
         }
     }
 
@@ -461,7 +491,7 @@ impl UCI {
                             CommandTokens::SetOption(opt) => {
                                 self.set_options(opt);
                                 self.uci_state
-                            }
+                            },
                             CommandTokens::IsReady => UCIstate::WaitBootComplete,
                             CommandTokens::Quit => {
                                 self.quit_cleanup();
@@ -579,7 +609,15 @@ impl UCI {
 
     /// Handler for set_options
     fn set_options(&mut self, opt: &OptionToken) {
-        // TODO
+        match opt{
+            OptionToken::UCILimitStrength(x) => {
+                self.uci_limit_strength = *x;
+            },
+            OptionToken::UCIELO(x) =>{
+                self.uci_elo = *x;
+            }
+            _ => ()
+        }
     }
 
     /// Use this for cleaning up state during a quite
@@ -597,7 +635,8 @@ impl UCI {
 
     /// Gives changeable options
     fn give_options_that_can_change(&mut self) {
-        // TODO add these changeable options
+        self.give_response(generate_response(ResponseTokens::Option(OptionToken::UCILimitStrength(self.uci_limit_strength))));
+        self.give_response(generate_response(ResponseTokens::Option(OptionToken::UCIELO(self.uci_elo))));
         self.give_response(generate_response(ResponseTokens::UciOK));
     }
 
@@ -646,7 +685,11 @@ impl UCI {
             let (response_sender, response_receiver) = mpsc::channel::<EngineResponseMessageType>();
             self.command_sender = Some(command_sender);
             self.response_receiver = Some(response_receiver);
-            let mut engine = EngineRandom::new(game.clone(), 1.0, command_receiver, response_sender);
+            let mut engine = match self.uci_elo {
+                1 => EngineRandom::new(game.clone(), 1.0, command_receiver, response_sender),
+                _ => EngineRandom::new(game.clone(), 1.0, command_receiver, response_sender), // Put best engine so far here
+            };
+            
             let run_engine_thread = Arc::new(AtomicBool::new(true));
             self.run_engine_thread = Some(run_engine_thread.clone());
             let _ = thread::spawn(move || {
@@ -674,6 +717,7 @@ impl UCI {
                     if let Ok(EngineResponseMessageType::BestMoveFound(Some(best_move))) =
                         rr.recv_timeout(response_timeout_ms)
                     {
+                        self.info_print("Sending a move");
                         self.give_response(generate_response(ResponseTokens::BestMove(
                             best_move.to_long_algebraic(
                                 &self
@@ -689,7 +733,7 @@ impl UCI {
                 if let Ok(EngineResponseMessageType::StringToLog(Some(s))) =
                     rr.recv_timeout(response_timeout_ms)
                 {
-                    self.debug_print(&s);
+                    self.info_print(&s);
                 }
             }
         }
@@ -707,9 +751,9 @@ impl UCI {
     }
 
     /// Used for debugging
-    fn debug_print(&self, x: &str) {
+    fn info_print(&self, x: &str) {
         self.give_response(generate_response(ResponseTokens::Info(InfoToken::String(
-            format!("DEBUG:{x}"),
+            format!("{x}"),
         ))));
     }
 }
