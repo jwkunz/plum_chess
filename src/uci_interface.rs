@@ -8,16 +8,15 @@ use std::{
     time::Duration,
 };
 
-
 use crate::{
     chess_engine_thread_trait::{
-        ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
+        self, ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType
     },
     chess_move::ChessMove,
-    engine_random::{EngineRandom},
+    engine_random::EngineRandom,
     errors::Errors,
     game_state::GameState,
-    move_logic::{apply_move_to_game},
+    move_logic::apply_move_to_game,
 };
 
 /// Tokens for setting position values in UCI options.
@@ -173,27 +172,27 @@ fn parse_command(input: &str) -> Vec<CommandTokens> {
                         }
                     }
                 }
-                if let Some(out_token) = match name.as_str(){
-                    "UCI_LimitStrength" =>  {
+                if let Some(out_token) = match name.as_str() {
+                    "UCI_LimitStrength" => {
                         if let Some(x) = match value.as_str() {
                             "true" => Some(true),
-                             "false" => Some(false),
-                             _ => None
-                        }{
+                            "false" => Some(false),
+                            _ => None,
+                        } {
                             Some(OptionToken::UCILimitStrength(x))
-                        }else{
+                        } else {
                             None
                         }
-                    },
-                    "UCI_Elo" =>  {
-                        if let Ok(x) = value.parse::<u32>(){
+                    }
+                    "UCI_Elo" => {
+                        if let Ok(x) = value.parse::<u32>() {
                             Some(OptionToken::UCIELO(x))
-                        }else{
+                        } else {
                             None
                         }
-                    },
-                    _ => None
-                }{
+                    }
+                    _ => None,
+                } {
                     tokens.push(CommandTokens::SetOption(out_token));
                 }
             }
@@ -452,7 +451,7 @@ impl UCI {
             response_receiver: None,
             run_engine_thread: None,
             uci_limit_strength: true,
-            uci_elo: 1,
+            uci_elo: 20,
         }
     }
 
@@ -491,7 +490,7 @@ impl UCI {
                             CommandTokens::SetOption(opt) => {
                                 self.set_options(opt);
                                 self.uci_state
-                            },
+                            }
                             CommandTokens::IsReady => UCIstate::WaitBootComplete,
                             CommandTokens::Quit => {
                                 self.quit_cleanup();
@@ -609,14 +608,14 @@ impl UCI {
 
     /// Handler for set_options
     fn set_options(&mut self, opt: &OptionToken) {
-        match opt{
+        match opt {
             OptionToken::UCILimitStrength(x) => {
                 self.uci_limit_strength = *x;
-            },
-            OptionToken::UCIELO(x) =>{
+            }
+            OptionToken::UCIELO(x) => {
                 self.uci_elo = *x;
             }
-            _ => ()
+            _ => (),
         }
     }
 
@@ -635,8 +634,12 @@ impl UCI {
 
     /// Gives changeable options
     fn give_options_that_can_change(&mut self) {
-        self.give_response(generate_response(ResponseTokens::Option(OptionToken::UCILimitStrength(self.uci_limit_strength))));
-        self.give_response(generate_response(ResponseTokens::Option(OptionToken::UCIELO(self.uci_elo))));
+        self.give_response(generate_response(ResponseTokens::Option(
+            OptionToken::UCILimitStrength(self.uci_limit_strength),
+        )));
+        self.give_response(generate_response(ResponseTokens::Option(
+            OptionToken::UCIELO(self.uci_elo),
+        )));
         self.give_response(generate_response(ResponseTokens::UciOK));
     }
 
@@ -666,14 +669,12 @@ impl UCI {
         for move_description in moves {
             if let Ok(m) = ChessMove::from_long_algebraic(&game, move_description) {
                 game = apply_move_to_game(&game, &m)?;
-                //self.debug_print(&format!("Fen Trace: {}\n", game.get_fen()));
             } else {
                 self.position_to_analyze = None;
                 return Err(Errors::InvalidAlgebraic);
             }
         }
 
-        //self.debug_print(&format!("Searching game:{}", game.get_fen()));
         self.position_to_analyze = Some(game);
         Ok(())
     }
@@ -685,11 +686,14 @@ impl UCI {
             let (response_sender, response_receiver) = mpsc::channel::<EngineResponseMessageType>();
             self.command_sender = Some(command_sender);
             self.response_receiver = Some(response_receiver);
-            let mut engine = match self.uci_elo {
-                1 => EngineRandom::new(game.clone(), 1.0, command_receiver, response_sender),
-                _ => EngineRandom::new(game.clone(), 1.0, command_receiver, response_sender), // Put best engine so far here
-            };
-            
+            let calculation_time = 1.0;
+            let mut engine = 
+                if self.uci_limit_strength && self.uci_elo == 1{
+                    self.create_engine_1(game.clone(), calculation_time, command_receiver, response_sender)
+                }else{
+                    self.create_best_engine(game.clone(), calculation_time, command_receiver, response_sender)
+                };
+
             let run_engine_thread = Arc::new(AtomicBool::new(true));
             self.run_engine_thread = Some(run_engine_thread.clone());
             let _ = thread::spawn(move || {
@@ -697,7 +701,11 @@ impl UCI {
                     engine.tick();
                 }
             });
-            let _ = self.command_sender.as_ref().expect("").send(EngineControlMessageType::StartCalculating);
+            let _ = self
+                .command_sender
+                .as_ref()
+                .expect("")
+                .send(EngineControlMessageType::StartCalculating);
         }
     }
 
@@ -717,7 +725,6 @@ impl UCI {
                     if let Ok(EngineResponseMessageType::BestMoveFound(Some(best_move))) =
                         rr.recv_timeout(response_timeout_ms)
                     {
-                        self.info_print("Sending a move");
                         self.give_response(generate_response(ResponseTokens::BestMove(
                             best_move.to_long_algebraic(
                                 &self
@@ -755,5 +762,16 @@ impl UCI {
         self.give_response(generate_response(ResponseTokens::Info(InfoToken::String(
             format!("{x}"),
         ))));
+    }
+
+    /// Engine Definitions
+
+    /// This is the best engine
+    fn create_best_engine(&self, starting_position: GameState, calculation_time_s: f32, command_receiver: mpsc::Receiver<EngineControlMessageType>, response_sender: mpsc::Sender<EngineResponseMessageType>) -> Box<dyn ChessEngineThreadTrait>{
+        Box::new(EngineRandom::new(starting_position, calculation_time_s, command_receiver, response_sender))
+    }
+    /// This is the easiest engine level 1
+    fn create_engine_1(&self, starting_position: GameState, calculation_time_s: f32, command_receiver: mpsc::Receiver<EngineControlMessageType>, response_sender: mpsc::Sender<EngineResponseMessageType>) -> Box<dyn ChessEngineThreadTrait>{
+        Box::new(EngineRandom::new(starting_position, calculation_time_s, command_receiver, response_sender))
     }
 }

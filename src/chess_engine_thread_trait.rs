@@ -34,13 +34,14 @@ pub enum EngineResponseMessageType{
 /// - Periodically call `is_done_searching` or let the UCI handler poll the engine.
 /// - Retrieve the result with `get_best_move`.
 /// 
-pub trait ChessEngineThreadTrait {
+pub trait ChessEngineThreadTrait : Send {
 
-    fn new(
+    fn configure(
+        &mut self,
         starting_position: GameState, 
         calculation_time_s: f32, 
         command_receiver : mpsc::Receiver<EngineControlMessageType>, 
-        response_sender : mpsc::Sender<EngineResponseMessageType>) -> Self where Self: Sized;
+        response_sender : mpsc::Sender<EngineResponseMessageType>);
     
     fn record_start_time(&mut self);
 

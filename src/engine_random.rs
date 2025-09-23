@@ -5,11 +5,7 @@ use rand::{seq::IteratorRandom, thread_rng};
 use crate::{
     chess_engine_thread_trait::{
         ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
-    },
-    chess_move::ChessMove,
-    errors::Errors,
-    game_state::GameState,
-    move_logic::generate_all_moves,
+    }, chess_move::ChessMove, engine_random, errors::Errors, game_state::GameState, move_logic::generate_all_moves
 };
 
 /// A trivial, purely random engine implementation used for testing and as a reference engine.
@@ -45,22 +41,17 @@ pub struct EngineRandom {
 }
 
 impl ChessEngineThreadTrait for EngineRandom {
-    fn new(
+    fn configure(
+        &mut self,
         starting_position: GameState,
         calculation_time_s: f32,
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
-    ) -> Self {
-        EngineRandom {
-            starting_position,
-            calculation_time_s,
-            command_receiver,
-            response_sender,
-            start_time: Instant::now(),
-            status_calculating: false,
-            best_so_far: None,
-            string_log: VecDeque::new(),
-        }
+    ){
+        self.starting_position = starting_position;
+        self.calculation_time_s = calculation_time_s;
+        self.command_receiver = command_receiver;
+        self.response_sender = response_sender;
     }
 
     fn record_start_time(&mut self) {
@@ -114,5 +105,25 @@ impl ChessEngineThreadTrait for EngineRandom {
             }
         }
         Ok(())
+    }
+}
+
+impl EngineRandom{
+    pub fn new(
+        starting_position: GameState,
+        calculation_time_s: f32,
+        command_receiver: mpsc::Receiver<EngineControlMessageType>,
+        response_sender: mpsc::Sender<EngineResponseMessageType>,
+    ) -> Self {
+        EngineRandom {
+            starting_position,
+            calculation_time_s,
+            command_receiver,
+            response_sender,
+            start_time: Instant::now(),
+            status_calculating: false,
+            best_so_far: None,
+            string_log: VecDeque::new(),
+        }
     }
 }
