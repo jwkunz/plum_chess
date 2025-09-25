@@ -5,24 +5,17 @@ use rand::{seq::IteratorRandom, thread_rng};
 use crate::{
     chess_engine_thread_trait::{
         ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
-    }, chess_move::ChessMove, errors::Errors, game_state::GameState, move_logic::generate_all_moves
+    },
+    chess_move::ChessMove,
+    errors::Errors,
+    game_state::GameState,
+    move_logic::{apply_move_to_game, generate_all_moves},
+    piece_types::conventional_score,
 };
 
-/// A trivial, purely random engine implementation used for testing and as a reference engine.
-///
-/// EngineRandom implements the `ChessEngineThreadTrait` and selects a legal move at random
-/// from the current position when asked to search. It is intentionally simple:
-/// - It does not perform any real search or evaluation.
-/// - It clones and stores the starting position on setup and chooses a move immediately
-///   when `start_searching` is invoked (synchronously).
-/// - It supports the minimal lifecycle required by the trait: `setup`, `start_searching`,
-///   `stop_searching`, `is_done_searching`, and `get_best_move`.
-///
-/// This engine is useful for:
-/// - Unit tests that need a deterministic or cheap engine alternative (random but safe).
-/// - Exercising the UCI handler and threading logic without implementing a complex engine.
-/// - Providing a concrete implementation for APIs that expect an engine instance.
-pub struct EngineRandom {
+/// This engine simply looks at the next moves and picks the one that maximizes the conventional score on the next turn
+/// It has no strategy from the opponent
+pub struct EngineGreedy1Layer {
     /// The cloned game state provided during `setup`. None until setup is called.
     starting_position: GameState,
     /// Requested calculation time in seconds. None until setup is called.
@@ -40,14 +33,14 @@ pub struct EngineRandom {
     response_sender: mpsc::Sender<EngineResponseMessageType>,
 }
 
-impl ChessEngineThreadTrait for EngineRandom {
+impl ChessEngineThreadTrait for EngineGreedy1Layer {
     fn configure(
         &mut self,
         starting_position: GameState,
         calculation_time_s: f32,
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
-    ){
+    ) {
         self.starting_position = starting_position;
         self.calculation_time_s = calculation_time_s;
         self.command_receiver = command_receiver;
@@ -95,27 +88,51 @@ impl ChessEngineThreadTrait for EngineRandom {
         (self.calculation_time_s * 1E6).round() as u128
     }
 
-    /// Pick a random move
     fn calculating_callback(&mut self) -> Result<(), Errors> {
-        if let Ok(moves) = generate_all_moves(&self.starting_position) {
-            let mut rng = thread_rng();
-            if let Some(random_move) = moves.iter().choose(&mut rng) {
-                self.best_so_far = Some(random_move.description.clone());
-                self.set_status_calculating(false);
+        // If nothing has been calculated
+        if self.best_so_far.is_none() {
+            // Generate all possible moves
+            if let Ok(moves) = generate_all_moves(&self.starting_position) {
+                // Search for the best
+                let mut best_score: i8 = 0;
+                for chess_move in moves {
+                    // If the move can be done
+                    if let Ok(trial_game) =
+                        apply_move_to_game(&self.starting_position, &chess_move.description)
+                    {
+                        // Get the conventional material score
+                        let layer_1_score = trial_game.get_material_score();
+                        // Is this a higher score
+                        let mut improvement = false;
+                        match self.starting_position.turn{
+                            crate::piece_types::PieceTeam::Dark => {improvement = layer_1_score < best_score},
+                            crate::piece_types::PieceTeam::Light => {improvement = layer_1_score > best_score},
+                        }
+                        // Keep the best                            
+                        if improvement{
+                            self.add_string_to_print_log(format!(
+                                "Found new best candidate move: {:?} with score {:?}",
+                                chess_move.description, layer_1_score
+                            ))?;
+                            best_score = layer_1_score;
+                            self.best_so_far = Some(chess_move.description);
+                        }
+                    }
+                }
             }
         }
         Ok(())
     }
 }
 
-impl EngineRandom{
+impl EngineGreedy1Layer {
     pub fn new(
         starting_position: GameState,
         calculation_time_s: f32,
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Self {
-        EngineRandom {
+        EngineGreedy1Layer {
             starting_position,
             calculation_time_s,
             command_receiver,

@@ -18,6 +18,18 @@ pub enum PieceClass {
     King,
 }
 
+/// Conventional score for each piece
+pub fn conventional_score(x : &PieceClass) -> u8{
+    match x {
+        PieceClass::Pawn => 1,
+        PieceClass::Knight => 3,
+        PieceClass::Bishop => 3,
+        PieceClass::Rook => 5,
+        PieceClass::Queen => 9,
+        PieceClass::King => 64,
+    }
+}
+
 /// Represents the team (color) of a chess piece.
 /// Used to distinguish between dark (black) and light (white) pieces.
 #[derive(Copy, Clone, PartialEq, Debug)]

@@ -8,3 +8,4 @@ pub mod piece_types;
 pub mod uci_interface;
 pub mod chess_engine_thread_trait;
 pub mod engine_random;
+pub mod engine_greedy_1_layer;

@@ -11,12 +11,7 @@ use std::{
 use crate::{
     chess_engine_thread_trait::{
         self, ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType
-    },
-    chess_move::ChessMove,
-    engine_random::EngineRandom,
-    errors::Errors,
-    game_state::GameState,
-    move_logic::apply_move_to_game,
+    }, chess_move::ChessMove, engine_greedy_1_layer::EngineGreedy1Layer, engine_random::EngineRandom, errors::Errors, game_state::GameState, move_logic::apply_move_to_game
 };
 
 /// Tokens for setting position values in UCI options.
@@ -768,10 +763,14 @@ impl UCI {
 
     /// This is the best engine
     fn create_best_engine(&self, starting_position: GameState, calculation_time_s: f32, command_receiver: mpsc::Receiver<EngineControlMessageType>, response_sender: mpsc::Sender<EngineResponseMessageType>) -> Box<dyn ChessEngineThreadTrait>{
-        Box::new(EngineRandom::new(starting_position, calculation_time_s, command_receiver, response_sender))
+        self.create_engine_2(starting_position, calculation_time_s, command_receiver, response_sender)
     }
     /// This is the easiest engine level 1
     fn create_engine_1(&self, starting_position: GameState, calculation_time_s: f32, command_receiver: mpsc::Receiver<EngineControlMessageType>, response_sender: mpsc::Sender<EngineResponseMessageType>) -> Box<dyn ChessEngineThreadTrait>{
         Box::new(EngineRandom::new(starting_position, calculation_time_s, command_receiver, response_sender))
+    }
+    /// This is the engine level 2
+    fn create_engine_2(&self, starting_position: GameState, calculation_time_s: f32, command_receiver: mpsc::Receiver<EngineControlMessageType>, response_sender: mpsc::Sender<EngineResponseMessageType>) -> Box<dyn ChessEngineThreadTrait>{
+        Box::new(EngineGreedy1Layer::new(starting_position, calculation_time_s, command_receiver, response_sender))
     }
 }

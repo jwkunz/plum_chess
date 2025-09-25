@@ -430,14 +430,7 @@ impl GameState {
     pub fn get_material_score(&self) -> i8 {
         let mut score = 0;
         for (_, piece_record) in self.piece_register.iter() {
-            let piece_value = match piece_record.class {
-                PieceClass::Pawn => 1,
-                PieceClass::Knight => 3,
-                PieceClass::Bishop => 3,
-                PieceClass::Rook => 5,
-                PieceClass::Queen => 9,
-                PieceClass::King => 0, // Kings are ignored
-            };
+            let piece_value = conventional_score(&piece_record.class) as i8;
             score += match piece_record.team {
                 PieceTeam::Light => piece_value,
                 PieceTeam::Dark => -piece_value,
