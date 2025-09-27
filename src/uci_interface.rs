@@ -13,7 +13,7 @@ use crate::{
         self, ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
     },
     chess_move::ChessMove,
-    engine_minimax_1deep_V0::EngineMinimax1DeepV0,
+    engine_minimax_1deep_v0::EngineMinimax1DeepV0,
     engine_greedy_1_move::EngineGreedy1Move,
     engine_random::EngineRandom,
     errors::Errors,
@@ -792,7 +792,7 @@ impl UCI {
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Box<dyn ChessEngineThreadTrait> {
-        self.create_engine_3(
+        self.create_engine_4(
             starting_position,
             calculation_time_s,
             command_receiver,
@@ -831,6 +831,21 @@ impl UCI {
     }
     /// This is the engine level 3
     fn create_engine_3(
+        &self,
+        starting_position: GameState,
+        calculation_time_s: f32,
+        command_receiver: mpsc::Receiver<EngineControlMessageType>,
+        response_sender: mpsc::Sender<EngineResponseMessageType>,
+    ) -> Box<dyn ChessEngineThreadTrait> {
+        Box::new(EngineMinimax1DeepV0::new(
+            starting_position,
+            calculation_time_s,
+            command_receiver,
+            response_sender,
+        ))
+    }
+    /// This is the engine level 4
+    fn create_engine_4(
         &self,
         starting_position: GameState,
         calculation_time_s: f32,

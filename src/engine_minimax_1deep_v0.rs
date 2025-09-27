@@ -101,7 +101,7 @@ impl ChessEngineThreadTrait for EngineMinimax1DeepV0 {
 
 struct BestMoveSearchResult {
     chess_move: ChessMove,
-    score: f32
+    score: f32,
 }
 impl EngineMinimax1DeepV0 {
     pub fn new(
@@ -125,33 +125,42 @@ impl EngineMinimax1DeepV0 {
     /// Helper function to find the best move
     fn find_best_move(&mut self, starting_position: &GameState) -> Option<BestMoveSearchResult> {
         let mut result = None;
-        let mut best_score_a: i8 = 0;
+        let mut best_score_a: f32 = starting_position.get_material_score() as f32;
         // Generate all possible moves
         if let Ok(moves_a) = generate_all_moves(starting_position) {
             for chess_move_a in moves_a {
                 // If the move can be done
                 if let Ok(game_a) = apply_move_to_game(starting_position, &chess_move_a.description)
                 {
-                    // Get the conventional material score
-                    let layer_score_a = game_a.get_material_score();
-                    // Is this a higher score
-                    let mut improvement = false;
-                    // Score direction
-                    match starting_position.turn {
-                        crate::piece_types::PieceTeam::Dark => {
-                            improvement = layer_score_a <= best_score_a
-                        }
-                        crate::piece_types::PieceTeam::Light => {
-                            improvement = layer_score_a >= best_score_a
-                        }
-                    }
-                    // Keep the best
-                    if improvement {
-                        best_score_a = layer_score_a;
+                    // Always pick at least one move if there is one available
+                    if result.is_none() {
+                        best_score_a = game_a.get_material_score() as f32;
                         result = Some(BestMoveSearchResult {
                             chess_move: chess_move_a.description.clone(),
-                            score: layer_score_a as f32
+                            score: best_score_a as f32,
                         });
+                    } else {
+                        // Get the conventional material score
+                        let layer_score_a = game_a.get_material_score() as f32;
+                        // Is this a higher score
+                        let mut improvement = false;
+                        // Score direction
+                        match starting_position.turn {
+                            crate::piece_types::PieceTeam::Dark => {
+                                improvement = layer_score_a <= best_score_a
+                            }
+                            crate::piece_types::PieceTeam::Light => {
+                                improvement = layer_score_a >= best_score_a
+                            }
+                        }
+                        // Keep the best
+                        if improvement {
+                            best_score_a = layer_score_a;
+                            result = Some(BestMoveSearchResult {
+                                chess_move: chess_move_a.description.clone(),
+                                score: layer_score_a as f32,
+                            });
+                        }
                     }
                 }
             }
@@ -173,7 +182,7 @@ impl EngineMinimax1DeepV0 {
                         best_score_b = game_a.get_material_score() as f32;
                         result = Some(BestMoveSearchResult {
                             chess_move: chess_move_a.description.clone(),
-                            score: best_score_b as f32
+                            score: best_score_b as f32,
                         });
                     } else {
                         if let Some(best_move_b_result) = self.find_best_move(&game_a) {
@@ -193,7 +202,7 @@ impl EngineMinimax1DeepV0 {
                                 best_score_b = best_move_b_result.score;
                                 result = Some(BestMoveSearchResult {
                                     chess_move: chess_move_a.description.clone(),
-                                    score: best_score_b as f32
+                                    score: best_score_b as f32,
                                 });
                             }
                         }
