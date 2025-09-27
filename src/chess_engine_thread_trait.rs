@@ -59,7 +59,7 @@ pub trait ChessEngineThreadTrait : Send {
 
     fn pop_next_string_to_log(&mut self) -> Option<String>;
 
-    fn add_string_to_print_log(&mut self, x : String) -> Result<(),Errors>;
+    fn add_string_to_print_log(&mut self, x : &str);
 
     fn get_calculation_time_as_micros(&self) -> u128;
 

@@ -1,7 +1,5 @@
 use std::{collections::VecDeque, sync::mpsc, time::Instant};
 
-use rand::{seq::IteratorRandom, thread_rng};
-
 use crate::{
     chess_engine_thread_trait::{
         ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
@@ -9,13 +7,12 @@ use crate::{
     chess_move::ChessMove,
     errors::Errors,
     game_state::GameState,
-    move_logic::{apply_move_to_game, generate_all_moves},
-    piece_types::conventional_score,
+    move_logic::{apply_move_to_game, generate_all_moves}
 };
 
 /// This engine simply looks at the next moves and picks the one that maximizes the conventional score on the next turn
 /// It has no strategy from the opponent
-pub struct EngineGreedy1Layer {
+pub struct EngineGreedy1Move {
     /// The cloned game state provided during `setup`. None until setup is called.
     starting_position: GameState,
     /// Requested calculation time in seconds. None until setup is called.
@@ -33,7 +30,7 @@ pub struct EngineGreedy1Layer {
     response_sender: mpsc::Sender<EngineResponseMessageType>,
 }
 
-impl ChessEngineThreadTrait for EngineGreedy1Layer {
+impl ChessEngineThreadTrait for EngineGreedy1Move {
     fn configure(
         &mut self,
         starting_position: GameState,
@@ -75,9 +72,8 @@ impl ChessEngineThreadTrait for EngineGreedy1Layer {
         self.best_so_far.clone()
     }
 
-    fn add_string_to_print_log(&mut self, x: String) -> Result<(), Errors> {
-        self.string_log.push_back(x);
-        Ok(())
+    fn add_string_to_print_log(&mut self, x: &str){
+        self.string_log.push_back(x.to_string());
     }
 
     fn pop_next_string_to_log(&mut self) -> Option<String> {
@@ -105,15 +101,15 @@ impl ChessEngineThreadTrait for EngineGreedy1Layer {
                         // Is this a higher score
                         let mut improvement = false;
                         match self.starting_position.turn{
-                            crate::piece_types::PieceTeam::Dark => {improvement = layer_1_score < best_score},
-                            crate::piece_types::PieceTeam::Light => {improvement = layer_1_score > best_score},
+                            crate::piece_types::PieceTeam::Dark => {improvement = layer_1_score <= best_score},
+                            crate::piece_types::PieceTeam::Light => {improvement = layer_1_score >= best_score},
                         }
                         // Keep the best                            
                         if improvement{
-                            self.add_string_to_print_log(format!(
+                            self.add_string_to_print_log(&format!(
                                 "Found new best candidate move: {:?} with score {:?}",
                                 chess_move.description, layer_1_score
-                            ))?;
+                            ));
                             best_score = layer_1_score;
                             self.best_so_far = Some(chess_move.description);
                         }
@@ -125,14 +121,14 @@ impl ChessEngineThreadTrait for EngineGreedy1Layer {
     }
 }
 
-impl EngineGreedy1Layer {
+impl EngineGreedy1Move {
     pub fn new(
         starting_position: GameState,
         calculation_time_s: f32,
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Self {
-        EngineGreedy1Layer {
+        EngineGreedy1Move {
             starting_position,
             calculation_time_s,
             command_receiver,

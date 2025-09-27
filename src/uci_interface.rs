@@ -10,8 +10,15 @@ use std::{
 
 use crate::{
     chess_engine_thread_trait::{
-        self, ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType
-    }, chess_move::ChessMove, engine_greedy_1_layer::EngineGreedy1Layer, engine_random::EngineRandom, errors::Errors, game_state::GameState, move_logic::apply_move_to_game
+        self, ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
+    },
+    chess_move::ChessMove,
+    engine_minimax_1deep_V0::EngineMinimax1DeepV0,
+    engine_greedy_1_move::EngineGreedy1Move,
+    engine_random::EngineRandom,
+    errors::Errors,
+    game_state::GameState,
+    move_logic::apply_move_to_game,
 };
 
 /// Tokens for setting position values in UCI options.
@@ -682,12 +689,28 @@ impl UCI {
             self.command_sender = Some(command_sender);
             self.response_receiver = Some(response_receiver);
             let calculation_time = 1.0;
-            let mut engine = 
-                if self.uci_limit_strength && self.uci_elo == 1{
-                    self.create_engine_1(game.clone(), calculation_time, command_receiver, response_sender)
-                }else{
-                    self.create_best_engine(game.clone(), calculation_time, command_receiver, response_sender)
-                };
+            let mut engine = if self.uci_limit_strength && self.uci_elo == 1 {
+                self.create_engine_1(
+                    game.clone(),
+                    calculation_time,
+                    command_receiver,
+                    response_sender,
+                )
+            } else if self.uci_limit_strength && self.uci_elo == 2 {
+                self.create_engine_2(
+                    game.clone(),
+                    calculation_time,
+                    command_receiver,
+                    response_sender,
+                )
+            } else {
+                self.create_best_engine(
+                    game.clone(),
+                    calculation_time,
+                    command_receiver,
+                    response_sender,
+                )
+            };
 
             let run_engine_thread = Arc::new(AtomicBool::new(true));
             self.run_engine_thread = Some(run_engine_thread.clone());
@@ -762,15 +785,63 @@ impl UCI {
     /// Engine Definitions
 
     /// This is the best engine
-    fn create_best_engine(&self, starting_position: GameState, calculation_time_s: f32, command_receiver: mpsc::Receiver<EngineControlMessageType>, response_sender: mpsc::Sender<EngineResponseMessageType>) -> Box<dyn ChessEngineThreadTrait>{
-        self.create_engine_2(starting_position, calculation_time_s, command_receiver, response_sender)
+    fn create_best_engine(
+        &self,
+        starting_position: GameState,
+        calculation_time_s: f32,
+        command_receiver: mpsc::Receiver<EngineControlMessageType>,
+        response_sender: mpsc::Sender<EngineResponseMessageType>,
+    ) -> Box<dyn ChessEngineThreadTrait> {
+        self.create_engine_3(
+            starting_position,
+            calculation_time_s,
+            command_receiver,
+            response_sender,
+        )
     }
     /// This is the easiest engine level 1
-    fn create_engine_1(&self, starting_position: GameState, calculation_time_s: f32, command_receiver: mpsc::Receiver<EngineControlMessageType>, response_sender: mpsc::Sender<EngineResponseMessageType>) -> Box<dyn ChessEngineThreadTrait>{
-        Box::new(EngineRandom::new(starting_position, calculation_time_s, command_receiver, response_sender))
+    fn create_engine_1(
+        &self,
+        starting_position: GameState,
+        calculation_time_s: f32,
+        command_receiver: mpsc::Receiver<EngineControlMessageType>,
+        response_sender: mpsc::Sender<EngineResponseMessageType>,
+    ) -> Box<dyn ChessEngineThreadTrait> {
+        Box::new(EngineRandom::new(
+            starting_position,
+            calculation_time_s,
+            command_receiver,
+            response_sender,
+        ))
     }
     /// This is the engine level 2
-    fn create_engine_2(&self, starting_position: GameState, calculation_time_s: f32, command_receiver: mpsc::Receiver<EngineControlMessageType>, response_sender: mpsc::Sender<EngineResponseMessageType>) -> Box<dyn ChessEngineThreadTrait>{
-        Box::new(EngineGreedy1Layer::new(starting_position, calculation_time_s, command_receiver, response_sender))
+    fn create_engine_2(
+        &self,
+        starting_position: GameState,
+        calculation_time_s: f32,
+        command_receiver: mpsc::Receiver<EngineControlMessageType>,
+        response_sender: mpsc::Sender<EngineResponseMessageType>,
+    ) -> Box<dyn ChessEngineThreadTrait> {
+        Box::new(EngineGreedy1Move::new(
+            starting_position,
+            calculation_time_s,
+            command_receiver,
+            response_sender,
+        ))
+    }
+    /// This is the engine level 3
+    fn create_engine_3(
+        &self,
+        starting_position: GameState,
+        calculation_time_s: f32,
+        command_receiver: mpsc::Receiver<EngineControlMessageType>,
+        response_sender: mpsc::Sender<EngineResponseMessageType>,
+    ) -> Box<dyn ChessEngineThreadTrait> {
+        Box::new(EngineMinimax1DeepV0::new(
+            starting_position,
+            calculation_time_s,
+            command_receiver,
+            response_sender,
+        ))
     }
 }

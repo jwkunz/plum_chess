@@ -82,9 +82,8 @@ impl ChessEngineThreadTrait for EngineRandom {
         self.best_so_far.clone()
     }
 
-    fn add_string_to_print_log(&mut self, x: String) -> Result<(), Errors> {
-        self.string_log.push_back(x);
-        Ok(())
+    fn add_string_to_print_log(&mut self, x: &str){
+        self.string_log.push_back(x.to_string());
     }
 
     fn pop_next_string_to_log(&mut self) -> Option<String> {
