@@ -1109,6 +1109,14 @@ mod tests {
         let moves = generate_potential_moves_pawn(&test_game, &(3, 3))?;
         assert_eq!(moves.len(),1);
 
+        // Complex en passant
+        test_game = GameState::from_fen("r3kr2/p4p1p/p2q3p/P1pP4/5nn1/2p2bK1/8/7q w q c6 0 35").unwrap();
+        let moves = generate_all_moves(&test_game)?;
+        assert_eq!(moves.len(),1);
+        for m in moves{
+            dbg!(m);
+        }
+        
         Ok(())
     }
 
