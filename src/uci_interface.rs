@@ -11,7 +11,7 @@ use std::{
 use crate::{
     chess_engine_thread_trait::{
         self, ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
-    }, chess_move::ChessMove, engine_greedy_1_move::EngineGreedy1Move, engine_minimax_1deep_v1::EngineMinimax1DeepV1, engine_random::EngineRandom, errors::Errors, game_state::GameState, move_logic::apply_move_to_game
+    }, chess_move::ChessMove, engine_greedy_1_move::EngineGreedy1Move, engine_minimax_1deep_v0::EngineMinimax1DeepV0, engine_minimax_1deep_v1::EngineMinimax1DeepV1, engine_random::EngineRandom, errors::Errors, game_state::GameState, move_logic::apply_move_to_game
 };
 
 /// Tokens for setting position values in UCI options.
@@ -703,7 +703,14 @@ impl UCI {
                     command_receiver,
                     response_sender,
                 )
-            }  else {
+            }else if self.uci_limit_strength && self.uci_elo == 4 {
+                self.create_engine_4(
+                    game.clone(),
+                    calculation_time,
+                    command_receiver,
+                    response_sender,
+                )
+            }else {
                 self.create_best_engine(
                     game.clone(),
                     calculation_time,
@@ -792,7 +799,7 @@ impl UCI {
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Box<dyn ChessEngineThreadTrait> {
-        self.create_engine_3(
+        self.create_engine_4(
             starting_position,
             calculation_time_s,
             command_receiver,
@@ -837,11 +844,26 @@ impl UCI {
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Box<dyn ChessEngineThreadTrait> {
-        Box::new(EngineMinimax1DeepV1::new(
+        Box::new(EngineMinimax1DeepV0::new(
             starting_position,
             calculation_time_s,
             command_receiver,
             response_sender,
         ))
     }
+    /// This is the engine level 4
+    fn create_engine_4(
+        &self,
+        starting_position: GameState,
+        calculation_time_s: f32,
+        command_receiver: mpsc::Receiver<EngineControlMessageType>,
+        response_sender: mpsc::Sender<EngineResponseMessageType>,
+    ) -> Box<dyn ChessEngineThreadTrait> {
+        Box::new(EngineMinimax1DeepV1::new(
+            starting_position,
+            calculation_time_s,
+            command_receiver,
+            response_sender,
+        ))
+    }    
 }
