@@ -1,5 +1,7 @@
 use std::{collections::{BTreeMap, VecDeque}, sync::mpsc, time::Instant};
 
+use rand::Rng;
+
 use crate::{
     chess_engine_thread_trait::{
         ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
@@ -124,7 +126,9 @@ impl EngineMinimax1DeepV1 {
     }
 
     fn score_game(&mut self, starting_position: &GameState) -> f32{
-        starting_position.get_material_score() as f32
+        let mut rng = rand::thread_rng();
+        let random_number: f32 = rng.gen_range(-0.1..=0.1);
+        starting_position.get_material_score() as f32 + random_number
     }
 
     fn find_best_move(&mut self, starting_position: &GameState, terminal_search_flag: bool) -> Option<BestMoveSearchResult> {
@@ -145,9 +149,11 @@ impl EngineMinimax1DeepV1 {
                         // Score this move
                         all_move_scores.push(BestMoveSearchResult { chess_move: chess_move.description, score: self.score_game(&game_after_move)}); 
                     }else{
-                    // Find the best move the opponent can make
+                        // Find the best move the opponent can make
                         if let Some(best_opponent_move) = self.find_best_move(&game_after_move, true){
                             all_move_scores.push(BestMoveSearchResult { chess_move: chess_move.description, score: best_opponent_move.score }); 
+                        }else{
+                            all_move_scores.push(BestMoveSearchResult { chess_move: chess_move.description, score: self.score_game(&game_after_move)}); 
                         }
                     }
                 }
