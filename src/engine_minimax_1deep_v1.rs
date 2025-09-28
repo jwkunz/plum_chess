@@ -88,7 +88,7 @@ impl ChessEngineThreadTrait for EngineMinimax1DeepV1 {
         // If nothing has been calculated
         if self.best_so_far.is_none() {
             self.add_string_to_print_log("Starting Engine Search".into());
-            if let Some(search_result) = self.minimax_1_layer(&self.starting_position.clone()) {
+            if let Some(search_result) = self.find_best_move(&self.starting_position.clone(),false) {
                 self.best_so_far = Some(search_result.chess_move);
                 self.add_string_to_print_log("Finishing Engine Search".into());
             } else {
@@ -123,45 +123,11 @@ impl EngineMinimax1DeepV1 {
         }
     }
 
-    /// Helper function to find the best move
-    fn find_best_move(&mut self, starting_position: &GameState) -> Option<BestMoveSearchResult> {
-        let mut result = None;
-        // Generate all possible moves
-        if let Ok(all_moves) = generate_all_moves(starting_position) {
-            // Skip if no available moves
-            if all_moves.len() == 0{
-                return result;
-            }
-            // Make room to store scores
-            let mut all_move_scores = Vec::<BestMoveSearchResult>::with_capacity(all_moves.len());
-            // Look at all moves
-            for chess_move_a in all_moves {
-                // If the move can be done
-                if let Ok(game_a) = apply_move_to_game(starting_position, &chess_move_a.description)
-                {
-                    // Score this move
-                    all_move_scores.push(BestMoveSearchResult { chess_move: chess_move_a.description, score: game_a.get_material_score() as f32 }); 
-                }
-            }
-            // Change direction based on color to enforce signed-ness
-            let direction : f32 = match starting_position.turn {
-                crate::piece_types::PieceTeam::Dark=>{-1.0},
-                crate::piece_types::PieceTeam::Light=>{1.0}
-            };
-            // Default to take the first move
-            result = Some(all_move_scores.first().unwrap().clone());
-            // Unless can find something better
-            for m in all_move_scores.iter().skip(1){
-                // Do this comparison with the same signed-ness
-                if m.score*direction >= result.as_ref().unwrap().score*direction{
-                    result = Some(m.clone())
-                }
-            }
-        }
-        result
+    fn score_game(&mut self, starting_position: &GameState) -> f32{
+        starting_position.get_material_score() as f32
     }
 
-    fn minimax_1_layer(&mut self, starting_position: &GameState) -> Option<BestMoveSearchResult> {
+    fn find_best_move(&mut self, starting_position: &GameState, terminal_search_flag: bool) -> Option<BestMoveSearchResult> {
         let mut result = None;
         // Generate all possible moves
         if let Ok(all_moves) = generate_all_moves(starting_position) {
@@ -175,9 +141,14 @@ impl EngineMinimax1DeepV1 {
                 // If the move can be done
                 if let Ok(game_after_move) = apply_move_to_game(starting_position, &chess_move.description)
                 {
+                    if terminal_search_flag{
+                        // Score this move
+                        all_move_scores.push(BestMoveSearchResult { chess_move: chess_move.description, score: self.score_game(&game_after_move)}); 
+                    }else{
                     // Find the best move the opponent can make
-                    if let Some(best_opponent_move) = self.find_best_move(&game_after_move){
-                        all_move_scores.push(BestMoveSearchResult { chess_move: chess_move.description, score: best_opponent_move.score }); 
+                        if let Some(best_opponent_move) = self.find_best_move(&game_after_move, true){
+                            all_move_scores.push(BestMoveSearchResult { chess_move: chess_move.description, score: best_opponent_move.score }); 
+                        }
                     }
                 }
             }
