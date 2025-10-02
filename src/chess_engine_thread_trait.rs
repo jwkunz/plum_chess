@@ -1,4 +1,4 @@
-use std::{sync::mpsc};
+use std::{sync::mpsc, thread::sleep, time::Duration};
 
 use crate::{chess_move::ChessMove, errors::Errors, game_state::GameState};
 
@@ -102,6 +102,8 @@ pub trait ChessEngineThreadTrait : Send {
             if let Err(message) = self.calculating_callback(){
                 let _ = self.get_response_sender().send(EngineResponseMessageType::HadAnError(message));
             }
+        }else{
+            sleep(Duration::from_millis(10));
         }
     }
 

@@ -11,3 +11,4 @@ pub mod engine_random;
 pub mod engine_greedy_1_move;
 pub mod engine_minimax_1deep_v0;
 pub mod engine_minimax_1deep_v1;
+pub mod perft;

@@ -865,5 +865,5 @@ impl UCI {
             command_receiver,
             response_sender,
         ))
-    }    
+    }       
 }

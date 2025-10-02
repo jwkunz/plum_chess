@@ -14,6 +14,7 @@ use crate::{
 
 /// This engine simply looks at the next moves and picks the one that maximizes the conventional score on the next turn
 /// It has no strategy from the opponent
+/// The v1 uses some randomness for a more organic game
 pub struct EngineMinimax1DeepV1 {
     /// The cloned game state provided during `setup`. None until setup is called.
     starting_position: GameState,
