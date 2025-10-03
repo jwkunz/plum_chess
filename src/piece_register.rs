@@ -1,134 +1,139 @@
-use crate::{board_location::BoardLocation, errors::Errors, piece_types::PieceRecord};
+use std::collections::LinkedList;
 
-#[derive(Default, Clone, Debug)]
+use crate::{board_location::BoardLocation, chess_errors::ChessErrors, piece_record::PieceRecord};
+
+#[derive(Clone, Debug)]
 pub struct PieceRegister {
-    buffer: [[Option<PieceRecord>; 8]; 8],
+    pub light_king : PieceRecord,
+    pub dark_king : PieceRecord,
+    pub light_pieces : LinkedList<PieceRecord>,
+    pub dark_pieces : LinkedList<PieceRecord>,
 }
 
 impl PieceRegister {
-    /// Returns a mutable reference to the piece record at the specified board location.
-    ///
-    /// # Arguments
-    ///
-    /// * `x` - The board location.
-    ///
-    /// # Returns
-    ///
-    /// * `&mut Option<PieceRecord>` - A mutable reference to the piece record at the specified location.
-    pub fn at(&mut self, x: &BoardLocation) -> &mut Option<PieceRecord> {
-        &mut self.buffer[x.0 as usize][x.1 as usize]
+    pub fn new() -> Self{
+        PieceRegister { 
+            light_king: PieceRecord { class: crate::piece_class::PieceClass::King, location: BoardLocation::from_file_rank(0, 5), team: crate::piece_team::PieceTeam::Light }, 
+            dark_king: PieceRecord { class: crate::piece_class::PieceClass::King, location: BoardLocation::from_file_rank(0, 5), team: crate::piece_team::PieceTeam::Dark}, 
+            light_pieces: LinkedList::new(), 
+            dark_pieces: LinkedList::new()}
     }
-
-    /// Returns a reference to the piece record at the specified board location.
-    ///
-    /// # Arguments
-    ///
-    /// * `x` - The board location.
-    ///
-    /// # Returns
-    ///
-    /// * `&Option<PieceRecord>` - A reference to the piece record at the specified location.
-    pub fn view(&self, x: &BoardLocation) -> &Option<PieceRecord> {
-        &self.buffer[x.0 as usize][x.1 as usize]
-    }
-
-    /// Adds a piece record to the specified board location.
-    ///
-    /// # Arguments
-    ///
-    /// * `x` - The piece record to add.
-    /// * `y` - The board location to add the piece record to.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<(), Errors>` - Returns `Ok(())` if the piece record was added successfully, otherwise returns an error.
-    pub fn add_piece_record(&mut self, x: PieceRecord, y: &BoardLocation) -> Result<(), Errors> {
-        let _z = self.at(y);
-        if _z.is_some() {
-            return Err(Errors::BoardLocationOccupied);
+    pub fn generate_mask_all_light(&self)->u64{
+        let mut result = self.light_king.location.binary_location;
+        for i in &self.light_pieces{
+            result |= i.location.binary_location;
         }
-        *self.at(y) = Some(x);
-        Ok(())
+        result
     }
-
-    /// Adds a piece record to the specified board location with overwrite if piece already present 
-    ///
-    /// # Arguments
-    ///
-    /// * `x` - The piece record to add.
-    /// * `y` - The board location to add the piece record to.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<bool, Errors>` - Returns `Ok(occupied)` if the piece record was added successfully, otherwise returns an error.
-    /// 'occupied' is a true if there was a piece at y otherwise it is false
-    pub fn add_piece_record_overwrite(&mut self, x: PieceRecord, y: &BoardLocation) -> Result<bool, Errors> {
-        let _z = self.at(y);
-        let mut result = false;
-        if _z.is_some() {
-            result = true;
+    pub fn generate_mask_all_dark(&self)->u64{
+        let mut result = self.dark_king.location.binary_location;
+        for i in &self.dark_pieces{
+            result |= i.location.binary_location;
         }
-        *self.at(y) = Some(x);
-        Ok(result)
+        result
+    }  
+    pub fn generate_mask_all_pieces(&self)->u64{
+        self.generate_mask_all_dark() | self.generate_mask_all_light()
+    }  
+    pub fn generate_mask_light_king(&self)->u64{
+        self.light_king.location.binary_location
     }
-
-
-    /// Removes a piece record from the specified board location.
-    ///
-    /// # Arguments
-    ///
-    /// * `y` - The board location to remove the piece record from.
-    ///
-    /// # Returns
-    ///
-    /// * `Option<PieceRecord>` - Returns the removed piece record if there was one, otherwise returns `None`.
-    pub fn remove_piece_record(&mut self, y: &BoardLocation) -> Option<PieceRecord> {
-        let z = *self.view(y);
-        *self.at(y) = None;
-        z
-    }
-
-    /// Returns an iterator over the piece records in the buffer.
-    ///
-    /// # Returns
-    ///
-    /// * `PieceRegisterIter` - An iterator over the piece records in the buffer.
-    pub fn iter(&self) -> PieceRegisterIter {
-        PieceRegisterIter {
-            register: self,
-            x: 0,
-            y: 0,
+    pub fn generate_mask_dark_king(&self)->u64{
+        self.dark_king.location.binary_location
+    }    
+    pub fn view_piece_at_location(&self, x : BoardLocation) -> Result<&PieceRecord, ChessErrors>{
+        if self.light_king.location.binary_location == x.binary_location{
+            return Ok(&self.light_king)
         }
+        if self.dark_king.location.binary_location == x.binary_location{
+            return Ok(&self.dark_king)
+        }
+        for i in &self.light_pieces{
+            if i.location.binary_location == x.binary_location{
+                return Ok(i)
+            }
+        }
+        for i in &self.dark_pieces{
+            if i.location.binary_location == x.binary_location{
+                return Ok(i)
+            }
+        }        
+        Err(ChessErrors::TryToViewOrEditEmptySquare(x))
     }
-}
-
-/// An iterator over the piece records in the buffer.
-pub struct PieceRegisterIter<'a> {
-    register: &'a PieceRegister,
-    x: usize,
-    y: usize,
-}
-
-impl<'a> Iterator for PieceRegisterIter<'a> {
-    type Item = (BoardLocation, &'a PieceRecord);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        while self.y < 8 {
-            if let Some(piece) = &self.register.buffer[self.x][self.y] {
-                let location = (self.x as i8, self.y as i8);
-                self.x += 1;
-                if self.x == 8 {
-                    self.x = 0;
-                    self.y += 1;
+    pub fn edit_piece_at_location(&mut self, x : BoardLocation) -> Result<&mut PieceRecord, ChessErrors>{
+        if self.light_king.location.binary_location == x.binary_location{
+            return Ok(&mut self.light_king)
+        }
+        if self.dark_king.location.binary_location == x.binary_location{
+            return Ok(&mut self.dark_king)
+        }
+        for i in &mut self.light_pieces{
+            if i.location.binary_location == x.binary_location{
+                return Ok(i)
+            }
+        }
+        for i in &mut self.dark_pieces{
+            if i.location.binary_location == x.binary_location{
+                return Ok(i)
+            }
+        }        
+        Err(ChessErrors::TryToViewOrEditEmptySquare(x))
+    }    
+    pub fn remove_piece_at_location(&mut self, x : BoardLocation) -> Result<(),ChessErrors>{
+        if self.light_king.location.binary_location == x.binary_location{
+            return Err(ChessErrors::CannotRemoveKings(x))
+        }
+        if self.dark_king.location.binary_location == x.binary_location{
+            return Err(ChessErrors::CannotRemoveKings(x))
+        }
+        let old_size = self.light_pieces.len();
+        self.light_pieces = self.light_pieces.extract_if(|y| y.location.binary_location == x.binary_location).collect();
+        if self.light_pieces.len() < old_size{
+            return Ok(());
+        }
+        let old_size = self.dark_pieces.len();
+        self.dark_pieces = self.dark_pieces.extract_if(|y| y.location.binary_location == x.binary_location).collect();
+        if self.dark_pieces.len() < old_size{
+            return Ok(());
+        }
+        Err(ChessErrors::CannotRemoveFromEmptyLocation(x))
+    }    
+    pub fn add_piece_record_no_check(&mut self, x : PieceRecord){
+        match x.team {
+            crate::piece_team::PieceTeam::Light => {
+                if matches!(x.class , crate::piece_class::PieceClass::King){
+                    self.light_king = x;
+                }else{
+                    self.light_pieces.push_back(x);
                 }
-                return Some((location, piece));
-            }
-            self.x += 1;
-            if self.x == 8 {
-                self.x = 0;
-                self.y += 1;
+            },
+            crate::piece_team::PieceTeam::Dark =>{
+                if matches!(x.class , crate::piece_class::PieceClass::King){
+                    self.dark_king = x;
+                }else{
+                    self.dark_pieces.push_back(x);
+                }
             }
         }
-        None
     }
 }
+
+#[cfg(test)]
+mod test{
+    use super::*;
+    #[test]
+    fn add_remove_pieces() -> Result<(),ChessErrors>{
+        let mut dut = PieceRegister::new();
+        dut.add_piece_record_no_check(PieceRecord { class: crate::piece_class::PieceClass::Pawn, location: BoardLocation::from_file_rank(0, 1), team: crate::piece_team::PieceTeam::Light });
+        dut.add_piece_record_no_check(PieceRecord { class: crate::piece_class::PieceClass::Pawn, location: BoardLocation::from_file_rank(0, 2), team: crate::piece_team::PieceTeam::Light });
+        let _ = dut.remove_piece_at_location(BoardLocation::from_file_rank(0, 1))?;
+        let _ = dut.remove_piece_at_location(BoardLocation::from_file_rank(0, 2))?;
+        if dut.remove_piece_at_location(BoardLocation::from_file_rank(0, 1)).is_err(){
+            return Ok(())
+        }
+        Err(ChessErrors::FailedTest)
+    }
+}
+
+
+

@@ -1,37 +1,46 @@
 use crate::{
     board_location::BoardLocation,
-    errors::Errors,
-    game_state::{GameState},
-    piece_types::PieceClass,
+    errors::{ChessErrors},
+    game_state::GameState,
+    piece_types::{PieceClass, PieceRecord},
 };
 
 /// Represents special move types in chess, such as promotion, castling, en passant, and double pawn step.
 /// Used to distinguish between regular moves and moves with special rules.
-#[derive(Clone, Debug)]
-pub enum MoveSpecialness {
-    /// A regular move or capture.
-    Regular,
-    /// Promotion to a specific piece class (e.g., Queen, Rook, Bishop, Knight).
-    Promote(PieceClass),
-    /// Double pawn step; BoardLocation is the square behind the pawn, vulnerable to en passant.
-    DoubleStep(BoardLocation),
-    /// En passant capture; BoardLocation is the square of the captured pawn.
-    EnPassant(BoardLocation),
-    /// Castling move; tuple contains rook's (start, stop) locations.
-    Castling((BoardLocation, BoardLocation)),
+#[derive(Clone, Copy, Debug)]
+pub enum MoveDescription {
+    /// A regular move: (Piece start,stop)
+    Regular(PieceRecord,PieceRecord),
+    /// En passant capture (Piece start,stop,victim)
+    EnPassant(PieceRecord,PieceRecord,PieceRecord),
+    /// Castling move (King start,stop; Rook start,stop)
+    Castling(PieceRecord, PieceRecord,PieceRecord, PieceRecord),
+    /// Promotion to a specific piece (Piece start,stop)
+    Promote(PieceRecord,PieceRecord),
+    /// Double pawn step; (Pawn start,stop,vulnerable_square_behind)
+    DoubleStep(PieceRecord,PieceRecord,BoardLocation),
+    /// Capture move (capturing piece start, stop)
+    Capture(PieceRecord,PieceRecord),
+    /// Check (threatening piece start,stop,king piece)
+    Check(PieceRecord,PieceRecord,PieceRecord),
+    /// Check (threatening piece start,stop,king piece,other_threatening_piece)
+    DoubleCheck(PieceRecord,PieceRecord,PieceRecord,PieceRecord),    
 }
 
-/// Describes a chess move, including its start and stop locations and any special move type.
-/// Used for move generation, application, and notation conversion.
-#[derive(Clone, Debug)]
-pub struct ChessMove {
-    /// The starting square of the move.
-    pub start: BoardLocation,
-    /// The destination square of the move.
-    pub stop: BoardLocation,
-    /// The specialness of the move (regular, promotion, castling, etc.).
-    pub move_specialness: MoveSpecialness,
-}
+/// Converts this move description to long algebraic notation (e.g., "e2e4", "e7e8q").
+///
+/// # Arguments
+/// * x - The current game state (not used in this function, but may be useful for context).
+///
+/// # Returns
+/// * `String` - The move in long algebraic notation.
+pub fn move_description_create_long_algebraic(move_description : MoveDescription) -> String{
+
+} 
+
+pub fn move_description_from_long_algebraic(long_algebraic_string : &str, game : &GameState) -> Result<MoveDescription,ChessErrors>{
+
+} 
 
 impl ChessMove {
     /// Converts this move description to long algebraic notation (e.g., "e2e4", "e7e8q").

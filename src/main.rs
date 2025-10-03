@@ -1,3 +1,7 @@
+fn main(){
+    
+}
+/*
 use std::fs::OpenOptions;
 use std::io::{self, BufRead, Write};
 use std::sync::mpsc::channel;
@@ -5,6 +9,7 @@ use std::thread;
 use std::time::Duration;
 
 use chrono::Local;
+
 
 use plum_chess::uci_interface::UCI;
 
@@ -93,3 +98,4 @@ fn main() {
         thread::sleep(Duration::from_millis(10));
     }
 }
+*/
