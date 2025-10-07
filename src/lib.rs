@@ -5,8 +5,8 @@ pub mod piece_record;
 pub mod piece_team;
 pub mod scoring;
 pub mod piece_register;
-//pub mod chess_move;
-//pub mod game_state;
+pub mod chess_move;
+pub mod game_state;
 //pub mod move_logic;
 //
 

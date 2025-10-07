@@ -13,8 +13,8 @@ pub struct PieceRegister {
 impl PieceRegister {
     pub fn new() -> Self{
         PieceRegister { 
-            light_king: PieceRecord { class: crate::piece_class::PieceClass::King, location: BoardLocation::from_file_rank(0, 5), team: crate::piece_team::PieceTeam::Light }, 
-            dark_king: PieceRecord { class: crate::piece_class::PieceClass::King, location: BoardLocation::from_file_rank(0, 5), team: crate::piece_team::PieceTeam::Dark}, 
+            light_king: PieceRecord { class: crate::piece_class::PieceClass::King, location: BoardLocation::from_file_rank(0, 5).unwrap(), team: crate::piece_team::PieceTeam::Light }, 
+            dark_king: PieceRecord { class: crate::piece_class::PieceClass::King, location: BoardLocation::from_file_rank(0, 5).unwrap(), team: crate::piece_team::PieceTeam::Dark}, 
             light_pieces: LinkedList::new(), 
             dark_pieces: LinkedList::new()}
     }
@@ -98,7 +98,7 @@ impl PieceRegister {
         }
         Err(ChessErrors::CannotRemoveFromEmptyLocation(x))
     }    
-    pub fn add_piece_record_no_check(&mut self, x : PieceRecord){
+    pub fn add_piece_record_no_rule_checking(&mut self, x : PieceRecord){
         match x.team {
             crate::piece_team::PieceTeam::Light => {
                 if matches!(x.class , crate::piece_class::PieceClass::King){
@@ -124,11 +124,11 @@ mod test{
     #[test]
     fn add_remove_pieces() -> Result<(),ChessErrors>{
         let mut dut = PieceRegister::new();
-        dut.add_piece_record_no_check(PieceRecord { class: crate::piece_class::PieceClass::Pawn, location: BoardLocation::from_file_rank(0, 1), team: crate::piece_team::PieceTeam::Light });
-        dut.add_piece_record_no_check(PieceRecord { class: crate::piece_class::PieceClass::Pawn, location: BoardLocation::from_file_rank(0, 2), team: crate::piece_team::PieceTeam::Light });
-        let _ = dut.remove_piece_at_location(BoardLocation::from_file_rank(0, 1))?;
-        let _ = dut.remove_piece_at_location(BoardLocation::from_file_rank(0, 2))?;
-        if dut.remove_piece_at_location(BoardLocation::from_file_rank(0, 1)).is_err(){
+        dut.add_piece_record_no_rule_checking(PieceRecord { class: crate::piece_class::PieceClass::Pawn, location: BoardLocation::from_file_rank(0, 1).unwrap(), team: crate::piece_team::PieceTeam::Light });
+        dut.add_piece_record_no_rule_checking(PieceRecord { class: crate::piece_class::PieceClass::Pawn, location: BoardLocation::from_file_rank(0, 2).unwrap(), team: crate::piece_team::PieceTeam::Light });
+        let _ = dut.remove_piece_at_location(BoardLocation::from_file_rank(0, 1).unwrap())?;
+        let _ = dut.remove_piece_at_location(BoardLocation::from_file_rank(0, 2).unwrap())?;
+        if dut.remove_piece_at_location(BoardLocation::from_file_rank(0, 1).unwrap()).is_err(){
             return Ok(())
         }
         Err(ChessErrors::FailedTest)

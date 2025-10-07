@@ -1,169 +1,246 @@
 use crate::{
-    board_location::BoardLocation,
-    errors::{ChessErrors},
+    board_location::{BoardLocation},
+    chess_errors::ChessErrors,
     game_state::GameState,
-    piece_types::{PieceClass, PieceRecord},
+    piece_class::PieceClass,
+    piece_record::PieceRecord,
 };
 
-/// Represents special move types in chess, such as promotion, castling, en passant, and double pawn step.
-/// Used to distinguish between regular moves and moves with special rules.
+/// Used for describing a change
 #[derive(Clone, Copy, Debug)]
-pub enum MoveDescription {
-    /// A regular move: (Piece start,stop)
-    Regular(PieceRecord,PieceRecord),
-    /// En passant capture (Piece start,stop,victim)
-    EnPassant(PieceRecord,PieceRecord,PieceRecord),
-    /// Castling move (King start,stop; Rook start,stop)
-    Castling(PieceRecord, PieceRecord,PieceRecord, PieceRecord),
-    /// Promotion to a specific piece (Piece start,stop)
-    Promote(PieceRecord,PieceRecord),
-    /// Double pawn step; (Pawn start,stop,vulnerable_square_behind)
-    DoubleStep(PieceRecord,PieceRecord,BoardLocation),
-    /// Capture move (capturing piece start, stop)
-    Capture(PieceRecord,PieceRecord),
-    /// Check (threatening piece start,stop,king piece)
-    Check(PieceRecord,PieceRecord,PieceRecord),
-    /// Check (threatening piece start,stop,king piece,other_threatening_piece)
-    DoubleCheck(PieceRecord,PieceRecord,PieceRecord,PieceRecord),    
+pub struct MoveVector {
+    piece_at_start: PieceRecord,
+    destination: BoardLocation,
 }
 
-/// Converts this move description to long algebraic notation (e.g., "e2e4", "e7e8q").
-///
-/// # Arguments
-/// * x - The current game state (not used in this function, but may be useful for context).
-///
-/// # Returns
-/// * `String` - The move in long algebraic notation.
-pub fn move_description_create_long_algebraic(move_description : MoveDescription) -> String{
+/// Descriptions of Check
+#[derive(Clone, Copy, Debug)]
+pub enum TypesOfCheck {
+    /// Check (King piece)
+    SingleCheck(PieceRecord),
+    /// Check (King piece, other threatening piece)
+    DoubleCheck(PieceRecord, PieceRecord),
+    /// Check (King piece,pinned_piece)
+    Pin(PieceRecord, PieceRecord),
+}
 
-} 
+/// Represents the move types in chess, such as promotion, castling, en passant, and double pawn step.
+/// Used to distinguish between regular moves and moves with special rules and information
+#[derive(Clone, Copy, Debug)]
+pub enum MoveTypes {
+    /// A regular move or capture
+    Regular,
+    /// En passant capture.  The capture_status contains the victim piece.
+    EnPassant,
+    /// Castling move (Rook vector)
+    Castling(MoveVector),
+    /// Promotion to a specific piece (Piece after promotion)
+    Promote(PieceRecord),
+    /// Double pawn step; (Vulnerable square left behind)
+    DoubleStep(BoardLocation),
+}
 
-pub fn move_description_from_long_algebraic(long_algebraic_string : &str, game : &GameState) -> Result<MoveDescription,ChessErrors>{
+/// Represents the move types in chess, such as promotion, castling, en passant, and double pawn step.
+/// Used to distinguish between regular moves and moves with special rules.
+/// Also contains descriptions of if there is a capture or check event
+#[derive(Clone, Debug)]
+pub struct MoveDescription {
+    pub vector: MoveVector,
+    pub move_type: MoveTypes,
+    pub capture_status: Option<PieceRecord>,
+    pub check_status: Option<TypesOfCheck>,
+}
 
-} 
-
-impl ChessMove {
+impl MoveDescription {
     /// Converts this move description to long algebraic notation (e.g., "e2e4", "e7e8q").
     ///
     /// # Arguments
-    /// * `_game` - The current game state (not used in this function, but may be useful for context).
+    /// * m - MoveDescription
     ///
     /// # Returns
     /// * `String` - The move in long algebraic notation.
-    pub fn to_long_algebraic(&self, _game: &GameState) -> String {
-        /// Helper function to convert a board location to algebraic notation (e.g., (4,1) -> "e2").
-        fn square_to_str(loc: &(i8, i8)) -> String {
-            let file = (b'a' + loc.0 as u8) as char;
-            let rank = (b'1' + loc.1 as u8) as char;
-            format!("{}{}", file, rank)
-        }
-        let mut s = format!(
-            "{}{}",
-            square_to_str(&self.start),
-            square_to_str(&self.stop)
+    pub fn get_long_algebraic(&self) -> String {
+        let base = format!(
+            "{:}{:}",
+            self.vector.piece_at_start.location.to_long_algebraic(),
+            self.vector.destination.to_long_algebraic()
         );
-        // Add promotion piece if this is a promotion move.
-        if let MoveSpecialness::Promote(pc) = &self.move_specialness {
-            let promo = match pc {
+        if let MoveTypes::Promote(p) = self.move_type {
+            let promotion = match p.class {
                 PieceClass::Queen => 'q',
                 PieceClass::Rook => 'r',
                 PieceClass::Bishop => 'b',
-                PieceClass::Knight => 'n',
-                // If other, default to 'q'
-                _ => 'q',
+                _ => 'n',
             };
-            s.push(promo);
+            format!("{:}{:}", base, promotion)
+        } else {
+            base
         }
-        s
     }
 
     /// Attempts to create a ChessMove from a long algebraic notation string (e.g., "e2e4", "e7e8q").
     ///
     /// # Arguments
+    /// * `long_algebraic_str` - The move in long algebraic notation.
     /// * `game` - The current game state (used to determine move specialness).
-    /// * `x` - The move in long algebraic notation.
     ///
     /// # Returns
     /// * `Ok(ChessMove)` if parsing is successful.
     /// * `Err(Errors)` if parsing fails or the move is invalid.
-    pub fn from_long_algebraic(game: &GameState, x: &str) -> Result<Self, Errors> {
+    pub fn from_long_algebraic(long_algebraic_str: &str, game: &GameState) -> Result<Self, ChessErrors> {
         // Must be at least 4 chars (e.g., e2e4), up to 5 (e.g., e7e8q)
-        let x = x.trim();
+        let x = long_algebraic_str.trim();
         if x.len() < 4 {
-            return Err(Errors::InvalidAlgebraic);
+            return Err(ChessErrors::InvalidAlgebraicString(long_algebraic_str.to_string()));
         }
         let bytes = x.as_bytes();
-        // Parse start square
-        let file_from = bytes[0] as char;
-        let rank_from = bytes[1] as char;
-        let file_to = bytes[2] as char;
-        let rank_to = bytes[3] as char;
-
-        /// Helper to convert file/rank chars to BoardLocation.
-        fn parse_square(file: char, rank: char) -> Result<BoardLocation, Errors> {
-            let file_idx = match file {
-                'a'..='h' => (file as u8 - b'a') as u8,
-                _ => return Err(Errors::InvalidAlgebraic),
-            };
-            let rank_idx = match rank {
-                '1'..='8' => (rank as u8 - b'1') as u8,
-                _ => return Err(Errors::InvalidAlgebraic),
-            };
-            Ok((file_idx as i8, rank_idx as i8))
+        for i in [0,2]{
+            let b = bytes[i];
+            if b < 97 || b > 104{
+                return Err(ChessErrors::InvalidAlgebraicChar(b as char))
+            }
         }
+        for i in [1,3]{
+            let b = bytes[i];
+            if b < 49 || b > 56{
+                return Err(ChessErrors::InvalidAlgebraicChar(b as char))
+            }
+        }        
+        // Parse start square
+        let file_from = bytes[0]-'a' as u8;
+        let rank_from = bytes[1]-1-'0' as u8;
+        let file_to = bytes[2]-'a' as u8;
+        let rank_to = bytes[3]-1-'0' as u8;
 
-        let start = parse_square(file_from, rank_from)?;
-        let stop = parse_square(file_to, rank_to)?;
+        let start = BoardLocation::from_file_rank(file_from, rank_from)?;
+        let destination = BoardLocation::from_file_rank(file_to, rank_to)?;
+        let piece_at_start = *game.piece_register.view_piece_at_location(start)?;
+        let vector = MoveVector {piece_at_start, destination};
+        let mut capture_status = if let Ok(x) = game.piece_register.view_piece_at_location(destination){
+            Some(*x)
+        }else{
+            None
+        };
 
-        // Determine the specialness of the move based on the piece and notation.
-        let move_specialness = {
-            if let Some(piece) = game.piece_register.view(&start) {
-                // Is this a promotion?
-                if x.len() == 5 {
-                    match bytes[4] as char {
-                        'q' | 'Q' => MoveSpecialness::Promote(PieceClass::Queen),
-                        'r' | 'R' => MoveSpecialness::Promote(PieceClass::Rook),
-                        'b' | 'B' => MoveSpecialness::Promote(PieceClass::Bishop),
-                        'n' | 'N' => MoveSpecialness::Promote(PieceClass::Knight),
-                        _ => return Err(Errors::InvalidAlgebraic),
-                    }
-                } else if matches!(piece.class, PieceClass::King) {
-                    // Detect castling based on notation and castling rights.
-                    if x == "e1g1" && game.can_castle_king_light {
-                        MoveSpecialness::Castling(((7, 0), (5, 0)))
-                    } else if x == "e1c1" && game.can_castle_queen_light {
-                        MoveSpecialness::Castling(((0, 0), (3, 0)))
-                    } else if x == "e8g8" && game.can_castle_king_dark {
-                        MoveSpecialness::Castling(((7, 7), (5, 7)))
-                    } else if x == "e8c8" && game.can_castle_queen_dark {
-                        MoveSpecialness::Castling(((0, 7), (3, 7)))
-                    } else {
-                        // Just a king move
-                        MoveSpecialness::Regular
-                    }
+        //TODO:  Add check inspection when implemented
+        let check_status = None;
+        
+
+        // Determine the type of the move based on the piece and notation.
+        let move_type = {
+            
+            // Is this a promotion?
+            if x.len() == 5 {
+                match bytes[4] as char {
+                    'q' | 'Q' => MoveTypes::Promote(PieceRecord {
+                        class: PieceClass::Queen,
+                        location: destination,
+                        team: piece_at_start.team,
+                    }),
+                    'r' | 'R' => MoveTypes::Promote(PieceRecord {
+                        class: PieceClass::Rook,
+                        location: destination,
+                        team: piece_at_start.team,
+                    }),
+                    'b' | 'B' => MoveTypes::Promote(PieceRecord {
+                        class: PieceClass::Bishop,
+                        location: destination,
+                        team: piece_at_start.team,
+                    }),
+                    'n' | 'N' => MoveTypes::Promote(PieceRecord {
+                        class: PieceClass::Knight,
+                        location: destination,
+                        team: piece_at_start.team,
+                    }),
+                    _ => return Err(ChessErrors::InvalidAlgebraicString(long_algebraic_str.to_string())),
+                }
+            } else if matches!(piece_at_start.class, PieceClass::King) {
+                // Detect castling based on notation and castling rights.
+                if x == "e1g1" && game.can_castle_king_light {
+                    MoveTypes::Castling(MoveVector {
+                        // Get the rook
+                        piece_at_start: *game
+                            .piece_register
+                            .view_piece_at_location(BoardLocation::from_file_rank(7, 0)?)?,
+                        // Rook's destination
+                        destination: BoardLocation::from_file_rank(5, 0)?,
+                    })
+                } else if x == "e1c1" && game.can_castle_queen_light {
+                    MoveTypes::Castling(MoveVector {
+                        // Get the rook
+                        piece_at_start: *game
+                            .piece_register
+                            .view_piece_at_location(BoardLocation::from_file_rank(0, 0)?)?,
+                        // Rook's destination
+                        destination: BoardLocation::from_file_rank(3, 0)?,
+                    })
+                } else if x == "e8g8" && game.can_castle_king_dark {
+                    MoveTypes::Castling(MoveVector {
+                        // Get the rook
+                        piece_at_start: *game
+                            .piece_register
+                            .view_piece_at_location(BoardLocation::from_file_rank(7, 7)?)?,
+                        // Rook's destination
+                        destination: BoardLocation::from_file_rank(5, 7)?,
+                    })
+                } else if x == "e8c8" && game.can_castle_queen_dark {
+                    MoveTypes::Castling(MoveVector {
+                        // Get the rook
+                        piece_at_start: *game
+                            .piece_register
+                            .view_piece_at_location(BoardLocation::from_file_rank(0, 7)?)?,
+                        // Rook's destination
+                        destination: BoardLocation::from_file_rank(3, 7)?,
+                    })
                 } else {
-                    // Not a king move
-
-                    // Is this a pawn en passant capture?
-                    if matches!(piece.class, PieceClass::Pawn) && start.0 != stop.0 && game.piece_register.view(&stop).is_none(){
-                        // The location next door for en passant
-                        MoveSpecialness::EnPassant((stop.0, start.1))
-                    } else {
-                        // Just a regular move
-                        MoveSpecialness::Regular
-                    }
+                    // Just a king move
+                    MoveTypes::Regular
                 }
             } else {
-                // No piece at the start location.
-                return Err(Errors::TryingToMoveNonExistantPiece((start,game.get_fen())));
+                // Not a king move
+
+                // Is this a pawn en passant capture?
+                if matches!(piece_at_start.class, PieceClass::Pawn)
+                    && file_from != file_to
+                    && capture_status.is_none()
+                {
+                    // The location next door for en passant
+                    capture_status = Some(*game
+                            .piece_register
+                            .view_piece_at_location(BoardLocation::from_file_rank(file_to, rank_from)?)?);
+                    MoveTypes::EnPassant
+                } else {
+                    if (rank_from as i8 - rank_to as i8).abs() >= 2{ // Double step?
+                            MoveTypes::DoubleStep(BoardLocation::from_file_rank(file_to, (rank_from+rank_to)/2)?)
+                    }else{
+                            // Just a regular move
+                            MoveTypes::Regular
+                    }
+                }
             }
         };
 
         // We can't know stop_occupancy from notation alone, so default to Empty.
-        Ok(ChessMove {
-            start,
-            stop,
-            move_specialness,
-        })
+        Ok(MoveDescription { vector, move_type, capture_status, check_status})
+    }
+}
+
+
+#[cfg(test)]
+mod test{
+    use crate::piece_team::PieceTeam;
+
+    use super::*;
+    #[test]
+    fn test_moves_1(){
+        let new_game = GameState::new_game();
+        let move_text = "e2e4";
+        let move_description = MoveDescription::from_long_algebraic(move_text, &new_game).unwrap();
+        assert!(matches!(move_description.vector.piece_at_start.class,PieceClass::Pawn));
+        assert!(matches!(move_description.vector.piece_at_start.team,PieceTeam::Light));
+        assert!(matches!(move_description.move_type,MoveTypes::DoubleStep(_)));
+        assert!(matches!(move_description.capture_status,None));
+        assert!(matches!(move_description.check_status,None));
+
     }
 }

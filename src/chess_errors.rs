@@ -10,5 +10,9 @@ pub enum ChessErrors {
     InvalidAlgebraicString(String),
     CannotRemoveFromEmptyLocation(BoardLocation),
     CannotRemoveKings(BoardLocation),
-    TryToViewOrEditEmptySquare(BoardLocation)
+    TryToViewOrEditEmptySquare(BoardLocation),
+    InvalidFileOrRank((u8,u8)),
+    InvalidFENtoken(char),
+    InvalidFEDstringForm(String),
+    FeatureNotImplementedYet,
 }
