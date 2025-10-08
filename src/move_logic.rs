@@ -1,170 +1,17 @@
 use std::collections::LinkedList;
 
 use crate::{
-    board_location::{move_board_location, BoardLocation},
-    chess_move::{ChessMove, MoveSpecialness},
-    errors::Errors,
+    board_location::{BoardLocation},
+    move_description::{MoveDescription},
+    chess_errors::ChessErrors,
     game_state::{GameState},
-    piece_types::{PieceClass, PieceTeam},
+    piece_class::PieceClass,
+    piece_team::PieceTeam,
 };
 
-/// Represents the occupancy state of a board square when considering a move.
-/// Used to indicate if a square is empty, occupied by an enemy piece, or by the enemy king.
-#[derive(Clone, Debug)]
-pub enum Occupancy {
-    /// The square is empty.
-    Empty,
-    /// The square is occupied by an enemy piece (not a king).
-    EnemyRegular,
-    /// The square is occupied by the enemy king.
-    EnemyKing,
-}
-
-/// Associates a move description with the occupancy of the destination square.
-/// Used for move generation and legality checking.
-#[derive(Clone, Debug)]
-pub struct ChessMoveDescriptionWithCollision {
-    /// The move being described.
-    pub description: ChessMove,
-    /// The occupancy state of the destination square.
-    pub stop_occupancy: Occupancy,
-}
 
 /// Type alias for a linked list of move descriptions with collision information.
-type ListOfMoves = LinkedList<ChessMoveDescriptionWithCollision>;
-
-/// Applies a chess move to a given game state, returning the resulting game state or an error.
-/// This function handles all move types, including castling, en passant, promotion, and updates castling rights and clocks.
-///
-/// # Arguments
-/// * `game` - The current game state.
-/// * `chess_move` - The move to apply.
-///
-/// # Returns
-/// * `Ok(GameState)` - The new game state after the move.
-/// * `Err(Errors)` - If the move is invalid or cannot be applied.
-pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> Result<GameState, Errors> {
-    let mut result = game.clone();
-    if let Some(mut piece) = result.piece_register.remove_piece_record(&chess_move.start) {
-
-        let mut remove_castling_kingside_rights = false;
-        let mut remove_castling_queenside_rights = false;
-        let mut capture_flag = false;
-        let moving_a_pawn = matches!(piece.class,PieceClass::Pawn);
-
-        // Handle the move based on its specialness (regular, castling, promotion, etc.)
-        match chess_move.move_specialness {
-            MoveSpecialness::Regular => {
-                // Move the piece, possibly capturing an enemy piece.
-                capture_flag = result
-                    .piece_register
-                    .add_piece_record_overwrite(piece, &chess_move.stop)?;
-
-                // Remove castling rights if a king or rook moves.
-                if matches!(piece.class,PieceClass::King){
-                    remove_castling_kingside_rights = true;
-                    remove_castling_queenside_rights = true;
-                }
-                // Remove castling rights for the appropriate side if a rook moves from its original square.
-                if matches!(piece.class,PieceClass::Rook){
-                    if chess_move.start.0 == 0{
-                        if chess_move.start.1 == 7 && matches!(piece.team,PieceTeam::Dark){
-                            remove_castling_queenside_rights = true;
-                        }else if chess_move.start.1 == 0 && matches!(piece.team,PieceTeam::Light){
-                            remove_castling_queenside_rights = true;
-                        }   
-                    }else if  chess_move.start.0 == 7{
-                        if chess_move.start.1 == 7 && matches!(piece.team,PieceTeam::Dark){
-                            remove_castling_kingside_rights = true;
-                        }else if chess_move.start.1 == 0 && matches!(piece.team,PieceTeam::Light){
-                            remove_castling_kingside_rights = true;
-                        }  
-                    }
-                }
-            }
-            MoveSpecialness::Castling((rook_start, rook_stop)) => {
-                // Handle castling: move both king and rook, and update castling rights.
-                result
-                    .piece_register
-                    .add_piece_record_overwrite(piece, &chess_move.stop)?;
-                // Move rook as part of castling.
-                if let Some(rook_piece) = result.piece_register.remove_piece_record(&rook_start) {
-                    result
-                        .piece_register
-                        .add_piece_record_overwrite(rook_piece, &rook_stop)?;
-                    // Remove both castling rights after castling.
-                    remove_castling_kingside_rights = true;
-                    remove_castling_queenside_rights = true;
-                }else{
-                    return Err(Errors::TryingToMoveNonExistantPiece((rook_start,game.get_fen())));
-                }
-            }
-            MoveSpecialness::DoubleStep(behind_pawn)=>{
-                // Handle pawn double-step: move pawn and set en passant square.
-                capture_flag = result
-                    .piece_register
-                    .add_piece_record_overwrite(piece, &chess_move.stop)?;
-                // Mark en passant target square.
-                result.en_passant_location = Some(behind_pawn);
-            }
-            MoveSpecialness::EnPassant(behind_pawn) => {
-                // Handle en passant: move pawn and remove captured pawn.
-                capture_flag = result
-                    .piece_register
-                    .add_piece_record_overwrite(piece, &chess_move.stop)?;
-                // Remove the pawn that was captured en passant.
-                result.piece_register.remove_piece_record(&behind_pawn);
-            }
-            MoveSpecialness::Promote(target_type) => {
-                // Handle pawn promotion: change piece type and move to destination.
-                piece.class = target_type;
-                capture_flag = result
-                    .piece_register
-                    .add_piece_record_overwrite(piece, &chess_move.stop)?;
-            } 
-        }
-
-        // Clear en passant flag unless a double-step was just performed.
-        if !matches!(chess_move.move_specialness,MoveSpecialness::DoubleStep(_board_location)){
-            result.en_passant_location = None;
-        }
-
-        // Update castling rights for the appropriate team and side.
-        if remove_castling_kingside_rights{
-            if matches!(piece.team,PieceTeam::Dark){
-                result.can_castle_king_dark = false;
-            }else{
-                result.can_castle_king_light = false;
-            }
-        }
-        if remove_castling_queenside_rights{
-            if matches!(piece.team,PieceTeam::Dark){
-                result.can_castle_queen_dark = false;
-            }else{
-                result.can_castle_queen_light = false;
-            }
-        }
-
-        // Update half-move clock (for 50-move rule) and full-move count.
-        if moving_a_pawn || capture_flag{
-            result.half_move_clock = 0;
-        }else{
-            result.half_move_clock += 1;
-        }
-        if matches!(piece.team,PieceTeam::Dark){
-            result.full_move_count += 1;
-            result.turn = PieceTeam::Light;
-        }else{
-            result.turn = PieceTeam::Dark;
-        }
-
-    } else {
-        // If the piece to move does not exist, return an error.
-        return Err(Errors::TryingToMoveNonExistantPiece((chess_move.start,game.get_fen())));
-    };
-
-    Ok(result)
-}
+type ListOfUncheckedMoves = LinkedList<MoveDescription>;
 
 /// Checks if the current player can capture the enemy king in the given game state.
 /// Used to determine if the current player is giving check.
@@ -176,7 +23,7 @@ pub fn apply_move_to_game(game: &GameState, chess_move: &ChessMove) -> Result<Ga
 /// * `Ok(true)` if the enemy king can be captured.
 /// * `Ok(false)` otherwise.
 /// * `Err(Errors)` if move generation fails.
-fn can_capture_enemy_king(game: &GameState) -> Result<bool, Errors> {
+fn can_capture_enemy_king(game: &GameState) -> Result<bool, ChessErrors> {
     // Iterate over all pieces of the current player.
     for (location, piece_record) in game.piece_register.iter() {
         if piece_record.team == game.turn {

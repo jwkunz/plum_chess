@@ -1,5 +1,9 @@
+use std::collections::VecDeque;
+
 use crate::board_location::{BoardLocation};
+use crate::checked_move_description::CheckedMoveDescription;
 use crate::chess_errors::ChessErrors;
+use crate::move_description::MoveDescription;
 use crate::piece_register::PieceRegister;
 use crate::piece_class::PieceClass;
 use crate::piece_team::PieceTeam;
@@ -229,7 +233,7 @@ impl GameState {
             en_passant_location,
             half_move_clock,
             full_move_count,
-            turn,
+            turn
         })
     }
 
@@ -366,6 +370,141 @@ impl GameState {
         }     
         score
     }
+/*
+/// Applies a chess move to a given game state, returning the resulting game state or an error.
+/// This function handles all move types, including castling, en passant, promotion, and updates castling rights and clocks.
+///
+/// # Arguments
+/// * `game` - The current game state.
+/// * `chess_move` - The move to apply.
+///
+/// # Returns
+/// * `Ok(GameState)` - The new game state after the move.
+/// * `Err(Errors)` - If the move is invalid or cannot be applied.
+pub fn apply_move_to_game_unchecked(&mut self, chess_move: &MoveDescription) -> Result<GameState, ChessErrors> {
+    let mut result = game.clone();
+    if let Some(mut piece) = result.piece_register.remove_piece_record(&chess_move.start) {
+
+        let mut remove_castling_kingside_rights = false;
+        let mut remove_castling_queenside_rights = false;
+        let mut capture_flag = false;
+        let moving_a_pawn = matches!(piece.class,PieceClass::Pawn);
+
+        // Handle the move based on its specialness (regular, castling, promotion, etc.)
+        match chess_move.move_specialness {
+            MoveSpecialness::Regular => {
+                // Move the piece, possibly capturing an enemy piece.
+                capture_flag = result
+                    .piece_register
+                    .add_piece_record_overwrite(piece, &chess_move.stop)?;
+
+                // Remove castling rights if a king or rook moves.
+                if matches!(piece.class,PieceClass::King){
+                    remove_castling_kingside_rights = true;
+                    remove_castling_queenside_rights = true;
+                }
+                // Remove castling rights for the appropriate side if a rook moves from its original square.
+                if matches!(piece.class,PieceClass::Rook){
+                    if chess_move.start.0 == 0{
+                        if chess_move.start.1 == 7 && matches!(piece.team,PieceTeam::Dark){
+                            remove_castling_queenside_rights = true;
+                        }else if chess_move.start.1 == 0 && matches!(piece.team,PieceTeam::Light){
+                            remove_castling_queenside_rights = true;
+                        }   
+                    }else if  chess_move.start.0 == 7{
+                        if chess_move.start.1 == 7 && matches!(piece.team,PieceTeam::Dark){
+                            remove_castling_kingside_rights = true;
+                        }else if chess_move.start.1 == 0 && matches!(piece.team,PieceTeam::Light){
+                            remove_castling_kingside_rights = true;
+                        }  
+                    }
+                }
+            }
+            MoveSpecialness::Castling((rook_start, rook_stop)) => {
+                // Handle castling: move both king and rook, and update castling rights.
+                result
+                    .piece_register
+                    .add_piece_record_overwrite(piece, &chess_move.stop)?;
+                // Move rook as part of castling.
+                if let Some(rook_piece) = result.piece_register.remove_piece_record(&rook_start) {
+                    result
+                        .piece_register
+                        .add_piece_record_overwrite(rook_piece, &rook_stop)?;
+                    // Remove both castling rights after castling.
+                    remove_castling_kingside_rights = true;
+                    remove_castling_queenside_rights = true;
+                }else{
+                    return Err(Errors::TryingToMoveNonExistantPiece((rook_start,game.get_fen())));
+                }
+            }
+            MoveSpecialness::DoubleStep(behind_pawn)=>{
+                // Handle pawn double-step: move pawn and set en passant square.
+                capture_flag = result
+                    .piece_register
+                    .add_piece_record_overwrite(piece, &chess_move.stop)?;
+                // Mark en passant target square.
+                result.en_passant_location = Some(behind_pawn);
+            }
+            MoveSpecialness::EnPassant(behind_pawn) => {
+                // Handle en passant: move pawn and remove captured pawn.
+                capture_flag = result
+                    .piece_register
+                    .add_piece_record_overwrite(piece, &chess_move.stop)?;
+                // Remove the pawn that was captured en passant.
+                result.piece_register.remove_piece_record(&behind_pawn);
+            }
+            MoveSpecialness::Promote(target_type) => {
+                // Handle pawn promotion: change piece type and move to destination.
+                piece.class = target_type;
+                capture_flag = result
+                    .piece_register
+                    .add_piece_record_overwrite(piece, &chess_move.stop)?;
+            } 
+        }
+
+        // Clear en passant flag unless a double-step was just performed.
+        if !matches!(chess_move.move_specialness,MoveSpecialness::DoubleStep(_board_location)){
+            result.en_passant_location = None;
+        }
+
+        // Update castling rights for the appropriate team and side.
+        if remove_castling_kingside_rights{
+            if matches!(piece.team,PieceTeam::Dark){
+                result.can_castle_king_dark = false;
+            }else{
+                result.can_castle_king_light = false;
+            }
+        }
+        if remove_castling_queenside_rights{
+            if matches!(piece.team,PieceTeam::Dark){
+                result.can_castle_queen_dark = false;
+            }else{
+                result.can_castle_queen_light = false;
+            }
+        }
+
+        // Update half-move clock (for 50-move rule) and full-move count.
+        if moving_a_pawn || capture_flag{
+            result.half_move_clock = 0;
+        }else{
+            result.half_move_clock += 1;
+        }
+        if matches!(piece.team,PieceTeam::Dark){
+            result.full_move_count += 1;
+            result.turn = PieceTeam::Light;
+        }else{
+            result.turn = PieceTeam::Dark;
+        }
+
+    } else {
+        // If the piece to move does not exist, return an error.
+        return Err(Errors::TryingToMoveNonExistantPiece((chess_move.start,game.get_fen())));
+    };
+
+    Ok(result)
+}
+*/
+
 }
 
 #[cfg(test)]

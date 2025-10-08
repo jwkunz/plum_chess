@@ -13,16 +13,7 @@ pub struct MoveVector {
     destination: BoardLocation,
 }
 
-/// Descriptions of Check
-#[derive(Clone, Copy, Debug)]
-pub enum TypesOfCheck {
-    /// Check (King piece)
-    SingleCheck(PieceRecord),
-    /// Check (King piece, other threatening piece)
-    DoubleCheck(PieceRecord, PieceRecord),
-    /// Check (King piece,pinned_piece)
-    Pin(PieceRecord, PieceRecord),
-}
+
 
 /// Represents the move types in chess, such as promotion, castling, en passant, and double pawn step.
 /// Used to distinguish between regular moves and moves with special rules and information
@@ -42,14 +33,14 @@ pub enum MoveTypes {
 
 /// Represents the move types in chess, such as promotion, castling, en passant, and double pawn step.
 /// Used to distinguish between regular moves and moves with special rules.
-/// Also contains descriptions of if there is a capture or check event
 #[derive(Clone, Debug)]
 pub struct MoveDescription {
     pub vector: MoveVector,
     pub move_type: MoveTypes,
     pub capture_status: Option<PieceRecord>,
-    pub check_status: Option<TypesOfCheck>,
 }
+
+
 
 impl MoveDescription {
     /// Converts this move description to long algebraic notation (e.g., "e2e4", "e7e8q").
@@ -121,10 +112,6 @@ impl MoveDescription {
         }else{
             None
         };
-
-        //TODO:  Add check inspection when implemented
-        let check_status = None;
-        
 
         // Determine the type of the move based on the piece and notation.
         let move_type = {
@@ -221,7 +208,7 @@ impl MoveDescription {
         };
 
         // We can't know stop_occupancy from notation alone, so default to Empty.
-        Ok(MoveDescription { vector, move_type, capture_status, check_status})
+        Ok(MoveDescription { vector, move_type, capture_status})
     }
 }
 
@@ -240,7 +227,5 @@ mod test{
         assert!(matches!(move_description.vector.piece_at_start.team,PieceTeam::Light));
         assert!(matches!(move_description.move_type,MoveTypes::DoubleStep(_)));
         assert!(matches!(move_description.capture_status,None));
-        assert!(matches!(move_description.check_status,None));
-
     }
 }

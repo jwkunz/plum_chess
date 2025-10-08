@@ -1,4 +1,4 @@
-use crate::board_location::BoardLocation;
+use crate::{board_location::BoardLocation, piece_class::PieceClass};
 
 /// Represents all possible error types that can occur in the chess engine.
 /// Used throughout the codebase for error handling and reporting.
@@ -14,5 +14,6 @@ pub enum ChessErrors {
     InvalidFileOrRank((u8,u8)),
     InvalidFENtoken(char),
     InvalidFEDstringForm(String),
+    GeneratingWrongMovementForPieceType(PieceClass),
     FeatureNotImplementedYet,
 }
