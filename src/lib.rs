@@ -7,9 +7,9 @@ pub mod scoring;
 pub mod piece_register;
 pub mod move_description;
 pub mod checked_move_description;
-pub mod available_movement_masks;
+pub mod generate_movements;
 pub mod game_state;
-//pub mod move_logic;
+pub mod move_logic;
 //
 
 //pub mod uci_interface;

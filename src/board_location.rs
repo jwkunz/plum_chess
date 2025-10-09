@@ -50,6 +50,7 @@ impl BoardLocation {
         let bit_spot = self.binary_location.ilog2();
         ((bit_spot / 8) as u8, (bit_spot % 8) as u8)
     }
+    // Not as fast, but checks if out of bounds
     pub fn generate_moved_location_checked(
         &self,
         d_file: i8,
@@ -74,12 +75,13 @@ impl BoardLocation {
         }
         BoardLocation::from_file_rank(f_next as u8, r_next as u8)
     }
+    /// Fast, but not boundary checked
     pub fn generate_moved_location_without_validation(
         &self,
         d_file: i8,
         d_rank: i8,
     ) -> BoardLocation {
-        let shift_amount = (8 * d_file) + d_rank;
+        let shift_amount = (d_file << 3) + d_rank;
         let new_location = if shift_amount >= 0 {
             self.binary_location.wrapping_shl(shift_amount as u32)
         } else {
@@ -152,5 +154,8 @@ mod test {
         let (f, r) = next_dut.get_file_rank();
         assert_eq!(f, 4);
         assert_eq!(r, 1);
+
+        let dut = BoardLocation::from_file_rank(0, 0).unwrap();
+        assert!(dut.generate_moved_location_checked(-1, 1).is_err());
     }
 }

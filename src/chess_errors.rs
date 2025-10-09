@@ -16,4 +16,5 @@ pub enum ChessErrors {
     InvalidFEDstringForm(String),
     GeneratingWrongMovementForPieceType(PieceClass),
     FeatureNotImplementedYet,
+    InvalidDirectionSelected(u8)
 }

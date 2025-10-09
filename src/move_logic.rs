@@ -1,18 +1,15 @@
 use std::collections::LinkedList;
 
 use crate::{
-    board_location::{BoardLocation},
-    move_description::{MoveDescription},
-    chess_errors::ChessErrors,
-    game_state::{GameState},
-    piece_class::PieceClass,
-    piece_team::PieceTeam,
+    board_location::BoardLocation, checked_move_description::CheckedMoveDescription, chess_errors::ChessErrors, game_state::GameState, move_description::MoveDescription, piece_class::PieceClass, piece_team::PieceTeam
 };
 
 
 /// Type alias for a linked list of move descriptions with collision information.
 type ListOfUncheckedMoves = LinkedList<MoveDescription>;
+type ListOfCheckedMoves = LinkedList<CheckedMoveDescription>;
 
+/*
 /// Checks if the current player can capture the enemy king in the given game state.
 /// Used to determine if the current player is giving check.
 ///
@@ -58,7 +55,9 @@ fn can_capture_enemy_king(game: &GameState) -> Result<bool, ChessErrors> {
     }
     Ok(false)
 }
+*/
 
+/*
 /// Returns the forward direction for the given team.
 /// Light moves up (+1), Dark moves down (-1).
 ///
@@ -73,7 +72,9 @@ fn get_forward_direction_for_turn(turn: &PieceTeam) -> i8 {
         PieceTeam::Light => 1,
     }
 }
+*/
 
+/*
 /// Verifies that the piece at the given location is of the specified class and belongs to the current turn.
 ///
 /// # Arguments
@@ -103,7 +104,9 @@ fn verify_is_piece_class_and_turn(
         Err(Errors::InvalidMoveStartCondition)
     }
 }
+*/
 
+/*
 /// Attempts to add a pawn move to the result list, considering captures, promotions, and double steps.
 /// Does not check for check or en passant (handled elsewhere).
 ///
@@ -221,7 +224,10 @@ fn try_add_move_pawn(
         true
     }
 }
+*/
 
+
+/*
 /// Generates all possible moves for a pawn, including captures, promotions, double steps, and en passant.
 /// Does not check for check.
 ///
@@ -347,7 +353,9 @@ pub fn generate_potential_moves_knight(
     };
     Ok(result)
 }
+*/
 
+/*
 /// Generates all possible moves for a bishop from the given location.
 /// Does not check for check.
 ///
@@ -377,7 +385,9 @@ pub fn generate_potential_moves_bishop(
     // Return
     Ok(result)
 }
+*/
 
+/*
 /// Generates all possible moves for a rook from the given location.
 /// Does not check for check.
 ///
@@ -407,7 +417,9 @@ pub fn generate_potential_moves_rook(
     // Return
     Ok(result)
 }
+*/
 
+/*
 /// Generates all possible moves for a queen from the given location.
 /// Does not check for check.
 ///
@@ -446,7 +458,9 @@ pub fn generate_potential_moves_queen(
     // Return
     Ok(result)
 }
+*/
 
+/*
 /// Generates all possible moves for a king from the given location, including castling if legal.
 /// Checks for check when considering castling.
 ///
@@ -514,7 +528,9 @@ pub fn generate_potential_moves_king(
 
     Ok(result)
 }
+*/
 
+/*
 /// Checks if a move from `start` to `stop` is legal based on collision rules.
 /// Returns a move description with collision info if legal, or `None` if not.
 ///
@@ -556,7 +572,9 @@ fn check_move_collision(
         stop_occupancy: occupancy_type.clone(),
     })
 }
+*/
 
+/*
 /// Follows a move vector (dx, dy) from a starting location, adding all legal moves along the vector until blocked.
 /// Used for sliding pieces (bishop, rook, queen).
 ///
@@ -591,7 +609,9 @@ fn follow_move_vector(
         };
     }
 }
+*/
 
+/*
 /// Generates all legal moves for the current player in the given game state.
 /// Filters out moves that would leave the player's king in check.
 ///
@@ -644,10 +664,13 @@ pub fn generate_all_moves(game: &GameState) -> Result<ListOfMoves, Errors> {
     // Return result
     Ok(result)
 }
+*/
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /*
     #[test]
     fn test_pawn_moves() -> Result<(), Errors> {
         let test_game = GameState::from_fen("3k4/8/8/8/8/8/4P3/3K4 w - - 0 1").unwrap();
@@ -677,7 +700,9 @@ mod tests {
 
         Ok(())
     }
+    */
 
+    /*
     #[test]
     fn test_knight_moves() -> Result<(), Errors> {
         let test_game =
@@ -692,7 +717,9 @@ mod tests {
         assert_eq!(moves.len(), 8);
         Ok(())
     }
+    */
 
+    /*
     #[test]
     fn test_bishop_moves() -> Result<(), Errors> {
         let test_game = GameState::from_fen(
@@ -711,7 +738,9 @@ mod tests {
 
         Ok(())
     }
+    */
 
+    /*
     #[test]
     fn test_rook_moves() -> Result<(), Errors> {
         let test_game =
@@ -721,7 +750,9 @@ mod tests {
 
         Ok(())
     }
+    */
 
+    /*
     #[test]
     fn test_queen_moves() -> Result<(), Errors> {
         let test_game =
@@ -732,7 +763,9 @@ mod tests {
 
         Ok(())
     }
+    */
 
+    /*
     #[test]
     fn test_king_moves() -> Result<(), Errors> {
         let test_game =
@@ -749,7 +782,9 @@ mod tests {
         assert_eq!(moves.len(), 6);
         Ok(())
     }
+    */
 
+    /*
     #[test]
     fn test_check_moves() -> Result<(), Errors> {
         let test_game = GameState::from_fen("3k4/8/8/8/6b1/3pP3/4P3/3K4 w - - 0 1").unwrap();
@@ -758,7 +793,9 @@ mod tests {
 
         Ok(())
     }
+    */
 
+    /*
     #[test]
     fn test_back_row_stuff() -> Result<(), Errors> {
         let test_game =
@@ -778,7 +815,9 @@ mod tests {
 
         Ok(())
     }
+    */
 
+    /*
     #[test]
     fn test_promotion() -> Result<(), Errors> {
         // Simple Queen promotion
@@ -809,7 +848,9 @@ mod tests {
 
         Ok(())
     }
+    */
 
+    /*
     #[test]
     fn test_castling_rights() -> Result<(), Errors> {
         // Simple case
@@ -851,8 +892,9 @@ mod tests {
 
         Ok(())
     }
+    */
 
-
+    /*
     #[test]
     fn test_castling_offer() -> Result<(), Errors> {
         // Simple castlings
@@ -900,7 +942,9 @@ mod tests {
 
         Ok(())
     }
+    */
 
+    /*
     #[test]
     fn test_apply_lots_of_random_moves() -> Result<(),Errors>{
 
@@ -940,7 +984,9 @@ mod tests {
 
         Ok(())
     }
+    */
 
+    /*
     #[test]
     fn test_en_passant() -> Result<(), Errors> {
         // Simple en passant
@@ -966,8 +1012,5 @@ mod tests {
         
         Ok(())
     }
-
-
-
-
+    */
 }
