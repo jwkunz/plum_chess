@@ -1,6 +1,6 @@
 use std::collections::LinkedList;
 
-use crate::{board_location::BoardLocation, chess_errors::ChessErrors, piece_record::PieceRecord};
+use crate::{board_location::BoardLocation, chess_errors::ChessErrors, piece_record::PieceRecord, board_mask::BoardMask};
 
 #[derive(Clone, Debug)]
 pub struct PieceRegister {
@@ -18,27 +18,27 @@ impl PieceRegister {
             light_pieces: LinkedList::new(), 
             dark_pieces: LinkedList::new()}
     }
-    pub fn generate_mask_all_light(&self)->u64{
+    pub fn generate_mask_all_light(&self)->BoardMask{
         let mut result = self.light_king.location.binary_location;
         for i in &self.light_pieces{
             result |= i.location.binary_location;
         }
         result
     }
-    pub fn generate_mask_all_dark(&self)->u64{
+    pub fn generate_mask_all_dark(&self)->BoardMask{
         let mut result = self.dark_king.location.binary_location;
         for i in &self.dark_pieces{
             result |= i.location.binary_location;
         }
         result
     }  
-    pub fn generate_mask_all_pieces(&self)->u64{
+    pub fn generate_mask_all_pieces(&self)->BoardMask{
         self.generate_mask_all_dark() | self.generate_mask_all_light()
     }  
-    pub fn generate_mask_light_king(&self)->u64{
+    pub fn generate_mask_light_king(&self)->BoardMask{
         self.light_king.location.binary_location
     }
-    pub fn generate_mask_dark_king(&self)->u64{
+    pub fn generate_mask_dark_king(&self)->BoardMask{
         self.dark_king.location.binary_location
     }    
     pub fn view_piece_at_location(&self, x : BoardLocation) -> Result<&PieceRecord, ChessErrors>{

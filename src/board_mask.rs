@@ -1,0 +1,1 @@
+pub type BoardMask = u64;

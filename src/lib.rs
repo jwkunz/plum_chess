@@ -9,7 +9,9 @@ pub mod move_description;
 pub mod checked_move_description;
 pub mod generate_movements;
 pub mod game_state;
+pub mod generate_moves_level_1;
 pub mod move_logic;
+pub mod board_mask;
 //
 
 //pub mod uci_interface;
