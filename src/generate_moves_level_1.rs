@@ -4,10 +4,24 @@ use crate::{
     board_location::BoardLocation, board_mask::BoardMask, chess_errors::ChessErrors, generate_movements::*, piece_register::{PieceRegister}, piece_team::PieceTeam
 };
 
+/// Level 1 move generation is basic and only requires this information.
+/*
+This is mainly for documentation
+#[derive(Debug,Clone)]
+pub struct GenerateLevel1Args{
+    pub start: BoardLocation,
+    pub masks: CollisionMasks,
+}
+
+impl GenerateLevel1Args {
+    pub fn from(start : BoardLocation,piece_register : &PieceRegister)->Self{
+        GenerateLevel1Args { start, masks: CollisionMasks::from(piece_register)}
+    }
+}
+*/
 
 /// Type alias for a linked list of move descriptions with collision information.
-type ListOfRawMoves = LinkedList<BoardLocation>;
-
+pub type ListOfRawMoves = LinkedList<BoardLocation>;
 
 #[derive(Debug,Clone)]
 pub struct CollisionMasks{
@@ -24,12 +38,15 @@ impl CollisionMasks{
     }
 }
 
+/// The results from level 1 generation are moves on the board from a location until hitting the first collision
+/// The collisions are sorted into types at this level
 #[derive(Debug,Clone)]
 pub struct GenerateLevel1Result{
     pub no_collisions : ListOfRawMoves,
     pub light_collisions : ListOfRawMoves,
     pub dark_collisions : ListOfRawMoves,
 }
+
 impl GenerateLevel1Result{
     /// Makes a new object
     pub fn new() -> Self{
@@ -74,47 +91,6 @@ impl GenerateLevel1Result{
     }
 }
 
-/// The lowest level pawn moves
-pub fn generate_pawn_moves_level_1(start : BoardLocation, masks : &CollisionMasks, team:PieceTeam) -> Result<GenerateLevel1Result,ChessErrors>{
-    let mut result = GenerateLevel1Result::new();
-
-    // Check first movement
-    if let Ok(x) = generate_pawn_single_step_movement(start,team){
-        if result.add_and_sort_raw_move(x,masks) == false{
-            // Check second movement if first was not a collision
-            let (_,start_file) = start.get_file_rank();
-            // If on starting point
-            if ((start_file == 1) && matches!(team,PieceTeam::Light)) || ((start_file == 6) && matches!(team,PieceTeam::Dark)){
-                    if let Ok(x) = generate_pawn_double_step_movement(start,team){
-                        result.add_and_sort_raw_move(x,masks);
-                }
-            }
-        }
-    }
-    
-    // Check left capture
-    if let Ok(x) = generate_pawn_capture_movement(start,team,-1){
-        // Is a collision
-        if let Some(y) = result.sort_raw_move(x,masks){
-            // Of the other team
-            if y == team{
-                result.add_sorted_moves(x,Some(y));
-            }
-        }
-    }
-    // Check right capture
-    if let Ok(x) = generate_pawn_capture_movement(start,team,1){
-        // Is a collision
-        if let Some(y) = result.sort_raw_move(x,masks){
-            // Of the other team
-            if y == team{
-                result.add_sorted_moves(x,Some(y));
-            }
-        }
-    } 
-
-    Ok(result)
-}
 /// The lowest level bishop moves
 pub fn generate_bishop_moves_level_1(start : BoardLocation, masks : &CollisionMasks) -> Result<GenerateLevel1Result,ChessErrors>{
     let mut result = GenerateLevel1Result::new();
@@ -140,6 +116,7 @@ pub fn generate_bishop_moves_level_1(start : BoardLocation, masks : &CollisionMa
     }
     Ok(result)
 }
+
 /// The lowest level knight moves
 pub fn generate_knight_moves_level_1(start : BoardLocation, masks : &CollisionMasks) -> Result<GenerateLevel1Result,ChessErrors>{
     let mut result = GenerateLevel1Result::new();
@@ -244,22 +221,6 @@ mod tests {
     use crate::game_state::GameState;
 
     use super::*;
-
-    #[test]
-    fn test_pawn_moves_level_1(){
-        let game = GameState::from_fen("rnbqkbnr/ppp2ppp/4p3/3p4/3PP3/8/PPP2PPP/RNBQKBNR w KQkq d6 0 3").unwrap();
-        let raw_moves = generate_pawn_moves_level_1(BoardLocation::from_long_algebraic("e4").unwrap(),&CollisionMasks::from(&game.piece_register),PieceTeam::Light).unwrap();
-        assert_eq!(raw_moves.len(),2);
-
-        let raw_moves = generate_pawn_moves_level_1(BoardLocation::from_long_algebraic("d5").unwrap(),&CollisionMasks::from(&game.piece_register),PieceTeam::Dark).unwrap();
-        assert_eq!(raw_moves.len(),1);
-
-        let game = GameState::from_fen("rnbqkbnr/p1p2ppp/4p3/3p4/3PP3/Pp1B1N2/1PP2PPP/RNBQK2R w KQkq - 0 6").unwrap();
-        let raw_moves = generate_pawn_moves_level_1(BoardLocation::from_long_algebraic("c2").unwrap(),&CollisionMasks::from(&game.piece_register),PieceTeam::Light).unwrap();
-        assert_eq!(raw_moves.dark_collisions.len(),1);
-        assert_eq!(raw_moves.light_collisions.len(),1);
-        assert_eq!(raw_moves.no_collisions.len(),2);
-    }
 
     #[test]
     fn test_bishop_moves_level_1(){
