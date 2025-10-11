@@ -1,9 +1,9 @@
 use crate::{
-    board_location::BoardLocation,chess_errors::ChessErrors, generate_movements::*, generate_moves_level_1::*, piece_team::PieceTeam
+    board_location::BoardLocation, chess_errors::ChessErrors, collision_masks::CollisionMasks, generate_movements::*, generate_moves_level_1::*, piece_team::PieceTeam
 };
 
 /*
-Level 2 movement only need this information:
+Level 2 movement generations needs this information:
 
 #[derive(Debug,Clone)]
 pub struct GenerateLevel2Args{
@@ -11,16 +11,10 @@ pub struct GenerateLevel2Args{
     pub masks: CollisionMasks,
     pub team: PieceTeam
 }
-
-impl GenerateLevel2Args {
-    pub fn from(start : BoardLocation,piece_register : &PieceRegister, team : PieceTeam)->Self{
-        GenerateLevel2Args { start, masks: CollisionMasks::from(piece_register, team)}
-    }
-}
 */
 
 
-/// The results from level 2 generation are level 1 generations filtered into captures / regular moves
+/// The results from level 2 generation are level 1 generations filtered into captures / movement of regular moves
 #[derive(Debug,Clone)]
 pub struct GenerateLevel2Result{
     pub no_collisions : ListOfRawMoves,
@@ -49,20 +43,15 @@ impl GenerateLevel2Result{
 }
 
 /// Pawns require level 2 information to generate
+/// These are all the regular (not special) moves of a pawn
 pub fn generate_pawn_moves_level_2(start : BoardLocation, masks : &CollisionMasks, team:PieceTeam) -> Result<GenerateLevel2Result,ChessErrors>{
     let mut result_1 = GenerateLevel1Result::new();
 
     // Check first movement
     if let Ok(x) = generate_pawn_single_step_movement(start,team){
-        if result_1.add_and_sort_raw_move(x,masks) == false{
-            // Check second movement if first was not a collision
-            let (_,start_file) = start.get_file_rank();
-            // If on starting point
-            if ((start_file == 1) && matches!(team,PieceTeam::Light)) || ((start_file == 6) && matches!(team,PieceTeam::Dark)){
-                    if let Ok(x) = generate_pawn_double_step_movement(start,team){
-                        result_1.add_and_sort_raw_move(x,masks);
-                }
-            }
+        // Have to check collision case for the pawn here because it wont' be caught elsewhere
+        if x.binary_location & (masks.light_mask | masks.dark_mask) == 0{
+            result_1.add_and_sort_raw_move(x,masks);
         }
     }
     
@@ -76,6 +65,7 @@ pub fn generate_pawn_moves_level_2(start : BoardLocation, masks : &CollisionMask
             }
         }
     }
+
     // Check right capture
     if let Ok(x) = generate_pawn_capture_movement(start,team,1){
         // Is a collision
@@ -133,11 +123,11 @@ mod tests {
         assert_eq!(raw_moves.len(),2);
 
         let raw_moves = generate_pawn_moves_level_2(BoardLocation::from_long_algebraic("d5").unwrap(),&CollisionMasks::from(&game.piece_register),PieceTeam::Dark).unwrap();
-        assert_eq!(raw_moves.len(),2);
+        assert_eq!(raw_moves.len(),1); // Remember we had to filter the collision for this special case
 
         let game = GameState::from_fen("rnbqkbnr/p1p2ppp/4p3/3p4/3PP3/Pp1B1N2/1PP2PPP/RNBQK2R w KQkq - 0 6").unwrap();
         let raw_moves = generate_pawn_moves_level_2(BoardLocation::from_long_algebraic("c2").unwrap(),&CollisionMasks::from(&game.piece_register),PieceTeam::Light).unwrap();
         assert_eq!(raw_moves.captures.len(),1);
-        assert_eq!(raw_moves.no_collisions.len(),2);
+        assert_eq!(raw_moves.no_collisions.len(),1);
     }
 }

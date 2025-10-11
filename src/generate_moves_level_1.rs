@@ -1,42 +1,20 @@
 use std::collections::LinkedList;
 
 use crate::{
-    board_location::BoardLocation, board_mask::BoardMask, chess_errors::ChessErrors, generate_movements::*, piece_register::{PieceRegister}, piece_team::PieceTeam
+    board_location::BoardLocation, chess_errors::ChessErrors, collision_masks::CollisionMasks, generate_movements::*, piece_team::PieceTeam
 };
 
-/// Level 1 move generation is basic and only requires this information.
 /*
-This is mainly for documentation
+Level 1 move generation is basic and only requires this information.
 #[derive(Debug,Clone)]
 pub struct GenerateLevel1Args{
     pub start: BoardLocation,
     pub masks: CollisionMasks,
 }
-
-impl GenerateLevel1Args {
-    pub fn from(start : BoardLocation,piece_register : &PieceRegister)->Self{
-        GenerateLevel1Args { start, masks: CollisionMasks::from(piece_register)}
-    }
-}
 */
 
 /// Type alias for a linked list of move descriptions with collision information.
 pub type ListOfRawMoves = LinkedList<BoardLocation>;
-
-#[derive(Debug,Clone)]
-pub struct CollisionMasks{
-    pub light_mask : BoardMask,
-    pub dark_mask : BoardMask
-}
-
-impl CollisionMasks{
-    pub fn from(piece_register : &PieceRegister) ->Self{
-        CollisionMasks{
-            light_mask : piece_register.generate_mask_all_light(),
-            dark_mask : piece_register.generate_mask_all_dark(),
-        }
-    }
-}
 
 /// The results from level 1 generation are moves on the board from a location until hitting the first collision
 /// The collisions are sorted into types at this level

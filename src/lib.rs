@@ -11,8 +11,12 @@ pub mod generate_movements;
 pub mod game_state;
 pub mod generate_moves_level_1;
 pub mod generate_moves_level_2;
+pub mod generate_moves_level_3;
+pub mod generate_moves_level_4;
 pub mod move_logic;
 pub mod board_mask;
+pub mod collision_masks;
+pub mod special_move_flags;
 //
 
 //pub mod uci_interface;

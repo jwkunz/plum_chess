@@ -9,17 +9,15 @@ use crate::{
 /// Used for describing a change
 #[derive(Clone, Copy, Debug)]
 pub struct MoveVector {
-    piece_at_start: PieceRecord,
-    destination: BoardLocation,
+    pub piece_at_start: PieceRecord,
+    pub destination: BoardLocation,
 }
-
-
 
 /// Represents the move types in chess, such as promotion, castling, en passant, and double pawn step.
 /// Used to distinguish between regular moves and moves with special rules and information
 #[derive(Clone, Copy, Debug)]
 pub enum MoveTypes {
-    /// A regular move or capture
+    /// A regular move or regular capture
     Regular,
     /// En passant capture.  The capture_status contains the victim piece.
     EnPassant,
@@ -143,7 +141,7 @@ impl MoveDescription {
                 }
             } else if matches!(piece_at_start.class, PieceClass::King) {
                 // Detect castling based on notation and castling rights.
-                if x == "e1g1" && game.can_castle_king_light {
+                if x == "e1g1" && game.special_flags.can_castle_king_light {
                     MoveTypes::Castling(MoveVector {
                         // Get the rook
                         piece_at_start: *game
@@ -152,7 +150,7 @@ impl MoveDescription {
                         // Rook's destination
                         destination: BoardLocation::from_file_rank(5, 0)?,
                     })
-                } else if x == "e1c1" && game.can_castle_queen_light {
+                } else if x == "e1c1" && game.special_flags.can_castle_queen_light {
                     MoveTypes::Castling(MoveVector {
                         // Get the rook
                         piece_at_start: *game
@@ -161,7 +159,7 @@ impl MoveDescription {
                         // Rook's destination
                         destination: BoardLocation::from_file_rank(3, 0)?,
                     })
-                } else if x == "e8g8" && game.can_castle_king_dark {
+                } else if x == "e8g8" && game.special_flags.can_castle_king_dark {
                     MoveTypes::Castling(MoveVector {
                         // Get the rook
                         piece_at_start: *game
@@ -170,7 +168,7 @@ impl MoveDescription {
                         // Rook's destination
                         destination: BoardLocation::from_file_rank(5, 7)?,
                     })
-                } else if x == "e8c8" && game.can_castle_queen_dark {
+                } else if x == "e8c8" && game.special_flags.can_castle_queen_dark {
                     MoveTypes::Castling(MoveVector {
                         // Get the rook
                         piece_at_start: *game

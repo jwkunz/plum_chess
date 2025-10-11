@@ -1,35 +1,33 @@
-use std::collections::VecDeque;
-
 use crate::board_location::{BoardLocation};
-use crate::checked_move_description::CheckedMoveDescription;
 use crate::chess_errors::ChessErrors;
-use crate::move_description::MoveDescription;
 use crate::piece_register::PieceRegister;
 use crate::piece_class::PieceClass;
 use crate::piece_team::PieceTeam;
 use crate::piece_record::PieceRecord;
 use crate::scoring::conventional_score;
+use crate::special_move_flags::SpecialMoveFlags;
 
-/// Represents the complete state of a chess game at a given moment.
-/// Includes piece positions, castling rights, en passant target, move clocks, and turn.
+
+/// The special stuff for castling rights and en passant
 #[derive(Clone,Debug)]
-pub struct GameState {
-    /// The register containing all pieces and their locations.
-    pub piece_register: PieceRegister,
-    /// Whether light (white) can castle queenside.
-    pub can_castle_queen_light: bool,
-    /// Whether light (white) can castle kingside.
-    pub can_castle_king_light: bool,
-    /// Whether dark (black) can castle queenside.
-    pub can_castle_queen_dark: bool,
-    /// Whether dark (black) can castle kingside.
-    pub can_castle_king_dark: bool,
-    /// The en passant target square, if any.
-    pub en_passant_location: Option<BoardLocation>,
+pub struct MoveCounters{
     /// The half-move clock (for the 50-move rule).
     pub half_move_clock: u16,
     /// The full-move count (increments after black's move).
     pub full_move_count: u16,
+}
+
+
+
+/// Represents the complete state of a chess game at a given moment.
+#[derive(Clone,Debug)]
+pub struct GameState {
+    /// The register containing all pieces and their locations.
+    pub piece_register: PieceRegister,
+    /// Game Status Flags
+    pub special_flags : SpecialMoveFlags,
+    /// Move couners
+    pub move_counters : MoveCounters,
     /// The team whose turn it is to move.
     pub turn: PieceTeam,
 }
@@ -226,13 +224,15 @@ impl GameState {
 
         Ok(GameState {
             piece_register,
-            can_castle_king_dark,
-            can_castle_king_light,
-            can_castle_queen_dark,
-            can_castle_queen_light,
-            en_passant_location,
-            half_move_clock,
-            full_move_count,
+            special_flags : SpecialMoveFlags { 
+                can_castle_queen_light, 
+                can_castle_king_light, 
+                can_castle_queen_dark, 
+                can_castle_king_dark, 
+                en_passant_location},
+            move_counters: MoveCounters { 
+                half_move_clock, 
+                full_move_count},
             turn
         })
     }
@@ -298,29 +298,29 @@ impl GameState {
         };
         result.push(' ');
 
-        if !self.can_castle_king_dark
-            & !self.can_castle_queen_dark
-            & !self.can_castle_king_light
-            & !self.can_castle_queen_light
+        if !self.special_flags.can_castle_king_dark
+            & !self.special_flags.can_castle_queen_dark
+            & !self.special_flags.can_castle_king_light
+            & !self.special_flags.can_castle_queen_light
         {
             result.push('-');
         } else {
-            if self.can_castle_king_light {
+            if self.special_flags.can_castle_king_light {
                 result.push('K');
             }
-            if self.can_castle_queen_light {
+            if self.special_flags.can_castle_queen_light {
                 result.push('Q');
             }
-            if self.can_castle_king_dark {
+            if self.special_flags.can_castle_king_dark {
                 result.push('k');
             }
-            if self.can_castle_queen_dark {
+            if self.special_flags.can_castle_queen_dark {
                 result.push('q');
             }
         }
         result.push(' ');
 
-        if let Some(loc) = self.en_passant_location {
+        if let Some(loc) = self.special_flags.en_passant_location {
             let (rank,file) = loc.get_file_rank(); 
             match rank {
                 0 => result.push('a'),
@@ -349,10 +349,10 @@ impl GameState {
         }
         result.push(' ');
 
-        result.push_str(&self.half_move_clock.to_string());
+        result.push_str(&self.move_counters.half_move_clock.to_string());
         result.push(' ');
 
-        result.push_str(&self.full_move_count.to_string());
+        result.push_str(&self.move_counters.full_move_count.to_string());
         result
     }
 
