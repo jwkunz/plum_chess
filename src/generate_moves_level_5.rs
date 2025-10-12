@@ -2,19 +2,21 @@ use std::collections::LinkedList;
 
 use crate::{
     apply_move_to_game::apply_move_to_game_unchecked,
-    checked_move_description::CheckedMoveDescription,
-    chess_errors::ChessErrors,
-    collision_masks::CollisionMasks,
-    game_state::GameState,
-    generate_moves_level_3::{GenerateLevel3Result},
-    generate_moves_level_4::{generate_moves_level_4},
-    piece_record::PieceRecord,
-    types_of_check::TypesOfCheck,
+    checked_move_description::CheckedMoveDescription, chess_errors::ChessErrors,
+    collision_masks::CollisionMasks, game_state::GameState,
+    generate_moves_level_3::GenerateLevel3Result, generate_moves_level_4::generate_moves_level_4,
+    piece_record::PieceRecord, types_of_check::TypesOfCheck,
 };
 
 /// At level 5 we provided the rule checked move description and future game state after that move.
 /// This layer can only find single checks, not double checks
-type GenerateLevel5Result = LinkedList<(CheckedMoveDescription, GameState)>;
+
+pub struct CheckedMoveWithFutureGame {
+    pub checked_move: CheckedMoveDescription,
+    pub game_after_move: GameState,
+}
+
+type GenerateLevel5Result = LinkedList<CheckedMoveWithFutureGame>;
 
 /// Level 5 filters the level 4 moves by inspecting for check and rules violations
 
@@ -65,50 +67,63 @@ pub fn generate_moves_level_5(
         future_game.check_status = check_status;
 
         // Add the move description and future game
-        result.push_back((
-            CheckedMoveDescription {
+        result.push_back(CheckedMoveWithFutureGame {
+            checked_move: CheckedMoveDescription {
                 description: move_to_try,
                 check_status,
             },
-            future_game,
-        ));
+            game_after_move: future_game,
+        });
     }
 
     Ok(result)
 }
 
 #[cfg(test)]
-mod test{
+mod test {
     use crate::board_location::BoardLocation;
 
     use super::*;
 
     #[test]
-    fn test_king_moves_level_5(){
-        
-        let game = GameState::from_fen("rnbqkbnr/pppp1ppp/8/4p3/3PP3/8/PPP2PPP/RNBQKBNR b KQkq d3 0 2").unwrap();
-        let moves = generate_moves_level_5(game.piece_register.view_piece_at_location(BoardLocation::from_long_algebraic("f8").unwrap()).unwrap(),&game).unwrap();
-        assert_eq!(moves.len(),5);
+    fn test_king_moves_level_5() {
+        let game =
+            GameState::from_fen("rnbqkbnr/pppp1ppp/8/4p3/3PP3/8/PPP2PPP/RNBQKBNR b KQkq d3 0 2")
+                .unwrap();
+        let moves = generate_moves_level_5(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("f8").unwrap())
+                .unwrap(),
+            &game,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 5);
         let mut check_count = 0;
-        for m in moves{
-            if m.0.check_status.is_some(){
+        for m in moves {
+            if m.checked_move.check_status.is_some() {
                 check_count += 1;
             }
         }
-        assert_eq!(check_count,1);
+        assert_eq!(check_count, 1);
 
         let game = GameState::from_fen("8/6k1/8/4pp2/3q4/6B1/p7/5KR1 w - - 0 1").unwrap();
-        let moves = generate_moves_level_5(game.piece_register.view_piece_at_location(BoardLocation::from_long_algebraic("g3").unwrap()).unwrap(),&game).unwrap();
-        assert_eq!(moves.len(),6);
+        let moves = generate_moves_level_5(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("g3").unwrap())
+                .unwrap(),
+            &game,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 6);
         let mut check_count = 0;
         let mut is_single_check = false;
-        for m in moves{
-            if let Some(x) = m.0.check_status{
+        for m in moves {
+            if let Some(x) = m.checked_move.check_status {
                 check_count += 1;
-                is_single_check = matches!(x,TypesOfCheck::SingleCheck(_,_));
+                is_single_check = matches!(x, TypesOfCheck::SingleCheck(_, _));
             }
         }
-        assert_eq!(check_count,1);
+        assert_eq!(check_count, 1);
         assert!(is_single_check); // This layer cannot inspect for double check or pins, so only reporting as single check
     }
 }
