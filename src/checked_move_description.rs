@@ -1,16 +1,5 @@
 use crate::move_description::MoveDescription;
-use crate::piece_record::PieceRecord;
-
-/// Descriptions of Check
-#[derive(Clone, Copy, Debug)]
-pub enum TypesOfCheck {
-    /// Check (King piece)
-    SingleCheck(PieceRecord),
-    /// Check (King piece, other threatening piece)
-    DoubleCheck(PieceRecord, PieceRecord),
-    /// Check (King piece,pinned_piece)
-    Pin(PieceRecord, PieceRecord),
-}
+use crate::types_of_check::TypesOfCheck;
 
 /// Contains a move description +
 /// If there is a check event

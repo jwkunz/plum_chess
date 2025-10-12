@@ -13,7 +13,7 @@ pub struct GenerateLevel3args{
 */
 
 
-/// The results from level 3 generation are level 2 generations created from a PieceRecord
+/// The results from level 3 generation are type dispatched level 2 generations created from a PieceRecord
 #[derive(Debug,Clone)]
 pub struct GenerateLevel3Result{
     pub no_collisions : ListOfRawMoves,

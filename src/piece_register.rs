@@ -79,22 +79,20 @@ impl PieceRegister {
         }        
         Err(ChessErrors::TryToViewOrEditEmptySquare(x))
     }    
-    pub fn remove_piece_at_location(&mut self, x : BoardLocation) -> Result<(),ChessErrors>{
+    pub fn remove_piece_at_location(&mut self, x : BoardLocation) -> Result<PieceRecord,ChessErrors>{
         if self.light_king.location.binary_location == x.binary_location{
             return Err(ChessErrors::CannotRemoveKings(x))
         }
         if self.dark_king.location.binary_location == x.binary_location{
             return Err(ChessErrors::CannotRemoveKings(x))
         }
-        let old_size = self.light_pieces.len();
-        self.light_pieces = self.light_pieces.extract_if(|y| y.location.binary_location == x.binary_location).collect();
-        if self.light_pieces.len() < old_size{
-            return Ok(());
+        let found_piece : LinkedList<PieceRecord> = self.light_pieces.extract_if(|y| y.location.binary_location == x.binary_location).collect();
+        if found_piece.len() > 0{
+            return found_piece.front().copied().ok_or(ChessErrors::CannotRemoveFromEmptyLocation(x));
         }
-        let old_size = self.dark_pieces.len();
-        self.dark_pieces = self.dark_pieces.extract_if(|y| y.location.binary_location == x.binary_location).collect();
-        if self.dark_pieces.len() < old_size{
-            return Ok(());
+        let found_piece : LinkedList<PieceRecord> = self.dark_pieces.extract_if(|y| y.location.binary_location == x.binary_location).collect();
+        if found_piece.len() > 0{
+            return found_piece.front().copied().ok_or(ChessErrors::CannotRemoveFromEmptyLocation(x));
         }
         Err(ChessErrors::CannotRemoveFromEmptyLocation(x))
     }    
