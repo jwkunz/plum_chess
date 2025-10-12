@@ -1,5 +1,4 @@
-use std::error::Error;
-use crate::{game_state::GameState, move_logic::*};
+use crate::{game_state::GameState, generate_moves_level_5::generate_all_moves};
 
 fn perft_recursion(game : &GameState, search_depth : u8, current_depth : u8) -> u64{
     let mut count = 0;
@@ -8,9 +7,7 @@ fn perft_recursion(game : &GameState, search_depth : u8, current_depth : u8) -> 
     }
     if let Ok(all_moves) = generate_all_moves(game){
         for m in all_moves{
-            if let Ok(next_game) = apply_move_to_game(game, &m.description){
-                count += perft_recursion(&next_game, search_depth, current_depth+1);
-            }
+            count += perft_recursion(&m.game_after_move, search_depth, current_depth+1);
         }
     }
     count
@@ -42,6 +39,7 @@ mod tests{
         let count = perft(&game, 2);
         assert_eq!(count, 400)
         // Oct 1 Version gave 400 in 0.00s on release   
+        // Oct 12 Version gave 197281 in 0.00s on release  
     }
     #[test]
     fn perft_3(){
@@ -49,7 +47,8 @@ mod tests{
         let count = perft(&game, 3);
         assert_eq!(count, 8902)
         // Log
-        // Oct 1 Version gave 8902 in 0.02s on release            
+        // Oct 1 Version gave 8902 in 0.02s on release
+        // Oct 12 Version gave 197281 in 0.03s on release             
     }
     #[test]
     fn perft_4(){
@@ -57,7 +56,8 @@ mod tests{
         let count = perft(&game, 4);
         assert_eq!(count, 197281)
         // Log
-        // Oct 1 Version gave 197281 in 0.25s on release               
+        // Oct 1 Version gave 197281 in 0.25s on release
+        // Oct 12 Version gave 197281 in 0.55s on release               
     }
     #[test]
     fn perft_5(){
@@ -65,7 +65,8 @@ mod tests{
         let count = perft(&game, 5);
         assert_eq!(count, 4865609)
         // Log
-        // Oct 1 Version gave 4865609 in 6.74s on release      
+        // Oct 1 Version gave 4865609 in 6.74s on release    
+        // Oct 12 Version gave 4865609 in 13.46s on release      
     }    
     #[test]
     fn perft_6(){

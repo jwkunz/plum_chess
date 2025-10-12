@@ -1,11 +1,7 @@
 use std::collections::LinkedList;
 
 use crate::{
-    apply_move_to_game::{apply_move_to_game_filtering_no_friendly_check},
-    checked_move_description::CheckedMoveDescription, chess_errors::ChessErrors,
-    collision_masks::CollisionMasks, game_state::GameState,
-    generate_moves_level_3::GenerateLevel3Result, generate_moves_level_4::generate_moves_level_4,
-    piece_record::PieceRecord, types_of_check::TypesOfCheck,
+    apply_move_to_game::apply_move_to_game_filtering_no_friendly_check, checked_move_description::CheckedMoveDescription, chess_errors::ChessErrors, collision_masks::CollisionMasks, game_state::GameState, generate_moves_level_3::GenerateLevel3Result, generate_moves_level_4::generate_moves_level_4, piece_record::PieceRecord, piece_team::PieceTeam, types_of_check::TypesOfCheck
 };
 
 /// At level 5 we provided the rule checked move description and future game state after that move.
@@ -74,6 +70,23 @@ pub fn generate_moves_level_5(
         }
     }
 
+    Ok(result)
+}
+
+/// Generates all chess moves
+pub fn generate_all_moves(game : &GameState) -> Result<GenerateLevel5Result,ChessErrors>{
+    let mut result = GenerateLevel5Result::new();
+    if matches!(game.turn,PieceTeam::Light){
+        for p in &game.piece_register.light_pieces{
+            result.extend(generate_moves_level_5(p,game)?);
+        }
+        result.extend(generate_moves_level_5(&game.piece_register.light_king,game)?);
+    }else{
+        for p in &game.piece_register.dark_pieces{
+            result.extend(generate_moves_level_5(p,game)?);
+        }
+        result.extend(generate_moves_level_5(&game.piece_register.dark_king,game)?);
+    }
     Ok(result)
 }
 
