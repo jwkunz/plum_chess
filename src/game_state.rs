@@ -6,7 +6,6 @@ use crate::piece_team::PieceTeam;
 use crate::piece_record::PieceRecord;
 use crate::scoring::conventional_score;
 use crate::special_move_flags::SpecialMoveFlags;
-use crate::types_of_check::TypesOfCheck;
 
 
 /// The special stuff for castling rights and en passant
@@ -31,8 +30,6 @@ pub struct GameState {
     pub move_counters : MoveCounters,
     /// The team whose turn it is to move.
     pub turn: PieceTeam,
-    /// On this turn, is the player in check
-    pub check_status : Option<TypesOfCheck>
 }
 
 impl GameState {
@@ -236,8 +233,7 @@ impl GameState {
             move_counters: MoveCounters { 
                 half_move_clock, 
                 full_move_count},
-            turn,
-            check_status:None // TODO, need to inspect for check here
+            turn
         })
     }
 

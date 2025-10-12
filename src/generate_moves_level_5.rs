@@ -1,7 +1,7 @@
 use std::collections::LinkedList;
 
 use crate::{
-    apply_move_to_game::apply_move_to_game_unchecked,
+    apply_move_to_game::{apply_move_to_game_filtering_no_friendly_check},
     checked_move_description::CheckedMoveDescription, chess_errors::ChessErrors,
     collision_masks::CollisionMasks, game_state::GameState,
     generate_moves_level_3::GenerateLevel3Result, generate_moves_level_4::generate_moves_level_4,
@@ -10,7 +10,8 @@ use crate::{
 
 /// At level 5 we provided the rule checked move description and future game state after that move.
 /// This layer can only find single checks, not double checks
-
+/// This layer does inspect to make sure a move does leave the friendly king in check
+#[derive(Clone, Debug)]
 pub struct CheckedMoveWithFutureGame {
     pub checked_move: CheckedMoveDescription,
     pub game_after_move: GameState,
@@ -39,41 +40,38 @@ pub fn generate_moves_level_5(
             crate::piece_team::PieceTeam::Dark => game.piece_register.light_king,
         };
 
-        // Simulate the future game
-        let mut future_game = apply_move_to_game_unchecked(&move_to_try, game)?;
+        // Simulate the future game, and make sure it doesn't create friendly check
+        if let Some(future_game) = apply_move_to_game_filtering_no_friendly_check(&move_to_try, game)?{
+            // NOTE: This is a relativley slow and wasteful lookup, but cannot figure out how to cleanly cache this right now
+            let future_piece = future_game
+                .piece_register
+                .view_piece_at_location(move_to_try.vector.destination)?;
 
-        // NOTE: This is a relativley slow and wasteful lookup, but cannot figure out how to cleanly cache this right now
-        let future_piece = future_game
-            .piece_register
-            .view_piece_at_location(move_to_try.vector.destination)?;
+            // Generate moves from the piece at the destination
 
-        // Generate moves from the piece at the destination
+            let future_moves_level_3 = GenerateLevel3Result::from(
+                future_piece,
+                &CollisionMasks::from(&future_game.piece_register),
+            )?;
 
-        let future_moves_level_3 = GenerateLevel3Result::from(
-            future_piece,
-            &CollisionMasks::from(&future_game.piece_register),
-        )?;
-
-        // Look for a king capture in this level 3
-        for f in future_moves_level_3.captures {
-            // Capture collision with enemy king
-            if f.binary_location & enemy_king_record.location.binary_location > 0 {
-                check_status = Some(TypesOfCheck::SingleCheck(enemy_king_record, *future_piece));
-                break;
+            // Look for a king capture in this level 3
+            for f in future_moves_level_3.captures {
+                // Capture collision with enemy king
+                if f.binary_location & enemy_king_record.location.binary_location > 0 {
+                    check_status = Some(TypesOfCheck::SingleCheck(enemy_king_record, *future_piece));
+                    break;
+                }
             }
+
+            // Add the move description and future game
+            result.push_back(CheckedMoveWithFutureGame {
+                checked_move: CheckedMoveDescription {
+                    description: move_to_try,
+                    check_status,
+                },
+                game_after_move: future_game,
+            });
         }
-
-        // Make sure the future game has the check status
-        future_game.check_status = check_status;
-
-        // Add the move description and future game
-        result.push_back(CheckedMoveWithFutureGame {
-            checked_move: CheckedMoveDescription {
-                description: move_to_try,
-                check_status,
-            },
-            game_after_move: future_game,
-        });
     }
 
     Ok(result)
@@ -86,9 +84,10 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_king_moves_level_5() {
+    fn test_generate_moves_level_5() {
+        // A game that allows check and has a pinned piece
         let game =
-            GameState::from_fen("rnbqkbnr/pppp1ppp/8/4p3/3PP3/8/PPP2PPP/RNBQKBNR b KQkq d3 0 2")
+            GameState::from_fen("rnb1kbnr/pppp1ppp/8/4p3/3PP2q/8/PPP2PPP/RNBQKBNR w KQkq - 1 3")
                 .unwrap();
         let moves = generate_moves_level_5(
             game.piece_register
@@ -106,6 +105,17 @@ mod test {
         }
         assert_eq!(check_count, 1);
 
+        // Should not allow pinned piece to move
+        let moves = generate_moves_level_5(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("f2").unwrap())
+                .unwrap(),
+            &game,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 0);
+
+        // A double check scenario
         let game = GameState::from_fen("8/6k1/8/4pp2/3q4/6B1/p7/5KR1 w - - 0 1").unwrap();
         let moves = generate_moves_level_5(
             game.piece_register
@@ -125,5 +135,63 @@ mod test {
         }
         assert_eq!(check_count, 1);
         assert!(is_single_check); // This layer cannot inspect for double check or pins, so only reporting as single check
+
+
+        // A one move check scenario
+        let game = GameState::from_fen("rnb1kbnr/pppp1ppp/8/4p3/3Pq3/2P5/PP3PPP/RNBQKBNR w KQkq - 0 4").unwrap();
+        let moves = generate_moves_level_5(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("e1").unwrap())
+                .unwrap(),
+            &game,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 1);
+
+        let moves = generate_moves_level_5(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("f1").unwrap())
+                .unwrap(),
+            &game,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 1);
+
+        let moves = generate_moves_level_5(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("g1").unwrap())
+                .unwrap(),
+            &game,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 1);
+
+        let moves = generate_moves_level_5(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("d1").unwrap())
+                .unwrap(),
+            &game,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 1);
+
+        let moves = generate_moves_level_5(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("c1").unwrap())
+                .unwrap(),
+            &game,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 1);
+
+        let moves = generate_moves_level_5(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("f2").unwrap())
+                .unwrap(),
+            &game,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 0);
+
     }
 }

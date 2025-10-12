@@ -1,4 +1,4 @@
-use crate::{checked_move_description::CheckedMoveDescription, chess_errors::ChessErrors, game_state::GameState, move_description::{MoveDescription, MoveTypes}, piece_class::PieceClass, piece_team::PieceTeam};
+use crate::{chess_errors::ChessErrors, game_state::GameState, inspect_if_king_is_under_check::inspect_if_game_has_king_in_check, move_description::{MoveDescription, MoveTypes}, piece_class::PieceClass, piece_team::PieceTeam};
 
 /// Applies an unchecked chess move to a given game state, returning the resulting game state or an error.
 /// This function handles all move types, including castling, en passant, promotion, and updates castling rights and clocks.
@@ -133,13 +133,11 @@ pub fn apply_move_to_game_unchecked(chess_move: &MoveDescription, game: &GameSta
     }else{
         result.turn = PieceTeam::Dark;
     }
-
-    // Cannot update check status in unchecked mode   
+  
     Ok(result)
 }
 
-
-/// Applies an unchecked chess move to a given game state, returning the resulting game state or an error.
+/// Applies an unchecked chess move to a given game state and filters if the move does not allow enemy check via resulting Option<GameState>.
 /// This function handles all move types, including castling, en passant, promotion, and updates castling rights and clocks.
 /// It will not update the game's check status
 /// 
@@ -148,10 +146,22 @@ pub fn apply_move_to_game_unchecked(chess_move: &MoveDescription, game: &GameSta
 /// * `game` - The current game state.
 ///
 /// # Returns
-/// * `Ok(GameState)` - The new game state after the move.
+/// * `Ok(Some(GameState))` - The new game state after the move is Some if it did not create friendly check
 /// * `Err(Errors)` - If the move is invalid or cannot be applied.
-pub fn apply_move_to_game(chess_move: &CheckedMoveDescription, game: &GameState) -> Result<GameState, ChessErrors> {
-    let mut result = apply_move_to_game_unchecked(&chess_move.description, game)?;
-    result.check_status = chess_move.check_status;
-    Ok(result)
+pub fn apply_move_to_game_filtering_no_friendly_check(chess_move: &MoveDescription, game: &GameState) -> Result<Option<GameState>, ChessErrors> {
+    // Do a regular game update
+    let mut candidate_game = apply_move_to_game_unchecked(chess_move, game)?;
+    // Now temporarily invert the turn to inspect for friendly check
+    let turn_cache = candidate_game.turn; 
+    candidate_game.turn = match turn_cache {
+        PieceTeam::Dark => PieceTeam::Light,
+        PieceTeam::Light => PieceTeam::Dark
+    };
+    if inspect_if_game_has_king_in_check(&candidate_game)?{
+        Ok(None)
+    }else{
+        // No friendly check, set the turn back
+        candidate_game.turn = turn_cache;
+        Ok(Some(candidate_game))
+    }
 }
