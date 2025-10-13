@@ -1,20 +1,20 @@
-use crate::{game_state::GameState, generate_moves_level_5::generate_all_moves};
+use crate::{chess_errors::ChessErrors, game_state::GameState, generate_moves_level_5::generate_all_moves};
 
-fn perft_recursion(game : &GameState, search_depth : u8, current_depth : u8) -> u64{
+fn perft_recursion(game : &GameState, search_depth : u8, current_depth : u8) -> Result<u64,ChessErrors>{
     let mut count = 0;
     if current_depth == search_depth{
-        return 1;
+        return Ok(1);
     }
-    if let Ok(all_moves) = generate_all_moves(game){
-        for m in all_moves{
-            count += perft_recursion(&m.game_after_move, search_depth, current_depth+1);
-        }
+    let all_moves = generate_all_moves(game)?;
+    for m in all_moves{
+        count += perft_recursion(&m.game_after_move, search_depth, current_depth+1)?;
     }
-    count
+
+    Ok(count)
 }
 
 
-pub fn perft(game : &GameState, search_depth : u8) -> u64{
+pub fn perft(game : &GameState, search_depth : u8) -> Result<u64,ChessErrors>{
     perft_recursion(game, search_depth, 0)
 }
 
@@ -27,74 +27,83 @@ mod tests{
     use super::*;
 
     #[test]
-    fn perft_1(){
+    fn perft_position_1(){
+        let test_limit = 5;
+        let results : Vec<u64> = vec![20,400,8902,197281,4865609,119060324,3195901860,84998978956,2439530234167];
         let game = GameState::new_game();
-        let count = perft(&game, 1);
-        assert_eq!(count, 20)
-        // Oct 1 Version gave 20 in 0.00s on release  
+        
+        for (depth,target) in results.iter().enumerate().take(test_limit){
+            println!("Running Depth: {:}",depth+1);
+            let count = perft(&game, (depth as u8)+1).unwrap();
+            assert_eq!(count,*target)
+        }
+        // Oct 1 version [assed up to depth 5 in 7.02 seconds
+        // Oct 12 version passed up to depth 5 in 16.78 seconds
     }
+
     #[test]
-    fn perft_2(){
-        let game = GameState::new_game();
-        let count = perft(&game, 2);
-        assert_eq!(count, 400)
-        // Oct 1 Version gave 400 in 0.00s on release   
-        // Oct 12 Version gave 197281 in 0.00s on release  
+    fn perft_position_2(){
+        let test_limit = 5;
+        let results : Vec<u64> = vec![48,2039,97862,4085603,193690690,8031647685];
+        let game = GameState::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 0").unwrap();
+        for (depth,target) in results.iter().enumerate().take(test_limit){
+            println!("Running Depth: {:}",depth+1);
+            let count = perft(&game, (depth as u8)+1).unwrap();
+            assert_eq!(count,*target)
+        }
+        // Oct 12 version passed up to depth 2 in 0.24 seconds
     }
+
     #[test]
-    fn perft_3(){
-        let game = GameState::new_game();
-        let count = perft(&game, 3);
-        assert_eq!(count, 8902)
-        // Log
-        // Oct 1 Version gave 8902 in 0.02s on release
-        // Oct 12 Version gave 197281 in 0.03s on release             
+    fn perft_position_3(){
+        let test_limit = 5;
+        let results : Vec<u64> = vec![14,191,2812,43238,674624,11030083,178633661,3009794393];
+        let game = GameState::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1").unwrap();
+        for (depth,target) in results.iter().enumerate().take(test_limit){
+            println!("Running Depth: {:}",depth+1);
+            let count = perft(&game, (depth as u8)+1).unwrap();
+            assert_eq!(count,*target)
+        }
+        // Oct 12 version passed up to depth 5 in 9.5 seconds
     }
+
     #[test]
-    fn perft_4(){
-        let game = GameState::new_game();
-        let count = perft(&game, 4);
-        assert_eq!(count, 197281)
-        // Log
-        // Oct 1 Version gave 197281 in 0.25s on release
-        // Oct 12 Version gave 197281 in 0.55s on release               
+    fn perft_position_4(){
+        let test_limit = 2;
+        let results : Vec<u64> = vec![6,264,9467,422333,15833292,706045033];
+        let game = GameState::from_fen("r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1").unwrap();
+        for (depth,target) in results.iter().enumerate().take(test_limit){
+            println!("Running Depth: {:}",depth+1);
+            let count = perft(&game, (depth as u8)+1).unwrap();
+            assert_eq!(count,*target)
+        }
+        // Oct 12 version passed up to depth 5 in 9.5 seconds
     }
+
     #[test]
-    fn perft_5(){
-        let game = GameState::new_game();
-        let count = perft(&game, 5);
-        assert_eq!(count, 4865609)
-        // Log
-        // Oct 1 Version gave 4865609 in 6.74s on release    
-        // Oct 12 Version gave 4865609 in 13.46s on release      
-    }    
+    fn perft_position_5(){
+        let test_limit = 2;
+        let results : Vec<u64> = vec![44,1486,62379,2103487,89941194];
+        let game = GameState::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8").unwrap();
+        for (depth,target) in results.iter().enumerate().take(test_limit){
+            println!("Running Depth: {:}",depth+1);
+            let count = perft(&game, (depth as u8)+1).unwrap();
+            assert_eq!(count,*target)
+        }
+        // Oct 12 version passed up to depth 5 in 9.5 seconds
+    }
+
     #[test]
-    fn perft_6(){
-        let game = GameState::new_game();
-        let count = perft(&game, 6);
-        assert_eq!(count, 119060324)
-        // Log
-        // Oct 1 Version gave 119060197 in 191.41s on release
-    }   
-    #[test]
-    fn perft_7(){
-        let game = GameState::new_game();
-        let count = perft(&game, 7);
-        assert_eq!(count, 3195901860)
-        // Log
-    }    
-    #[test]
-    fn perft_8(){
-        let game = GameState::new_game();
-        let count = perft(&game, 8);
-        assert_eq!(count, 84998978956)
-        // Log
-    }        
-    #[test]
-    fn perft_9(){
-        let game = GameState::new_game();
-        let count = perft(&game, 9);
-        assert_eq!(count, 2439530234167	)
-        // Log
-    }            
+    fn perft_position_6(){
+        let test_limit = 4;
+        let results : Vec<u64> = vec![46,2079,89890,3894594,164075551,6923051137,287188994746,11923589843526,490154852788714];
+        let game = GameState::from_fen("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10").unwrap();
+        for (depth,target) in results.iter().enumerate().take(test_limit){
+            println!("Running Depth: {:}",depth+1);
+            let count = perft(&game, (depth as u8)+1).unwrap();
+            assert_eq!(count,*target)
+        }
+        // Oct 12 version passed up to depth 5 in 9.5 seconds
+    }
+
 }
