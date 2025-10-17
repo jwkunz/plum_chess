@@ -2,9 +2,11 @@ use std::fmt;
 
 use crate::chess_errors::ChessErrors;
 
+pub type BinaryLocation = u64;
+
 #[derive(Clone, Copy)]
 pub struct BoardLocation {
-    pub binary_location: u64,
+    pub binary_location: BinaryLocation,
 }
 
 /// Helper to convert file/rank chars to BoardLocation.

@@ -5,9 +5,9 @@ pub fn inspect_if_game_has_king_in_check(game : &GameState) -> Result<bool,Chess
     let collision_masks = CollisionMasks::from(&game.piece_register);
     if matches!(game.turn,crate::piece_team::PieceTeam::Light){
         // Looking for threats on the light king location
-        let king_mask = game.piece_register.generate_mask_light_king();
+        let king_mask = game.piece_register.generate_mask_light_king()?;
         // Look at all dark piece moves
-        for p in &game.piece_register.dark_pieces{
+        for (_,p) in &game.piece_register.dark_pieces{
             let generated_moves_level_3 = GenerateLevel3Result::from(p, &collision_masks)?;
             for c in generated_moves_level_3.captures{
                 if c.binary_location & king_mask > 0{ // Someone is threatening the king
@@ -17,9 +17,9 @@ pub fn inspect_if_game_has_king_in_check(game : &GameState) -> Result<bool,Chess
         }
     }else{
         // Looking for threats on the dark king location
-        let king_mask = game.piece_register.generate_mask_dark_king();
+        let king_mask = game.piece_register.generate_mask_dark_king()?;
         // Look at all light piece moves
-        for p in &game.piece_register.light_pieces{
+        for (_,p) in &game.piece_register.light_pieces{
             let generated_moves_level_3 = GenerateLevel3Result::from(p, &collision_masks)?;
             for c in generated_moves_level_3.captures{
                 if c.binary_location & king_mask > 0{ // Someone is threatening the king

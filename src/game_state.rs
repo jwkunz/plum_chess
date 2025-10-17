@@ -362,10 +362,10 @@ impl GameState {
     /// * `i8` - Positive favors light, negative favors dark.
     pub fn get_material_score(&self) -> i8 {
         let mut score = 0;
-        for piece_record in &self.piece_register.light_pieces {
+        for (_,piece_record) in &self.piece_register.light_pieces {
             score += conventional_score(&piece_record.class) as i8;
         }
-        for piece_record in &self.piece_register.dark_pieces {
+        for (_,piece_record) in &self.piece_register.dark_pieces {
             score -= conventional_score(&piece_record.class) as i8;       
         }     
         score

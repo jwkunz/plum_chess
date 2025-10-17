@@ -1,7 +1,11 @@
 use std::collections::LinkedList;
 
 use crate::{
-    apply_move_to_game::apply_move_to_game_filtering_no_friendly_check, checked_move_description::CheckedMoveDescription, chess_errors::ChessErrors, collision_masks::CollisionMasks, game_state::GameState, generate_moves_level_3::GenerateLevel3Result, generate_moves_level_4::generate_moves_level_4, piece_record::PieceRecord, piece_team::PieceTeam, types_of_check::TypesOfCheck
+    apply_move_to_game::apply_move_to_game_filtering_no_friendly_check,
+    checked_move_description::CheckedMoveDescription, chess_errors::ChessErrors,
+    collision_masks::CollisionMasks, game_state::GameState,
+    generate_moves_level_3::GenerateLevel3Result, generate_moves_level_4::generate_moves_level_4,
+    piece_record::PieceRecord, piece_team::PieceTeam, types_of_check::TypesOfCheck,
 };
 
 /// At level 5 we provided the rule checked move description and future game state after that move.
@@ -30,18 +34,15 @@ pub fn generate_moves_level_5(
         // See if the piece's team's king is in check after this move
         let mut check_status: Option<TypesOfCheck> = None;
 
-        // Get the enemy king
-        let enemy_king_record = match piece.team {
-            crate::piece_team::PieceTeam::Light => game.piece_register.dark_king,
-            crate::piece_team::PieceTeam::Dark => game.piece_register.light_king,
-        };
-
         // Simulate the future game, and make sure it doesn't create friendly check
-        if let Some(future_game) = apply_move_to_game_filtering_no_friendly_check(&move_to_try, game)?{
-            // NOTE: This is a relativley slow and wasteful lookup, but cannot figure out how to cleanly cache this right now
+        if let Some(future_game) =
+            apply_move_to_game_filtering_no_friendly_check(&move_to_try, game)?
+        {
+
             let future_piece = future_game
                 .piece_register
                 .view_piece_at_location(move_to_try.vector.destination)?;
+            
 
             // Generate moves from the piece at the destination
 
@@ -52,9 +53,16 @@ pub fn generate_moves_level_5(
 
             // Look for a king capture in this level 3
             for f in future_moves_level_3.captures {
+                // Get the enemy king
+                let enemy_king_record = *game.piece_register.view_king(match piece.team {
+                    crate::piece_team::PieceTeam::Light => PieceTeam::Dark,
+                    crate::piece_team::PieceTeam::Dark => PieceTeam::Light,
+                })?;
+
                 // Capture collision with enemy king
                 if f.binary_location & enemy_king_record.location.binary_location > 0 {
-                    check_status = Some(TypesOfCheck::SingleCheck(enemy_king_record, *future_piece));
+                    check_status =
+                        Some(TypesOfCheck::SingleCheck(enemy_king_record, *future_piece));
                     break;
                 }
             }
@@ -74,18 +82,16 @@ pub fn generate_moves_level_5(
 }
 
 /// Generates all chess moves
-pub fn generate_all_moves(game : &GameState) -> Result<GenerateLevel5Result,ChessErrors>{
+pub fn generate_all_moves(game: &GameState) -> Result<GenerateLevel5Result, ChessErrors> {
     let mut result = GenerateLevel5Result::new();
-    if matches!(game.turn,PieceTeam::Light){
-        for p in &game.piece_register.light_pieces{
-            result.extend(generate_moves_level_5(p,game)?);
+    if matches!(game.turn, PieceTeam::Light) {
+        for (_, p) in &game.piece_register.light_pieces {
+            result.extend(generate_moves_level_5(p, game)?);
         }
-        result.extend(generate_moves_level_5(&game.piece_register.light_king,game)?);
-    }else{
-        for p in &game.piece_register.dark_pieces{
-            result.extend(generate_moves_level_5(p,game)?);
+    } else {
+        for (_, p) in &game.piece_register.dark_pieces {
+            result.extend(generate_moves_level_5(p, game)?);
         }
-        result.extend(generate_moves_level_5(&game.piece_register.dark_king,game)?);
     }
     Ok(result)
 }
@@ -149,9 +155,10 @@ mod test {
         assert_eq!(check_count, 1);
         assert!(is_single_check); // This layer cannot inspect for double check or pins, so only reporting as single check
 
-
         // A one move check scenario
-        let game = GameState::from_fen("rnb1kbnr/pppp1ppp/8/4p3/3Pq3/2P5/PP3PPP/RNBQKBNR w KQkq - 0 4").unwrap();
+        let game =
+            GameState::from_fen("rnb1kbnr/pppp1ppp/8/4p3/3Pq3/2P5/PP3PPP/RNBQKBNR w KQkq - 0 4")
+                .unwrap();
         let moves = generate_moves_level_5(
             game.piece_register
                 .view_piece_at_location(BoardLocation::from_long_algebraic("e1").unwrap())
@@ -205,6 +212,5 @@ mod test {
         )
         .unwrap();
         assert_eq!(moves.len(), 0);
-
     }
 }

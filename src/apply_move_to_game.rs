@@ -23,16 +23,9 @@ pub fn apply_move_to_game_unchecked(chess_move: &MoveDescription, game: &GameSta
         MoveTypes::Regular => {
 
             // Move the piece, possibly capturing an enemy piece
-
-            // Handle capture
-            if let Some(x) = chess_move.capture_status{
-                capture_flag = true;
-                result.piece_register.remove_piece_at_location(x.location)?;
-            }
-
-            // Handle movement
-            let future_piece = result.piece_register.edit_piece_at_location(chess_move.vector.piece_at_start.location)?;
-            future_piece.location = chess_move.vector.destination;
+            let captured_piece = result.piece_register.move_piece_to_location_with_overwrite(chess_move.vector.piece_at_start.location,chess_move.vector.destination)?;
+            capture_flag = captured_piece.is_some();
+            let future_piece = result.piece_register.view_piece_at_location(chess_move.vector.destination)?;
             
             // Remove castling rights if a king or rook moves.
             if matches!(future_piece.class,PieceClass::King){
@@ -59,12 +52,10 @@ pub fn apply_move_to_game_unchecked(chess_move: &MoveDescription, game: &GameSta
         }
         MoveTypes::Castling(rook_vector) => {
             // Handle king movement
-            let future_piece = result.piece_register.edit_piece_at_location(chess_move.vector.piece_at_start.location)?;
-            future_piece.location = chess_move.vector.destination;
+            let _ = result.piece_register.move_piece_to_location_with_overwrite(chess_move.vector.piece_at_start.location,chess_move.vector.destination)?;
 
             // Handle rook movement
-            let future_piece = result.piece_register.edit_piece_at_location(rook_vector.piece_at_start.location)?;
-            future_piece.location = rook_vector.destination;
+            let _ = result.piece_register.move_piece_to_location_with_overwrite(rook_vector.piece_at_start.location,chess_move.vector.destination)?;
 
             // Flag to remove both castling rights after castling.
             remove_castling_kingside_rights = true;
@@ -72,8 +63,7 @@ pub fn apply_move_to_game_unchecked(chess_move: &MoveDescription, game: &GameSta
         }
         MoveTypes::DoubleStep(behind_pawn)=>{
             // Handle pawn movement
-            let future_piece = result.piece_register.edit_piece_at_location(chess_move.vector.piece_at_start.location)?;
-            future_piece.location = chess_move.vector.destination;
+            let _ = result.piece_register.move_piece_to_location_with_overwrite(chess_move.vector.piece_at_start.location,chess_move.vector.destination)?;
 
             // Mark en passant target square.
             result.special_flags.en_passant_location = Some(behind_pawn);
@@ -83,19 +73,15 @@ pub fn apply_move_to_game_unchecked(chess_move: &MoveDescription, game: &GameSta
             result.piece_register.remove_piece_at_location(chess_move.capture_status.expect("En passant should have placed this here").location)?;
         
             // Handle movement
-            let future_piece = result.piece_register.edit_piece_at_location(chess_move.vector.piece_at_start.location)?;
-            future_piece.location = chess_move.vector.destination;
+            let _ = result.piece_register.move_piece_to_location_with_overwrite(chess_move.vector.piece_at_start.location,chess_move.vector.destination)?;
         }
         MoveTypes::Promote(promoted_piece) => {
             // Move the piece, possibly capturing an enemy piece
 
-            // Handle capture
-            if let Some(x) = chess_move.capture_status{
-                result.piece_register.remove_piece_at_location(x.location)?;
-            }
-
             // Handle movement
-            let future_piece = result.piece_register.edit_piece_at_location(chess_move.vector.piece_at_start.location)?;
+            let captured_piece = result.piece_register.move_piece_to_location_with_overwrite(chess_move.vector.piece_at_start.location,chess_move.vector.destination)?;
+            capture_flag = captured_piece.is_some();
+            let future_piece = result.piece_register.edit_piece_at_location(chess_move.vector.destination)?;
             *future_piece = promoted_piece;
         } 
     }

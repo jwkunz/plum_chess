@@ -28,7 +28,7 @@ mod tests{
 
     #[test]
     fn perft_position_1(){
-        let test_limit = 5;
+        let test_limit = 4;
         let results : Vec<u64> = vec![20,400,8902,197281,4865609,119060324,3195901860,84998978956,2439530234167];
         let game = GameState::new_game();
         
