@@ -36,9 +36,8 @@ pub fn generate_moves_level_5(
         {
             // Check inspection for enemy check
             if let Some(check_report) = inspect_if_game_has_king_in_check(&future_game)?{
-
-                // TODO: This layer cannot yet inspect for double check or pins or checkmate so only reporting as single check
-                check_status = Some(TypesOfCheck::SingleCheck(
+                // This layer cannot yet inspect other context so reporting it as unclassified check
+                check_status = Some(TypesOfCheck::UnclassifiedCheck(
                     check_report.enemy_king,
                     check_report.checking_piece
                 ));
