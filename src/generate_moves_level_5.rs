@@ -1,11 +1,7 @@
 use std::collections::LinkedList;
 
 use crate::{
-    apply_move_to_game::apply_move_to_game_filtering_no_friendly_check,
-    checked_move_description::CheckedMoveDescription, chess_errors::ChessErrors,
-    collision_masks::CollisionMasks, game_state::GameState,
-    generate_moves_level_3::GenerateLevel3Result, generate_moves_level_4::generate_moves_level_4,
-    piece_record::PieceRecord, piece_team::PieceTeam, types_of_check::TypesOfCheck,
+    apply_move_to_game::apply_move_to_game_filtering_no_friendly_check, checked_move_description::CheckedMoveDescription, chess_errors::ChessErrors, collision_masks::CollisionMasks, game_state::GameState, generate_moves_level_3::GenerateLevel3Result, generate_moves_level_4::generate_moves_level_4, inspect_if_king_is_under_check::inspect_if_game_has_king_in_check, piece_class::PieceClass, piece_record::PieceRecord, piece_team::PieceTeam, types_of_check::TypesOfCheck
 };
 
 /// At level 5 we provided the rule checked move description and future game state after that move.
@@ -38,35 +34,16 @@ pub fn generate_moves_level_5(
         if let Some(future_game) =
             apply_move_to_game_filtering_no_friendly_check(&move_to_try, game)?
         {
+            // Check inspection for enemy check
+            if let Some(check_report) = inspect_if_game_has_king_in_check(&future_game)?{
 
-            let future_piece = future_game
-                .piece_register
-                .view_piece_at_location(move_to_try.vector.destination)?;
-            
-
-            // Generate moves from the piece at the destination
-
-            let future_moves_level_3 = GenerateLevel3Result::from(
-                future_piece,
-                &CollisionMasks::from(&future_game.piece_register),
-            )?;
-
-            // Look for a king capture in this level 3
-            for f in future_moves_level_3.captures {
-                // Get the enemy king
-                let enemy_king_record = *game.piece_register.view_king(match piece.team {
-                    crate::piece_team::PieceTeam::Light => PieceTeam::Dark,
-                    crate::piece_team::PieceTeam::Dark => PieceTeam::Light,
-                })?;
-
-                // Capture collision with enemy king
-                if f.binary_location & enemy_king_record.location.binary_location > 0 {
-                    check_status =
-                        Some(TypesOfCheck::SingleCheck(enemy_king_record, *future_piece));
-                    break;
-                }
+                // TODO: This layer cannot yet inspect for double check or pins or checkmate so only reporting as single check
+                check_status = Some(TypesOfCheck::SingleCheck(
+                    check_report.enemy_king,
+                    check_report.checking_piece
+                ));
             }
-
+   
             // Add the move description and future game
             result.push_back(CheckedMoveWithFutureGame {
                 checked_move: CheckedMoveDescription {

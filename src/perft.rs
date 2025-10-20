@@ -82,7 +82,7 @@ mod tests{
 
     #[test]
     fn perft_position_1(){
-        let test_limit = 4;
+        let test_limit = 5;
         let results = vec![
             PerftCounts { nodes: 1, captures: 0, en_passant: 0, castles: 0, promtions: 0, checks: 0, discovery_checks: 0, double_checks: 0, checkmates: 0 },
             PerftCounts { nodes: 20, captures: 0, en_passant: 0, castles: 0, promtions: 0, checks: 0, discovery_checks: 0, double_checks: 0, checkmates: 0 },
@@ -104,6 +104,7 @@ mod tests{
         }
         // Oct 1 version [assed up to depth 5 in 7.02 seconds
         // Oct 12 version passed up to depth 5 in 16.78 seconds
+        // Oct 19 version ran depth 5 in 9.41 seconds
     }
 
     #[test]

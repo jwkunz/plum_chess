@@ -143,7 +143,7 @@ pub fn apply_move_to_game_filtering_no_friendly_check(chess_move: &MoveDescripti
         PieceTeam::Dark => PieceTeam::Light,
         PieceTeam::Light => PieceTeam::Dark
     };
-    if inspect_if_game_has_king_in_check(&candidate_game)?{
+    if inspect_if_game_has_king_in_check(&candidate_game)?.is_some(){
         Ok(None)
     }else{
         // No friendly check, set the turn back
