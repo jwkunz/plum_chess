@@ -1,7 +1,3 @@
-fn main(){
-    
-}
-/*
 use std::fs::OpenOptions;
 use std::io::{self, BufRead, Write};
 use std::sync::mpsc::channel;
@@ -98,4 +94,3 @@ fn main() {
         thread::sleep(Duration::from_millis(10));
     }
 }
-*/

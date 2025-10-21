@@ -8,11 +8,8 @@ use std::{
     time::Duration,
 };
 
-use crate::{
-    chess_engine_thread_trait::{
-        self, ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
-    }, chess_move::ChessMove, engine_greedy_1_move::EngineGreedy1Move, engine_minimax_1deep_v0::EngineMinimax1DeepV0, engine_minimax_1deep_v1::EngineMinimax1DeepV1, engine_random::EngineRandom, errors::Errors, game_state::GameState, move_logic::apply_move_to_game
-};
+use crate::{apply_move_to_game::apply_move_to_game_unchecked, chess_engine_thread_trait::{ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType}, chess_errors::ChessErrors, engine_greedy_1_move::EngineGreedy1Move, engine_random::EngineRandom, game_state::GameState, move_description::MoveDescription};
+
 
 /// Tokens for setting position values in UCI options.
 #[derive(Debug)]
@@ -649,7 +646,7 @@ impl UCI {
         &mut self,
         position: &PositionToken,
         moves: &Vec<String>,
-    ) -> Result<(), Errors> {
+    ) -> Result<(), ChessErrors> {
         let mut game: GameState;
         match position {
             PositionToken::Fen(x) => {
@@ -662,11 +659,11 @@ impl UCI {
         }
 
         for move_description in moves {
-            if let Ok(m) = ChessMove::from_long_algebraic(&game, move_description) {
-                game = apply_move_to_game(&game, &m)?;
+            if let Ok(m) = MoveDescription::from_long_algebraic(move_description, &game) {
+                game = apply_move_to_game_unchecked(&m,&game)?;
             } else {
                 self.position_to_analyze = None;
-                return Err(Errors::InvalidAlgebraic);
+                return Err(ChessErrors::InvalidAlgebraicString(move_description.clone()));
             }
         }
 
@@ -696,7 +693,7 @@ impl UCI {
                     command_receiver,
                     response_sender,
                 )
-            }else if self.uci_limit_strength && self.uci_elo == 3 {
+            }/*else if self.uci_limit_strength && self.uci_elo == 3 {
                 self.create_engine_3(
                     game.clone(),
                     calculation_time,
@@ -710,7 +707,7 @@ impl UCI {
                     command_receiver,
                     response_sender,
                 )
-            }else {
+            }*/else {
                 self.create_best_engine(
                     game.clone(),
                     calculation_time,
@@ -751,12 +748,7 @@ impl UCI {
                         rr.recv_timeout(response_timeout_ms)
                     {
                         self.give_response(generate_response(ResponseTokens::BestMove(
-                            best_move.to_long_algebraic(
-                                &self
-                                    .position_to_analyze
-                                    .as_ref()
-                                    .expect("Game should be set"),
-                            ),
+                            best_move.get_long_algebraic(),
                         )));
                         done_status = true;
                     }
@@ -799,7 +791,7 @@ impl UCI {
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Box<dyn ChessEngineThreadTrait> {
-        self.create_engine_4(
+        self.create_engine_1(
             starting_position,
             calculation_time_s,
             command_receiver,
@@ -821,6 +813,7 @@ impl UCI {
             response_sender,
         ))
     }
+    
     /// This is the engine level 2
     fn create_engine_2(
         &self,
@@ -836,6 +829,7 @@ impl UCI {
             response_sender,
         ))
     }
+    /*
     /// This is the engine level 3
     fn create_engine_3(
         &self,
@@ -866,4 +860,5 @@ impl UCI {
             response_sender,
         ))
     }       
+    */
 }

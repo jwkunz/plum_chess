@@ -1,6 +1,6 @@
 use std::{sync::mpsc, thread::sleep, time::Duration};
 
-use crate::{chess_move::ChessMove, errors::Errors, game_state::GameState};
+use crate::{chess_errors::ChessErrors, game_state::GameState, move_description::MoveDescription};
 
 #[derive(Debug)]
 pub enum EngineControlMessageType{
@@ -12,8 +12,8 @@ pub enum EngineControlMessageType{
 }
 #[derive(Debug)]
 pub enum EngineResponseMessageType{
-    BestMoveFound(Option<ChessMove>),
-    HadAnError(Errors),
+    BestMoveFound(Option<MoveDescription>),
+    HadAnError(ChessErrors),
     StillCalculatingStatus(bool),
     StringToLog(Option<String>),
 }
@@ -55,7 +55,7 @@ pub trait ChessEngineThreadTrait : Send {
 
     fn get_response_sender(&self) -> &mpsc::Sender<EngineResponseMessageType>;
 
-    fn get_best_move_so_far(&self) -> Option<ChessMove>;
+    fn get_best_move_so_far(&self) -> Option<MoveDescription>;
 
     fn pop_next_string_to_log(&mut self) -> Option<String>;
 
@@ -108,6 +108,6 @@ pub trait ChessEngineThreadTrait : Send {
     }
 
     /// This function is where you put the chess computing logic, called in repeated intervals
-    fn calculating_callback(&mut self) -> Result<(),Errors>;
+    fn calculating_callback(&mut self) -> Result<(), ChessErrors>;
 
 }

@@ -1,13 +1,9 @@
 use std::{collections::VecDeque, sync::mpsc, time::Instant};
 
 use crate::{
-    chess_engine_thread_trait::{
+    apply_move_to_game::apply_move_to_game_unchecked, chess_engine_thread_trait::{
         ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
-    },
-    chess_move::ChessMove,
-    errors::Errors,
-    game_state::GameState,
-    move_logic::{apply_move_to_game, generate_all_moves}
+    }, chess_errors::ChessErrors, game_state::GameState, generate_moves_level_5::generate_all_moves, move_description::MoveDescription
 };
 
 /// This engine simply looks at the next moves and picks the one that maximizes the conventional score on the next turn
@@ -22,7 +18,7 @@ pub struct EngineGreedy1Move {
     /// Calculation status
     status_calculating: bool,
     /// Best move so far
-    best_so_far: Option<ChessMove>,
+    best_so_far: Option<MoveDescription>,
     /// Strings to print
     string_log: VecDeque<String>,
     /// IO
@@ -68,7 +64,7 @@ impl ChessEngineThreadTrait for EngineGreedy1Move {
         &self.response_sender
     }
 
-    fn get_best_move_so_far(&self) -> Option<ChessMove> {
+    fn get_best_move_so_far(&self) -> Option<MoveDescription> {
         self.best_so_far.clone()
     }
 
@@ -84,7 +80,7 @@ impl ChessEngineThreadTrait for EngineGreedy1Move {
         (self.calculation_time_s * 1E6).round() as u128
     }
 
-    fn calculating_callback(&mut self) -> Result<(), Errors> {
+    fn calculating_callback(&mut self) -> Result<(), ChessErrors> {
         // If nothing has been calculated
         if self.best_so_far.is_none() {
             // Generate all possible moves
@@ -94,24 +90,24 @@ impl ChessEngineThreadTrait for EngineGreedy1Move {
                 for chess_move in moves {
                     // If the move can be done
                     if let Ok(trial_game) =
-                        apply_move_to_game(&self.starting_position, &chess_move.description)
+                        apply_move_to_game_unchecked(&chess_move.checked_move.description,&self.starting_position)
                     {
                         // Get the conventional material score
                         let layer_1_score = trial_game.get_material_score();
                         // Is this a higher score
-                        let mut improvement = false;
+                        let improvement;
                         match self.starting_position.turn{
-                            crate::piece_types::PieceTeam::Dark => {improvement = layer_1_score <= best_score},
-                            crate::piece_types::PieceTeam::Light => {improvement = layer_1_score >= best_score},
+                            crate::piece_team::PieceTeam::Dark => {improvement = layer_1_score <= best_score},
+                            crate::piece_team::PieceTeam::Light => {improvement = layer_1_score >= best_score},
                         }
                         // Keep the best                            
                         if improvement{
                             self.add_string_to_print_log(&format!(
                                 "Found new best candidate move: {:?} with score {:?}",
-                                chess_move.description, layer_1_score
+                                chess_move, layer_1_score
                             ));
                             best_score = layer_1_score;
-                            self.best_so_far = Some(chess_move.description);
+                            self.best_so_far = Some(chess_move.checked_move.description.clone());
                         }
                     }
                 }

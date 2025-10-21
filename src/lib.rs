@@ -21,12 +21,8 @@ pub mod special_move_flags;
 pub mod types_of_check;
 pub mod inspect_check;
 pub mod perft;
-//
+pub mod uci_interface;
+pub mod chess_engine_thread_trait;
+pub mod engine_random;
+pub mod engine_greedy_1_move;
 
-//pub mod uci_interface;
-//pub mod chess_engine_thread_trait;
-//pub mod engine_random;
-//pub mod engine_greedy_1_move;
-//pub mod engine_minimax_1deep_v0;
-//pub mod engine_minimax_1deep_v1;
-//

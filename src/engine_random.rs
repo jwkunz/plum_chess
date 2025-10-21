@@ -1,11 +1,11 @@
 use std::{collections::VecDeque, sync::mpsc, time::Instant};
 
-use rand::{seq::IteratorRandom, thread_rng};
+use rand::{seq::IteratorRandom};
 
 use crate::{
     chess_engine_thread_trait::{
         ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
-    }, chess_move::ChessMove, errors::Errors, game_state::GameState, move_logic::generate_all_moves
+    }, chess_errors::ChessErrors, game_state::GameState, generate_moves_level_5::generate_all_moves, move_description::MoveDescription
 };
 
 /// A trivial, purely random engine implementation used for testing and as a reference engine.
@@ -32,7 +32,7 @@ pub struct EngineRandom {
     /// Calculation status
     status_calculating: bool,
     /// Best move so far
-    best_so_far: Option<ChessMove>,
+    best_so_far: Option<MoveDescription>,
     /// Strings to print
     string_log: VecDeque<String>,
     /// IO
@@ -78,7 +78,7 @@ impl ChessEngineThreadTrait for EngineRandom {
         &self.response_sender
     }
 
-    fn get_best_move_so_far(&self) -> Option<ChessMove> {
+    fn get_best_move_so_far(&self) -> Option<MoveDescription> {
         self.best_so_far.clone()
     }
 
@@ -95,11 +95,11 @@ impl ChessEngineThreadTrait for EngineRandom {
     }
 
     /// Pick a random move
-    fn calculating_callback(&mut self) -> Result<(), Errors> {
+    fn calculating_callback(&mut self) -> Result<(), ChessErrors> {
         if let Ok(moves) = generate_all_moves(&self.starting_position) {
-            let mut rng = thread_rng();
+            let mut rng = rand::rng();
             if let Some(random_move) = moves.iter().choose(&mut rng) {
-                self.best_so_far = Some(random_move.description.clone());
+                self.best_so_far = Some(random_move.checked_move.description.clone());
                 self.set_status_calculating(false);
             }
         }
