@@ -99,11 +99,12 @@ mod tests{
         let game = GameState::new_game();
         
         for (depth,target) in results.iter().enumerate().skip(1).take(test_limit){
-            println!("Running Depth: {:}",depth);
+            println!("\nRunning Depth: {:}...",depth);
             let count = perft(&game, depth as u8).unwrap();
             assert_eq!(count, *target);
+            println!("Passed!")
         }
-        // Oct 1 version [assed up to depth 5 in 7.02 seconds
+        // Oct 1 version passed up to depth 5 in 7.02 seconds
         // Oct 12 version passed up to depth 5 in 16.78 seconds
         // Oct 19 version ran depth 5 in 9.41 seconds
     }
@@ -122,9 +123,10 @@ mod tests{
         ];
         let game = GameState::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 0").unwrap();
         for (depth,target) in results.iter().enumerate().skip(1).take(test_limit){
-            println!("Running Depth: {:}",depth);
+            println!("\nRunning Depth: {:}...",depth);
             let count = perft(&game, depth as u8).unwrap();
             assert_eq!(count, *target);
+            println!("Passed!")
         }
         // Oct 12 version passed up to depth 2 in 0.24 seconds
     }
@@ -145,9 +147,10 @@ mod tests{
         ];
         let game = GameState::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1").unwrap();
         for (depth,target) in results.iter().enumerate().skip(1).take(test_limit){
-            println!("Running Depth: {:}",depth);
+            println!("\nRunning Depth: {:}...",depth);
             let count = perft(&game, depth as u8).unwrap();
             assert_eq!(count, *target);
+            println!("Passed!")
         }
         // Oct 12 version passed up to depth 5 in 9.5 seconds
     }
@@ -166,9 +169,10 @@ mod tests{
         ];
         let game = GameState::from_fen("r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1").unwrap();
         for (depth,target) in results.iter().enumerate().skip(1).take(test_limit){
-            println!("Running Depth: {:}",depth);
+            println!("\nRunning Depth: {:}...",depth);
             let count = perft(&game, depth as u8).unwrap();
             assert_eq!(count, *target);
+            println!("Passed!")
         }
         // Oct 12 version passed up to depth 5 in 9.5 seconds
     }
@@ -186,9 +190,10 @@ mod tests{
         ];
         let game = GameState::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8").unwrap();
         for (depth,target) in results.iter().enumerate().skip(1).take(test_limit){
-            println!("Running Depth: {:}",depth);
+            println!("\nRunning Depth: {:}...",depth);
             let count = perft(&game, depth as u8).unwrap();
-            assert_eq!(count, *target);
+            assert_eq!(count.nodes, target.nodes);
+            println!("Passed!")
         }
         // Oct 12 version passed up to depth 5 in 9.5 seconds
     }
@@ -210,9 +215,10 @@ mod tests{
         ];
         let game = GameState::from_fen("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10").unwrap();
         for (depth,target) in results.iter().enumerate().skip(1).take(test_limit){
-            println!("Running Depth: {:}",depth);
+            println!("\nRunning Depth: {:}...",depth);
             let count = perft(&game, depth as u8).unwrap();
-            assert_eq!(count, *target);
+            assert_eq!(count.nodes, target.nodes);
+            println!("Passed!")
         }
         // Oct 12 version passed up to depth 5 in 9.5 seconds
     }

@@ -1,4 +1,4 @@
-use crate::{apply_move_to_game::apply_move_to_game_filtering_no_friendly_check, chess_errors::ChessErrors, collision_masks::CollisionMasks, game_state::GameState, generate_moves_level_3::GenerateLevel3Result, generate_moves_level_4::generate_moves_level_4, piece_class::{self, PieceClass}, piece_record::PieceRecord, types_of_check::TypesOfCheck};
+use crate::{apply_move_to_game::apply_move_to_game_filtering_no_friendly_check, chess_errors::ChessErrors, collision_masks::CollisionMasks, game_state::GameState, generate_moves_level_3::GenerateLevel3Result, generate_moves_level_4::generate_moves_level_4, piece_record::PieceRecord, types_of_check::TypesOfCheck};
 
 ///  Inspects the game for check status
 /// If last_piece_moved_optionis Some(piece), then we do a full check inspection and classification  

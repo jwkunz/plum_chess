@@ -2,7 +2,7 @@ use crate::{
     board_location::BoardLocation,
     chess_errors::ChessErrors,
     game_state::GameState,
-    inspect_check::{self, inspect_check},
+    inspect_check::{inspect_check},
     move_description::{
         MoveDescription,
         MoveTypes::{self, Castling},

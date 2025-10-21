@@ -1,8 +1,18 @@
 use std::collections::LinkedList;
-
+#[allow(unused_imports)]
 use crate::{
-    apply_move_to_game::apply_move_to_game_filtering_no_friendly_check, checked_move_description::CheckedMoveDescription, chess_errors::ChessErrors, collision_masks::CollisionMasks, game_state::GameState, generate_moves_level_4::generate_moves_level_4, inspect_check::{inspect_check}, piece_record::PieceRecord, piece_team::PieceTeam, types_of_check::TypesOfCheck
+    apply_move_to_game::apply_move_to_game_filtering_no_friendly_check, 
+    checked_move_description::CheckedMoveDescription, 
+    chess_errors::ChessErrors, 
+    collision_masks::CollisionMasks, 
+    game_state::GameState, 
+    generate_moves_level_4::generate_moves_level_4, 
+    inspect_check::{inspect_check}, 
+    piece_record::PieceRecord, 
+    piece_team::PieceTeam, 
+    types_of_check::TypesOfCheck::SingleCheck
 };
+
 
 /// At level 5 we provided the rule checked move description and future game state after that move.
 /// This layer can only find single checks, not double checks
@@ -32,7 +42,7 @@ pub fn generate_moves_level_5(
             apply_move_to_game_filtering_no_friendly_check(&move_to_try, game)?
         {
             // Inspection for enemy check
-            let last_piece_moved_option: PieceRecord = *future_game.piece_register.view_piece_at_location(move_to_try.vector.destination)?;
+            let last_piece_moved_option = *future_game.piece_register.view_piece_at_location(move_to_try.vector.destination)?;
             let check_status = inspect_check(&future_game, Some(last_piece_moved_option))?;
    
             // Add the move description and future game
@@ -117,7 +127,7 @@ mod test {
         for m in moves {
             if let Some(x) = m.checked_move.check_status {
                 check_count += 1;
-                is_single_check = matches!(x, TypesOfCheck::SingleCheck(_, _));
+                is_single_check = matches!(x, SingleCheck(_, _));
             }
         }
         assert_eq!(check_count, 1);
