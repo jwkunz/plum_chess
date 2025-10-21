@@ -101,7 +101,7 @@ mod tests{
         for (depth,target) in results.iter().enumerate().skip(1).take(test_limit){
             println!("Running Depth: {:}",depth);
             let count = perft(&game, depth as u8).unwrap();
-            //assert_eq!(count, *target);
+            assert_eq!(count, *target);
         }
         // Oct 1 version [assed up to depth 5 in 7.02 seconds
         // Oct 12 version passed up to depth 5 in 16.78 seconds

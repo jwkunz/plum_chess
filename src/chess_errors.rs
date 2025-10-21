@@ -19,4 +19,5 @@ pub enum ChessErrors {
     InvalidDirectionSelected(u8),
     KingKeyRecordGotCorrupted,
     PieceRegisterDoesNotContainAKing,
+    ErrorDuringCheckInspection(String),
 }

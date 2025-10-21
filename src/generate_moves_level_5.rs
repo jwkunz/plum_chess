@@ -1,7 +1,7 @@
 use std::collections::LinkedList;
 
 use crate::{
-    apply_move_to_game::apply_move_to_game_filtering_no_friendly_check, checked_move_description::CheckedMoveDescription, chess_errors::ChessErrors, collision_masks::CollisionMasks, game_state::GameState, generate_moves_level_3::GenerateLevel3Result, generate_moves_level_4::generate_moves_level_4, inspect_if_king_is_under_check::inspect_if_game_has_king_in_check, piece_class::PieceClass, piece_record::PieceRecord, piece_team::PieceTeam, types_of_check::TypesOfCheck
+    apply_move_to_game::apply_move_to_game_filtering_no_friendly_check, checked_move_description::CheckedMoveDescription, chess_errors::ChessErrors, collision_masks::CollisionMasks, game_state::GameState, generate_moves_level_4::generate_moves_level_4, inspect_check::{inspect_check}, piece_record::PieceRecord, piece_team::PieceTeam, types_of_check::TypesOfCheck
 };
 
 /// At level 5 we provided the rule checked move description and future game state after that move.
@@ -25,23 +25,15 @@ pub fn generate_moves_level_5(
     let masks = CollisionMasks::from(&game.piece_register);
     let candidate_moves =
         generate_moves_level_4(piece, &masks, &game.special_flags, &game.piece_register)?;
+    // For each move
     for move_to_try in candidate_moves {
-        // Look for if this move created check
-        // See if the piece's team's king is in check after this move
-        let mut check_status: Option<TypesOfCheck> = None;
-
         // Simulate the future game, and make sure it doesn't create friendly check
         if let Some(future_game) =
             apply_move_to_game_filtering_no_friendly_check(&move_to_try, game)?
         {
-            // Check inspection for enemy check
-            if let Some(check_report) = inspect_if_game_has_king_in_check(&future_game)?{
-                // This layer cannot yet inspect other context so reporting it as unclassified check
-                check_status = Some(TypesOfCheck::UnclassifiedCheck(
-                    check_report.enemy_king,
-                    check_report.checking_piece
-                ));
-            }
+            // Inspection for enemy check
+            let last_piece_moved_option: PieceRecord = *future_game.piece_register.view_piece_at_location(move_to_try.vector.destination)?;
+            let check_status = inspect_check(&future_game, Some(last_piece_moved_option))?;
    
             // Add the move description and future game
             result.push_back(CheckedMoveWithFutureGame {

@@ -19,7 +19,7 @@ pub mod piece_team;
 pub mod scoring;
 pub mod special_move_flags;
 pub mod types_of_check;
-pub mod inspect_if_king_is_under_check;
+pub mod inspect_check;
 pub mod perft;
 //
 
