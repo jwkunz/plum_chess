@@ -172,7 +172,7 @@ mod tests{
 
     #[test]
     fn perft_position_4(){
-        let test_limit = 2;
+        let test_limit = 3;
         let results = vec![
             PerftCounts { nodes: 1, captures: 0, en_passant: 0, castles: 0, promtions: 0, checks: 0, discovery_checks: 0, double_checks: 0, checkmates: 0 },
             PerftCounts { nodes: 6, captures: 0, en_passant: 0, castles: 0, promtions: 0, checks: 0, discovery_checks: 0, double_checks: 0, checkmates: 0 },

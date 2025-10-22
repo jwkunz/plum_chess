@@ -205,7 +205,7 @@ pub fn apply_move_to_game_filtering_no_friendly_check(
             == BoardLocation::from_long_algebraic("c1")?.binary_location
         {
             // Queenside castling for light
-            square_list = vec!["b1", "c1", "d1"];
+            square_list = vec!["c1", "d1"];
         } else if chess_move.vector.destination.binary_location
             == BoardLocation::from_long_algebraic("g1")?.binary_location
         {
@@ -215,7 +215,7 @@ pub fn apply_move_to_game_filtering_no_friendly_check(
             == BoardLocation::from_long_algebraic("c8")?.binary_location
         {
             // Queenside castling for dark
-            square_list = vec!["b8", "c8", "d8"];
+            square_list = vec!["c8", "d8"];
         } else {
             // Kingside castling for dark
             square_list = vec!["f8", "g8"];
