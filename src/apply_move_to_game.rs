@@ -86,7 +86,7 @@ pub fn apply_move_to_game_unchecked(
                 .piece_register
                 .move_piece_to_location_with_overwrite(
                     rook_vector.piece_at_start.location,
-                    chess_move.vector.destination,
+                    rook_vector.destination,
                 )?;
 
             // Flag to remove both castling rights after castling.
@@ -192,20 +192,17 @@ pub fn apply_move_to_game_filtering_no_friendly_check(
     chess_move: &MoveDescription,
     game: &GameState,
 ) -> Result<Option<GameState>, ChessErrors> {
-    // Do a regular game update
-    let mut candidate_game = apply_move_to_game_unchecked(chess_move, game)?;
-    // Now temporarily invert the turn to inspect for friendly check
-    let turn_cache = candidate_game.turn;
-    candidate_game.turn = match turn_cache {
-        PieceTeam::Dark => PieceTeam::Light,
-        PieceTeam::Light => PieceTeam::Dark,
-    };
 
     // Special check handling for castling passing squares
     if matches!(chess_move.move_type, Castling(_)) {
+        // Make sure current king is not in check
+        if inspect_check(&game, None)?.is_some() {
+            return Ok(None);
+        }
+
         let square_list: Vec<&str>;
         if chess_move.vector.destination.binary_location
-            == BoardLocation::from_long_algebraic("b1")?.binary_location
+            == BoardLocation::from_long_algebraic("c1")?.binary_location
         {
             // Queenside castling for light
             square_list = vec!["b1", "c1", "d1"];
@@ -215,7 +212,7 @@ pub fn apply_move_to_game_filtering_no_friendly_check(
             // Kingside castling for light
             square_list = vec!["f1", "g1"];
         } else if chess_move.vector.destination.binary_location
-            == BoardLocation::from_long_algebraic("b8")?.binary_location
+            == BoardLocation::from_long_algebraic("c8")?.binary_location
         {
             // Queenside castling for dark
             square_list = vec!["b8", "c8", "d8"];
@@ -233,12 +230,23 @@ pub fn apply_move_to_game_filtering_no_friendly_check(
                 move_type: MoveTypes::Regular,
                 capture_status: None,
             };
-            let temp_game = apply_move_to_game_unchecked(&move_description, game)?;
+            let mut temp_game = apply_move_to_game_unchecked(&move_description, &game)?;
+            temp_game.turn = game.turn;
             if inspect_check(&temp_game, None)?.is_some() {
                 return Ok(None);
             }
         }
     }
+
+    
+    // Do a regular game update
+    let mut candidate_game = apply_move_to_game_unchecked(chess_move, game)?;
+    // Now temporarily invert the turn to inspect for friendly check
+    let turn_cache = candidate_game.turn;
+    candidate_game.turn = match turn_cache {
+        PieceTeam::Dark => PieceTeam::Light,
+        PieceTeam::Light => PieceTeam::Dark,
+    };
     if inspect_check(&candidate_game, None)?.is_some() {
         Ok(None)
     } else {

@@ -170,7 +170,7 @@ pub fn generate_moves_level_4(
                         // This is for king
                         vector: MoveVector {
                             piece_at_start: *piece,
-                            destination: BoardLocation::from_long_algebraic("b1")?,
+                            destination: BoardLocation::from_long_algebraic("c1")?,
                         },
                         move_type: MoveTypes::Castling(
                             // This is for the rook
@@ -222,7 +222,7 @@ pub fn generate_moves_level_4(
                         // This is for king
                         vector: MoveVector {
                             piece_at_start: *piece,
-                            destination: BoardLocation::from_long_algebraic("b8")?,
+                            destination: BoardLocation::from_long_algebraic("c8")?,
                         },
                         move_type: MoveTypes::Castling(
                             // This is for the rook

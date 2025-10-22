@@ -67,7 +67,6 @@ pub fn inspect_check(game: &GameState, last_piece_moved_option : Option<PieceRec
                         if checking_pieces[0].location.binary_location == last_moved.location.binary_location{
                             Ok(Some(TypesOfCheck::SingleCheck(*game.piece_register.view_king(game.turn)?,checking_pieces[0].clone())))
                         } else {
-                            dbg!(format!("Move {:?} in {:?} with checking piece {:?} and last moved {:?}",move_to_try, game.get_fen(),checking_pieces[0],last_moved));
                             Ok(Some(TypesOfCheck::DiscoveryCheck(*game.piece_register.view_king(game.turn)?,checking_pieces[0].clone())))
                         }
                     },

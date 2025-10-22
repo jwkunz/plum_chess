@@ -38,6 +38,7 @@ pub fn generate_moves_level_5(
         generate_moves_level_4(piece, &masks, &game.special_flags, &game.piece_register)?;
     // For each move
     for move_to_try in candidate_moves {
+        //dbg!(format!("Move: {:?} in {:?}", move_to_try.get_long_algebraic(), game.get_fen()));
         // Simulate the future game, and make sure it doesn't create friendly check
         if let Some(future_game) =
             apply_move_to_game_filtering_no_friendly_check(&move_to_try, game)?
