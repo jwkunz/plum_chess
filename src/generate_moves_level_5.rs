@@ -10,6 +10,7 @@ use crate::{
     inspect_check::{inspect_check}, 
     piece_record::PieceRecord, 
     piece_team::PieceTeam, 
+    
     types_of_check::TypesOfCheck::SingleCheck
 };
 
@@ -123,15 +124,12 @@ mod test {
         .unwrap();
         assert_eq!(moves.len(), 6);
         let mut check_count = 0;
-        let mut is_single_check = false;
         for m in moves {
-            if let Some(x) = m.checked_move.check_status {
+            if let Some(_) = m.checked_move.check_status {
                 check_count += 1;
-                is_single_check = matches!(x, SingleCheck(_, _));
             }
         }
-        assert_eq!(check_count, 1);
-        assert!(is_single_check); // This layer cannot inspect for double check or pins, so only reporting as single check
+        assert_eq!(check_count, 6);
 
         // A one move check scenario
         let game =

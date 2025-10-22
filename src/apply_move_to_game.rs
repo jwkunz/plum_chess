@@ -136,7 +136,7 @@ pub fn apply_move_to_game_unchecked(
             let future_piece = result
                 .piece_register
                 .edit_piece_at_location(chess_move.vector.destination)?;
-            *future_piece = promoted_piece;
+            future_piece.class = promoted_piece.class;
         }
     }
 
@@ -205,17 +205,17 @@ pub fn apply_move_to_game_filtering_no_friendly_check(
     if matches!(chess_move.move_type, Castling(_)) {
         let square_list: Vec<&str>;
         if chess_move.vector.destination.binary_location
-            == BoardLocation::from_long_algebraic("a1")?.binary_location
+            == BoardLocation::from_long_algebraic("b1")?.binary_location
         {
             // Queenside castling for light
             square_list = vec!["b1", "c1", "d1"];
         } else if chess_move.vector.destination.binary_location
-            == BoardLocation::from_long_algebraic("h1")?.binary_location
+            == BoardLocation::from_long_algebraic("g1")?.binary_location
         {
             // Kingside castling for light
             square_list = vec!["f1", "g1"];
         } else if chess_move.vector.destination.binary_location
-            == BoardLocation::from_long_algebraic("a8")?.binary_location
+            == BoardLocation::from_long_algebraic("b8")?.binary_location
         {
             // Queenside castling for dark
             square_list = vec!["b8", "c8", "d8"];
