@@ -82,13 +82,15 @@ impl PieceRegister {
                 if matches!(start_piece.class, crate::piece_class::PieceClass::King){
                     self.light_king_key = Some(destination.binary_location);
                 }
-                self.light_pieces.insert(destination.binary_location, start_piece)
+                self.light_pieces.insert(destination.binary_location, start_piece);
+                self.dark_pieces.remove(&destination.binary_location)
             },
             crate::piece_team::PieceTeam::Dark => {
                 if matches!(start_piece.class, crate::piece_class::PieceClass::King){
                     self.dark_king_key = Some(destination.binary_location);
                 }     
-                self.dark_pieces.insert(destination.binary_location, start_piece)
+                self.dark_pieces.insert(destination.binary_location, start_piece);
+                self.light_pieces.remove(&destination.binary_location)
             },
         };
         Ok(captured)

@@ -277,7 +277,25 @@ mod test {
         let updated_game =
             apply_move_to_game_filtering_no_friendly_check(&move_description, &new_game).unwrap().unwrap();
         assert_eq!(updated_game.get_fen(),"rnbqkbnr/ppp1pppp/8/3P4/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 2");
-        
+
+        // Another capture
+        let new_game = GameState::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1").unwrap();
+        let move_text = "b4f4";
+        let move_description = MoveDescription::from_long_algebraic(move_text, &new_game).unwrap();
+        let updated_game =
+            apply_move_to_game_filtering_no_friendly_check(&move_description, &new_game).unwrap().unwrap();
+        assert_eq!(updated_game.get_fen(),"8/2p5/3p4/KP5r/5R1k/8/4P1P1/8 b - - 0 1");
+        assert_eq!(updated_game.piece_register.dark_pieces.len(),4);
+        assert_eq!(updated_game.piece_register.light_pieces.len(),5);
+
+        // Another capture
+        let new_game = GameState::from_fen("1rbnkbnr/pppp1ppp/8/8/4P2q/2N3P1/PPP2P1P/R1BQKBNR w KQk - 3 7").unwrap();
+        let move_text = "g3h4";
+        let move_description = MoveDescription::from_long_algebraic(move_text, &new_game).unwrap();
+        let updated_game =
+            apply_move_to_game_filtering_no_friendly_check(&move_description, &new_game).unwrap().unwrap();
+        assert_eq!(updated_game.get_fen(),"1rbnkbnr/pppp1ppp/8/8/4P2P/2N5/PPP2P1P/R1BQKBNR b KQk - 0 7");
+
         // Blocked King
         let new_game = GameState::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/2P5/PP2NnPP/RNBQK2R b KQ - 0 8").unwrap();
         let move_text = "f8e8";
@@ -363,5 +381,13 @@ mod test {
         let updated_game =
             apply_move_to_game_filtering_no_friendly_check(&move_description, &updated_game);
         assert!(updated_game.is_err());
+
+        // Pin
+        let new_game = GameState::from_fen("8/2p5/3p4/KP5r/1R3p2/6Pk/4P3/8 w - - 1 2").unwrap();
+        let move_text = "b5b6";
+        let move_description = MoveDescription::from_long_algebraic(move_text, &new_game).unwrap();
+        let updated_game =
+            apply_move_to_game_filtering_no_friendly_check(&move_description, &new_game).unwrap();
+        assert!(updated_game.is_none());
     }
 }   
