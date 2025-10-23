@@ -255,3 +255,113 @@ pub fn apply_move_to_game_filtering_no_friendly_check(
         Ok(Some(candidate_game))
     }
 }
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn test_apply_move_to_game_checked() {
+        // Simple move
+        let new_game = GameState::new_game();
+        let move_text = "e2e4";
+        let move_description = MoveDescription::from_long_algebraic(move_text, &new_game).unwrap();
+        let updated_game =
+            apply_move_to_game_filtering_no_friendly_check(&move_description, &new_game).unwrap().unwrap();
+        assert_eq!(updated_game.get_fen(),"rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
+        
+        // Simple capture
+        let new_game = GameState::from_fen("rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 2").unwrap();
+        let move_text = "e4d5";
+        let move_description = MoveDescription::from_long_algebraic(move_text, &new_game).unwrap();
+        let updated_game =
+            apply_move_to_game_filtering_no_friendly_check(&move_description, &new_game).unwrap().unwrap();
+        assert_eq!(updated_game.get_fen(),"rnbqkbnr/ppp1pppp/8/3P4/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 2");
+        
+        // Blocked King
+        let new_game = GameState::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/2P5/PP2NnPP/RNBQK2R b KQ - 0 8").unwrap();
+        let move_text = "f8e8";
+        let move_description = MoveDescription::from_long_algebraic(move_text, &new_game).unwrap();
+        let updated_game =
+            apply_move_to_game_filtering_no_friendly_check(&move_description, &new_game).unwrap();
+        assert!(updated_game.is_none());
+
+        // Simple Castling
+        let new_game = GameState::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8").unwrap();
+        let move_text = "e1g1";
+        let move_description = MoveDescription::from_long_algebraic(move_text, &new_game).unwrap();
+        let updated_game =
+            apply_move_to_game_filtering_no_friendly_check(&move_description, &new_game).unwrap().unwrap();
+        assert_eq!(updated_game.get_fen(),"rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQ1RK1 b - - 2 8");
+
+        // Blocked Castling 1
+        let new_game = GameState::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/4B2n/PPP1N1PP/RN1QK2R w KQ - 3 9").unwrap();
+        let move_text = "e1g1";
+        let move_description = MoveDescription::from_long_algebraic(move_text, &new_game).unwrap();
+        let updated_game =
+            apply_move_to_game_filtering_no_friendly_check(&move_description, &new_game).unwrap();
+        assert!(updated_game.is_none());
+
+        // Blocked Castling 2
+        let new_game = GameState::from_fen("rnbq1k1r/pp1P3p/2p2p2/6p1/2BQ1b2/2N5/PPP1NnPP/R3K2R w KQ - 0 12").unwrap();
+        let move_text = "e1c1";
+        let move_description = MoveDescription::from_long_algebraic(move_text, &new_game).unwrap();
+        let updated_game =
+            apply_move_to_game_filtering_no_friendly_check(&move_description, &new_game).unwrap();
+        assert!(updated_game.is_none());
+
+        // Alowed Castling 2
+        let new_game = GameState::from_fen("rnbq1k1r/pp1P3p/2p2p2/6p1/2B2Qn1/2N5/PPP1N1PP/R3K2R w KQ - 1 13").unwrap();
+        let move_text = "e1c1";
+        let move_description = MoveDescription::from_long_algebraic(move_text, &new_game).unwrap();
+        let updated_game =
+            apply_move_to_game_filtering_no_friendly_check(&move_description, &new_game).unwrap().unwrap();
+        assert_eq!(updated_game.get_fen(),"rnbq1k1r/pp1P3p/2p2p2/6p1/2B2Qn1/2N5/PPP1N1PP/2KR3R b - - 2 13");
+
+        // No castling from check
+        let new_game = GameState::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/3nB3/PPP1N1PP/RN1QK2R w KQ - 3 9").unwrap();
+        let move_text = "e1g1";
+        let move_description = MoveDescription::from_long_algebraic(move_text, &new_game).unwrap();
+        let updated_game =
+            apply_move_to_game_filtering_no_friendly_check(&move_description, &new_game).unwrap();
+        assert!(updated_game.is_none());
+    
+        // Capture and promote
+        let new_game = GameState::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8").unwrap();
+        let move_text = "d7c8q";
+        let move_description = MoveDescription::from_long_algebraic(move_text, &new_game).unwrap();
+        let updated_game =
+            apply_move_to_game_filtering_no_friendly_check(&move_description, &new_game).unwrap().unwrap();
+        assert_eq!(updated_game.get_fen(),"rnQq1k1r/pp2bppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R b KQ - 0 8");
+
+        // Complex capture checkmate
+        let new_game = GameState::from_fen("rnb1qk1r/pp1Pbppp/8/1Bp5/8/2P5/PP2NnPP/RNBQK2R w KQ - 0 10").unwrap();
+        let move_text = "d7e8r";
+        let move_description = MoveDescription::from_long_algebraic(move_text, &new_game).unwrap();
+        let updated_game =
+            apply_move_to_game_filtering_no_friendly_check(&move_description, &new_game).unwrap().unwrap();
+        assert_eq!(updated_game.get_fen(),"rnb1Rk1r/pp2bppp/8/1Bp5/8/2P5/PP2NnPP/RNBQK2R b KQ - 0 10");
+        // Attempt to move after checkmate
+        let move_text = "f7f5";
+        let move_description = MoveDescription::from_long_algebraic(move_text, &updated_game).unwrap();
+        let updated_game =
+            apply_move_to_game_filtering_no_friendly_check(&move_description, &updated_game).unwrap();
+        assert!(updated_game.is_none());
+
+        // Simple en passant
+        let new_game = GameState::from_fen("rnbq1k1r/pp1Pb1pp/2p5/8/2B2pP1/2P5/PP2Nn1P/RNBQ1RK1 b - g3 0 10").unwrap();
+        let move_text = "f4g3";
+        let move_description = MoveDescription::from_long_algebraic(move_text, &new_game).unwrap();
+        let updated_game =
+            apply_move_to_game_filtering_no_friendly_check(&move_description, &new_game).unwrap().unwrap();
+        assert_eq!(updated_game.get_fen(),"rnbq1k1r/pp1Pb1pp/2p5/8/2B5/2P3p1/PP2Nn1P/RNBQ1RK1 w - - 0 11");
+
+        // No en passant
+        let new_game = GameState::from_fen("rnbq1k1r/pp1Pb2p/2p3p1/8/2B2pP1/2P4P/PP2Nn2/RNBQ1RK1 b - - 0 11").unwrap();
+        let move_text = "f4g3";
+        let move_description = MoveDescription::from_long_algebraic(move_text, &new_game).unwrap();
+        let updated_game =
+            apply_move_to_game_filtering_no_friendly_check(&move_description, &updated_game);
+        assert!(updated_game.is_err());
+    }
+}   
