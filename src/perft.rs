@@ -1,6 +1,6 @@
-use std::fs::{self, OpenOptions};
+use std::{fs::{self, OpenOptions}, os::linux::raw::stat};
 
-use crate::{checked_move_description, chess_errors::ChessErrors, game_state::GameState, generate_moves_level_5::{CheckedMoveWithFutureGame, generate_all_moves}};
+use crate::{checked_move_description, chess_errors::ChessErrors, debug_utils::run_stockfish_perft, game_state::GameState, generate_moves_level_5::{CheckedMoveWithFutureGame, generate_all_moves}};
 use std::io::Write;
 
 #[derive(Debug, PartialEq)]
@@ -33,16 +33,7 @@ impl PerftCounts {
 
 fn perft_recursion(state : &CheckedMoveWithFutureGame, search_depth : u8, current_depth : u8, counts : &mut PerftCounts, log_file_name: Option<&str>) -> Result<(),ChessErrors>{
     if current_depth == search_depth{
-        counts.nodes += 1;
-        if let Some(f_name) =log_file_name{
-            let mut file = OpenOptions::new()
-                            .write(true)
-                            .create(true)
-                            .append(true)
-                            .open(f_name).unwrap();
-            let _ = writeln!(file, "Node:{:?}\nMove:{:?}\nposition fen {:?}", counts.nodes,state.checked_move.description.get_long_algebraic(),state.game_after_move.get_fen()).unwrap();
-        }
-        
+        counts.nodes += 1;        
         // Handle capture status
         if state.checked_move.description.capture_status.is_some() {
             counts.captures += 1;
@@ -74,9 +65,28 @@ fn perft_recursion(state : &CheckedMoveWithFutureGame, search_depth : u8, curren
                         .create(true)
                         .append(true)
                         .open(f_name).unwrap();
-        let _ = writeln!(file, "\nposition fen { }\nfound { }\n", state.game_after_move.get_fen(),all_moves.len()).unwrap();
-        if state.game_after_move.get_fen() == "8/2p5/3p4/KP5r/5R1k/8/4P1P1/8 b - - 1 1"{
-            let _ = writeln!(file,"{:?}",state.game_after_move.piece_register);
+
+        let (count,reference_perft) = run_stockfish_perft(&state.game_after_move.get_fen(),1).expect("stockfish should have been installed for this");
+        if count != all_moves.len(){
+            let _ = writeln!(file, "\nposition fen { }\nfound { }\nexpected { }", state.game_after_move.get_fen(),all_moves.len(),count).unwrap();
+            if state.game_after_move.get_fen() == "8/2p5/3p4/KP5r/5R1k/8/4P1P1/8 b - - 1 1"{
+                let _ = writeln!(file,"{:?}",state.game_after_move.piece_register);
+            }
+            if reference_perft.len() <= 45{
+                let _ = writeln!(file,"Stockfish Moves:");
+                for i in &reference_perft{
+                    let _ = writeln!(file,"{ }",i);
+                }
+            }
+            let _ = writeln!(file,"\n Reported moves:");
+            let mut move_strings = Vec::<String>::with_capacity(reference_perft.len());
+            for i in &all_moves{
+                move_strings.push(i.checked_move.description.get_long_algebraic());
+            }
+            move_strings.sort();
+            for i in &move_strings{
+                let _ = writeln!(file,"{ }",i);
+            }
         }
     }
     for m in all_moves{
@@ -86,8 +96,12 @@ fn perft_recursion(state : &CheckedMoveWithFutureGame, search_depth : u8, curren
 }
 
 
-pub fn perft(game : &GameState, search_depth : u8) -> Result<PerftCounts,ChessErrors>{
-    let filename = None;//Some("debug_log.txt");
+pub fn perft(game : &GameState, search_depth : u8, do_debug : bool) -> Result<PerftCounts,ChessErrors>{
+    let filename = if do_debug{
+        Some("debug_log.txt")
+    }else{
+        None
+    };
     if filename.is_some(){
         fs::remove_file(filename.unwrap()).ok();
     }
@@ -126,7 +140,7 @@ mod tests{
         for (depth,target) in results.iter().enumerate().skip(1).take(test_limit){
             let game = GameState::new_game();
             println!("\nRunning Depth: {:}...",depth);
-            let count = perft(&game, depth as u8).unwrap();
+            let count = perft(&game, depth as u8,false).unwrap();
             assert_eq!(count.nodes,target.nodes);
             assert_eq!(count, *target);
             println!("Passed!")
@@ -151,7 +165,7 @@ mod tests{
         for (depth,target) in results.iter().enumerate().skip(1).take(test_limit){
             let game = GameState::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 0").unwrap();
             println!("\nRunning Depth: {:}...",depth);
-            let count = perft(&game, depth as u8).unwrap();
+            let count = perft(&game, depth as u8,false).unwrap();
             assert_eq!(count.nodes,target.nodes);
             assert_eq!(count, *target);
             println!("Passed!")
@@ -177,7 +191,7 @@ mod tests{
         for (depth,target) in results.iter().enumerate().skip(1).take(test_limit){
             let game = GameState::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1").unwrap();
             println!("\nRunning Depth: {:}...",depth);
-            let count = perft(&game, depth as u8).unwrap();
+            let count = perft(&game, depth as u8,false).unwrap();
             assert_eq!(count.nodes,target.nodes);
             assert_eq!(count, *target);
             println!("Passed!")
@@ -201,7 +215,7 @@ mod tests{
         for (depth,target) in results.iter().enumerate().skip(1).take(test_limit){
             let game = GameState::from_fen("r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1").unwrap();
             println!("\nRunning Depth: {:}...",depth);
-            let count = perft(&game, depth as u8).unwrap();
+            let count = perft(&game, depth as u8,false).unwrap();
             assert_eq!(count.nodes,target.nodes);
             assert_eq!(count, *target);
             println!("Passed!")
@@ -212,7 +226,7 @@ mod tests{
 
     #[test]
     fn perft_position_5(){
-        let test_limit = 3;
+        let test_limit = 5;
         let results = vec![
             PerftCounts { nodes: 1, captures: 0, en_passant: 0, castles: 0, promtions: 0, checks: 0, discovery_checks: 0, double_checks: 0, checkmates: 0 },
             PerftCounts { nodes: 44, captures: 3, en_passant: 0, castles: 0, promtions: 4, checks: 0, discovery_checks: 0, double_checks: 0, checkmates: 0 },
@@ -224,7 +238,7 @@ mod tests{
         for (depth,target) in results.iter().enumerate().skip(1).take(test_limit){
             let game = GameState::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8").unwrap();
             println!("\nRunning Depth: {:}...",depth);
-            let count = perft(&game, depth as u8).unwrap();
+            let count = perft(&game, depth as u8,false).unwrap();
             assert_eq!(count.nodes, target.nodes);
             println!("Passed!")
         }
@@ -249,7 +263,7 @@ mod tests{
         for (depth,target) in results.iter().enumerate().skip(1).take(test_limit){
             let game = GameState::from_fen("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10").unwrap();
             println!("\nRunning Depth: {:}...",depth);
-            let count = perft(&game, depth as u8).unwrap();
+            let count = perft(&game, depth as u8,false).unwrap();
             assert_eq!(count.nodes, target.nodes);
             println!("Passed!")
         }

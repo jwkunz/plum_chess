@@ -4,14 +4,14 @@ use crate::{
     board_location::BoardLocation,
     chess_errors::ChessErrors,
     collision_masks::CollisionMasks,
-    special_move_flags::SpecialMoveFlags,
     generate_movements::{generate_pawn_capture_movement, generate_pawn_double_step_movement},
     generate_moves_level_3::GenerateLevel3Result,
     move_description::{MoveDescription, MoveTypes, MoveVector},
     piece_class::PieceClass,
-    piece_record::{PieceRecord},
-    piece_register::{PieceRegister},
+    piece_record::PieceRecord,
+    piece_register::PieceRegister,
     piece_team::PieceTeam,
+    special_move_flags::SpecialMoveFlags,
 };
 
 pub type GenerateLevel4Result = LinkedList<MoveDescription>;
@@ -156,108 +156,149 @@ pub fn generate_moves_level_4(
 
     // Now consider the castling
     if is_king {
-        if matches!(piece.team,PieceTeam::Light){
-            if special_flags.can_castle_queen_light{
-                // Make sure area is empty with a collision mask
-                let empty_square_mask : u64 = 
-                    BoardLocation::from_long_algebraic("b1")?.binary_location | 
-                    BoardLocation::from_long_algebraic("c1")?.binary_location | 
-                    BoardLocation::from_long_algebraic("d1")?.binary_location;
-                // If no collisions
-                if (empty_square_mask & (masks.light_mask | masks.dark_mask)) == 0{
-                    // Add the castling move
-                    result.push_back(MoveDescription {
-                        // This is for king
-                        vector: MoveVector {
-                            piece_at_start: *piece,
-                            destination: BoardLocation::from_long_algebraic("c1")?,
-                        },
-                        move_type: MoveTypes::Castling(
-                            // This is for the rook
-                            MoveVector{ 
-                                piece_at_start: *piece_register.view_piece_at_location(BoardLocation::from_long_algebraic("a1")?)?, 
-                                destination: BoardLocation::from_long_algebraic("d1")?
-                            }
-                        ),
-                        capture_status: None
-                    });
+        if matches!(piece.team, PieceTeam::Light) {
+            if special_flags.can_castle_queen_light {
+                // Make sure a rook is present
+                if let Some(x) = piece_register
+                    .light_pieces
+                    .get(&BoardLocation::from_long_algebraic("a1")?.binary_location)
+                {
+                    if matches!(x.class, PieceClass::Rook) {
+                        // Make sure area is empty with a collision mask
+                        let empty_square_mask: u64 = BoardLocation::from_long_algebraic("b1")?
+                            .binary_location
+                            | BoardLocation::from_long_algebraic("c1")?.binary_location
+                            | BoardLocation::from_long_algebraic("d1")?.binary_location;
+                        // If no collisions
+                        if (empty_square_mask & (masks.light_mask | masks.dark_mask)) == 0 {
+                            // Add the castling move
+                            result.push_back(MoveDescription {
+                                // This is for king
+                                vector: MoveVector {
+                                    piece_at_start: *piece,
+                                    destination: BoardLocation::from_long_algebraic("c1")?,
+                                },
+                                move_type: MoveTypes::Castling(
+                                    // This is for the rook
+                                    MoveVector {
+                                        piece_at_start: *piece_register.view_piece_at_location(
+                                            BoardLocation::from_long_algebraic("a1")?,
+                                        )?,
+                                        destination: BoardLocation::from_long_algebraic("d1")?,
+                                    },
+                                ),
+                                capture_status: None,
+                            });
+                        }
+                    }
                 }
             }
-            if special_flags.can_castle_king_light{
-                // Make sure area is empty with a collision mask
-                let empty_square_mask : u64 = 
-                    BoardLocation::from_long_algebraic("f1")?.binary_location | 
-                    BoardLocation::from_long_algebraic("g1")?.binary_location;
-                // If no collisions
-                if (empty_square_mask & (masks.light_mask | masks.dark_mask)) == 0{
-                    // Add the castling move
-                    result.push_back(MoveDescription {
-                        // This is for king
-                        vector: MoveVector {
-                            piece_at_start: *piece,
-                            destination: BoardLocation::from_long_algebraic("g1")?,
-                        },
-                        move_type: MoveTypes::Castling(
-                            // This is for the rook
-                            MoveVector{ 
-                                piece_at_start: *piece_register.view_piece_at_location(BoardLocation::from_long_algebraic("h1")?)?, 
-                                destination: BoardLocation::from_long_algebraic("f1")?
-                            }
-                        ),
-                        capture_status: None
-                    });
+            if special_flags.can_castle_king_light {
+                // Make sure a rook is present
+                if let Some(x) = piece_register
+                    .light_pieces
+                    .get(&BoardLocation::from_long_algebraic("h1")?.binary_location)
+                {
+                    if matches!(x.class, PieceClass::Rook) {
+                        // Make sure area is empty with a collision mask
+                        let empty_square_mask: u64 = BoardLocation::from_long_algebraic("f1")?
+                            .binary_location
+                            | BoardLocation::from_long_algebraic("g1")?.binary_location;
+                        // If no collisions
+                        if (empty_square_mask & (masks.light_mask | masks.dark_mask)) == 0 {
+                            // Add the castling move
+                            result.push_back(MoveDescription {
+                                // This is for king
+                                vector: MoveVector {
+                                    piece_at_start: *piece,
+                                    destination: BoardLocation::from_long_algebraic("g1")?,
+                                },
+                                move_type: MoveTypes::Castling(
+                                    // This is for the rook
+                                    MoveVector {
+                                        piece_at_start: *piece_register.view_piece_at_location(
+                                            BoardLocation::from_long_algebraic("h1")?,
+                                        )?,
+                                        destination: BoardLocation::from_long_algebraic("f1")?,
+                                    },
+                                ),
+                                capture_status: None,
+                            });
+                        }
+                    }
                 }
             }
-        }else{ // Dark
-            if special_flags.can_castle_queen_dark{
-                // Make sure area is empty with a collision mask
-                let empty_square_mask : u64 = 
-                    BoardLocation::from_long_algebraic("b8")?.binary_location | 
-                    BoardLocation::from_long_algebraic("c8")?.binary_location | 
-                    BoardLocation::from_long_algebraic("d8")?.binary_location;
-                // If no collisions
-                if (empty_square_mask & (masks.light_mask | masks.dark_mask)) == 0{
-                    // Add the castling move
-                    result.push_back(MoveDescription {
-                        // This is for king
-                        vector: MoveVector {
-                            piece_at_start: *piece,
-                            destination: BoardLocation::from_long_algebraic("c8")?,
-                        },
-                        move_type: MoveTypes::Castling(
-                            // This is for the rook
-                            MoveVector{ 
-                                piece_at_start: *piece_register.view_piece_at_location(BoardLocation::from_long_algebraic("a8")?)?, 
-                                destination: BoardLocation::from_long_algebraic("d8")?
-                            }
-                        ),
-                        capture_status: None
-                    });
+        } else {
+            // Dark
+            if special_flags.can_castle_queen_dark {
+                // Make sure a rook is present
+                if let Some(x) = piece_register
+                    .dark_pieces
+                    .get(&BoardLocation::from_long_algebraic("a8")?.binary_location)
+                {
+                    if matches!(x.class, PieceClass::Rook) {
+                        // Make sure area is empty with a collision mask
+                        let empty_square_mask: u64 = BoardLocation::from_long_algebraic("b8")?
+                            .binary_location
+                            | BoardLocation::from_long_algebraic("c8")?.binary_location
+                            | BoardLocation::from_long_algebraic("d8")?.binary_location;
+                        // If no collisions
+                        if (empty_square_mask & (masks.light_mask | masks.dark_mask)) == 0 {
+                            // Add the castling move
+                            result.push_back(MoveDescription {
+                                // This is for king
+                                vector: MoveVector {
+                                    piece_at_start: *piece,
+                                    destination: BoardLocation::from_long_algebraic("c8")?,
+                                },
+                                move_type: MoveTypes::Castling(
+                                    // This is for the rook
+                                    MoveVector {
+                                        piece_at_start: *piece_register.view_piece_at_location(
+                                            BoardLocation::from_long_algebraic("a8")?,
+                                        )?,
+                                        destination: BoardLocation::from_long_algebraic("d8")?,
+                                    },
+                                ),
+                                capture_status: None,
+                            });
+                        }
+                    }
                 }
             }
-            if special_flags.can_castle_king_dark{
-                // Make sure area is empty with a collision mask
-                let empty_square_mask : u64 = 
-                    BoardLocation::from_long_algebraic("f8")?.binary_location | 
-                    BoardLocation::from_long_algebraic("g8")?.binary_location;
-                // If no collisions
-                if (empty_square_mask & (masks.light_mask | masks.dark_mask)) == 0{
-                    // Add the castling move
-                    result.push_back(MoveDescription {
-                        // This is for king
-                        vector: MoveVector {
-                            piece_at_start: *piece,
-                            destination: BoardLocation::from_long_algebraic("g8")?,
-                        },
-                        move_type: MoveTypes::Castling(
-                            // This is for the rook
-                            MoveVector{ 
-                                piece_at_start: *piece_register.view_piece_at_location(BoardLocation::from_long_algebraic("h8")?)?, 
-                                destination: BoardLocation::from_long_algebraic("f8")?
-                            }
-                        ),
-                        capture_status: None
-                    });
+            if special_flags.can_castle_king_dark {
+                // Make sure a rook is present
+                if let Some(x) = piece_register
+                    .dark_pieces
+                    .get(&BoardLocation::from_long_algebraic("h8")?.binary_location)
+                {
+                    if matches!(x.class, PieceClass::Rook) {
+                        // Make sure area is empty with a collision mask
+                        let empty_square_mask: u64 = BoardLocation::from_long_algebraic("f8")?
+                            .binary_location
+                            | BoardLocation::from_long_algebraic("g8")?.binary_location;
+                        // If no collisions
+                        if (empty_square_mask & (masks.light_mask | masks.dark_mask)) == 0 {
+                            // Add the castling move
+                            result.push_back(MoveDescription {
+                                // This is for king
+                                vector: MoveVector {
+                                    piece_at_start: *piece,
+                                    destination: BoardLocation::from_long_algebraic("g8")?,
+                                },
+                                move_type: MoveTypes::Castling(
+                                    // This is for the rook
+                                    MoveVector {
+                                        piece_at_start: *piece_register.view_piece_at_location(
+                                            BoardLocation::from_long_algebraic("h8")?,
+                                        )?,
+                                        destination: BoardLocation::from_long_algebraic("f8")?,
+                                    },
+                                ),
+                                capture_status: None,
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -320,7 +361,6 @@ fn generate_promotions(
     result
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::game_state::GameState;
@@ -328,69 +368,190 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_bishop_moves_level_4(){
-        let game = GameState::from_fen("rnbqk1nr/p1p2ppp/4p3/3p4/1b1PP3/PpPB1N2/1P3PPP/RNBQK2R w KQkq - 1 7").unwrap();
-        let moves = generate_moves_level_4(game.piece_register.view_piece_at_location(BoardLocation::from_long_algebraic("d3").unwrap()).unwrap(),&CollisionMasks::from(&game.piece_register),&game.special_flags,&game.piece_register).unwrap();
-        assert_eq!(moves.len(),6);
+    fn test_bishop_moves_level_4() {
+        let game = GameState::from_fen(
+            "rnbqk1nr/p1p2ppp/4p3/3p4/1b1PP3/PpPB1N2/1P3PPP/RNBQK2R w KQkq - 1 7",
+        )
+        .unwrap();
+        let moves = generate_moves_level_4(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("d3").unwrap())
+                .unwrap(),
+            &CollisionMasks::from(&game.piece_register),
+            &game.special_flags,
+            &game.piece_register,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 6);
 
-        let moves = generate_moves_level_4(game.piece_register.view_piece_at_location(BoardLocation::from_long_algebraic("b4").unwrap()).unwrap(),&CollisionMasks::from(&game.piece_register),&game.special_flags,&game.piece_register).unwrap();
-        assert_eq!(moves.len(),7);
+        let moves = generate_moves_level_4(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("b4").unwrap())
+                .unwrap(),
+            &CollisionMasks::from(&game.piece_register),
+            &game.special_flags,
+            &game.piece_register,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 7);
     }
 
     #[test]
-    fn test_knight_moves_level_4(){
-        let game = GameState::from_fen("rnbqk1nr/p1p2ppp/4p3/3pN3/1b1PP3/PpPB4/1P3PPP/RNBQK2R b KQkq - 2 7").unwrap();
-        let moves = generate_moves_level_4(game.piece_register.view_piece_at_location(BoardLocation::from_long_algebraic("e5").unwrap()).unwrap(),&CollisionMasks::from(&game.piece_register),&game.special_flags,&game.piece_register).unwrap();
-        assert_eq!(moves.len(),7);
+    fn test_knight_moves_level_4() {
+        let game = GameState::from_fen(
+            "rnbqk1nr/p1p2ppp/4p3/3pN3/1b1PP3/PpPB4/1P3PPP/RNBQK2R b KQkq - 2 7",
+        )
+        .unwrap();
+        let moves = generate_moves_level_4(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("e5").unwrap())
+                .unwrap(),
+            &CollisionMasks::from(&game.piece_register),
+            &game.special_flags,
+            &game.piece_register,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 7);
 
-        let moves = generate_moves_level_4(game.piece_register.view_piece_at_location(BoardLocation::from_long_algebraic("b8").unwrap()).unwrap(),&CollisionMasks::from(&game.piece_register),&game.special_flags,&game.piece_register).unwrap();
-        assert_eq!(moves.len(),3);
+        let moves = generate_moves_level_4(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("b8").unwrap())
+                .unwrap(),
+            &CollisionMasks::from(&game.piece_register),
+            &game.special_flags,
+            &game.piece_register,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 3);
     }
 
     #[test]
-    fn test_rook_moves_level_4(){
-        let game = GameState::from_fen("rnbqk2r/p4ppp/2p1pn2/3pN3/1P1PP3/1pPB4/1P3PPP/RNBQK2R w KQkq - 1 9").unwrap();
-        let moves = generate_moves_level_4(game.piece_register.view_piece_at_location(BoardLocation::from_long_algebraic("a1").unwrap()).unwrap(),&CollisionMasks::from(&game.piece_register),&game.special_flags,&game.piece_register).unwrap();
-        assert_eq!(moves.len(),6);
+    fn test_rook_moves_level_4() {
+        let game = GameState::from_fen(
+            "rnbqk2r/p4ppp/2p1pn2/3pN3/1P1PP3/1pPB4/1P3PPP/RNBQK2R w KQkq - 1 9",
+        )
+        .unwrap();
+        let moves = generate_moves_level_4(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("a1").unwrap())
+                .unwrap(),
+            &CollisionMasks::from(&game.piece_register),
+            &game.special_flags,
+            &game.piece_register,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 6);
 
-        let moves = generate_moves_level_4(game.piece_register.view_piece_at_location(BoardLocation::from_long_algebraic("a8").unwrap()).unwrap(),&CollisionMasks::from(&game.piece_register),&game.special_flags,&game.piece_register).unwrap();
-        assert_eq!(moves.len(),0);
+        let moves = generate_moves_level_4(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("a8").unwrap())
+                .unwrap(),
+            &CollisionMasks::from(&game.piece_register),
+            &game.special_flags,
+            &game.piece_register,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 0);
     }
 
     #[test]
-    fn test_queen_moves_level_4(){
-        let game = GameState::from_fen("rnbqk2r/p4ppp/2p1pn2/3pN3/1P1PP3/1pPB4/1P3PPP/RNBQK2R w KQkq - 1 9").unwrap();
-        let moves = generate_moves_level_4(game.piece_register.view_piece_at_location(BoardLocation::from_long_algebraic("d1").unwrap()).unwrap(),&CollisionMasks::from(&game.piece_register),&game.special_flags,&game.piece_register).unwrap();
-        assert_eq!(moves.len(),7);
+    fn test_queen_moves_level_4() {
+        let game = GameState::from_fen(
+            "rnbqk2r/p4ppp/2p1pn2/3pN3/1P1PP3/1pPB4/1P3PPP/RNBQK2R w KQkq - 1 9",
+        )
+        .unwrap();
+        let moves = generate_moves_level_4(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("d1").unwrap())
+                .unwrap(),
+            &CollisionMasks::from(&game.piece_register),
+            &game.special_flags,
+            &game.piece_register,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 7);
 
-        let moves = generate_moves_level_4(game.piece_register.view_piece_at_location(BoardLocation::from_long_algebraic("d8").unwrap()).unwrap(),&CollisionMasks::from(&game.piece_register),&game.special_flags,&game.piece_register).unwrap();
-        assert_eq!(moves.len(),6);
+        let moves = generate_moves_level_4(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("d8").unwrap())
+                .unwrap(),
+            &CollisionMasks::from(&game.piece_register),
+            &game.special_flags,
+            &game.piece_register,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 6);
     }
 
     #[test]
-    fn test_king_moves_level_4(){
+    fn test_king_moves_level_4() {
         // Castling and regular moves
-        let game = GameState::from_fen("rnbqk2r/p4ppp/2p1pn2/3pN3/1P1PP3/1pPB4/1P3PPP/RNBQK2R w KQkq - 1 9").unwrap();
-        let moves = generate_moves_level_4(game.piece_register.view_piece_at_location(BoardLocation::from_long_algebraic("e1").unwrap()).unwrap(),&CollisionMasks::from(&game.piece_register),&game.special_flags,&game.piece_register).unwrap();
-        assert_eq!(moves.len(),4);
+        let game = GameState::from_fen(
+            "rnbqk2r/p4ppp/2p1pn2/3pN3/1P1PP3/1pPB4/1P3PPP/RNBQK2R w KQkq - 1 9",
+        )
+        .unwrap();
+        let moves = generate_moves_level_4(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("e1").unwrap())
+                .unwrap(),
+            &CollisionMasks::from(&game.piece_register),
+            &game.special_flags,
+            &game.piece_register,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 4);
 
-        let moves = generate_moves_level_4(game.piece_register.view_piece_at_location(BoardLocation::from_long_algebraic("e8").unwrap()).unwrap(),&CollisionMasks::from(&game.piece_register),&game.special_flags,&game.piece_register).unwrap();
-        assert_eq!(moves.len(),4); // Remember no check filter yet
+        let moves = generate_moves_level_4(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("e8").unwrap())
+                .unwrap(),
+            &CollisionMasks::from(&game.piece_register),
+            &game.special_flags,
+            &game.piece_register,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 4); // Remember no check filter yet
     }
     #[test]
-    fn test_pawn_moves_level_4(){
+    fn test_pawn_moves_level_4() {
         // Regular capture
-        let game = GameState::from_fen("rnbqk2r/p4pp1/2p1pn2/3pN3/1P1PP1Pp/2PB4/pP3P1P/1NBQK2R b Kkq g3 0 12").unwrap();
-        let moves = generate_moves_level_4(game.piece_register.view_piece_at_location(BoardLocation::from_long_algebraic("d5").unwrap()).unwrap(),&CollisionMasks::from(&game.piece_register),&game.special_flags,&game.piece_register).unwrap();
-        assert_eq!(moves.len(),1);
+        let game = GameState::from_fen(
+            "rnbqk2r/p4pp1/2p1pn2/3pN3/1P1PP1Pp/2PB4/pP3P1P/1NBQK2R b Kkq g3 0 12",
+        )
+        .unwrap();
+        let moves = generate_moves_level_4(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("d5").unwrap())
+                .unwrap(),
+            &CollisionMasks::from(&game.piece_register),
+            &game.special_flags,
+            &game.piece_register,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 1);
 
-        // Double promotion 
-        let moves = generate_moves_level_4(game.piece_register.view_piece_at_location(BoardLocation::from_long_algebraic("a2").unwrap()).unwrap(),&CollisionMasks::from(&game.piece_register),&game.special_flags,&game.piece_register).unwrap();
-        assert_eq!(moves.len(),8);
+        // Double promotion
+        let moves = generate_moves_level_4(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("a2").unwrap())
+                .unwrap(),
+            &CollisionMasks::from(&game.piece_register),
+            &game.special_flags,
+            &game.piece_register,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 8);
 
         // En passant
-        let moves = generate_moves_level_4(game.piece_register.view_piece_at_location(BoardLocation::from_long_algebraic("h4").unwrap()).unwrap(),&CollisionMasks::from(&game.piece_register),&game.special_flags,&game.piece_register).unwrap();
-        assert_eq!(moves.len(),2);
+        let moves = generate_moves_level_4(
+            game.piece_register
+                .view_piece_at_location(BoardLocation::from_long_algebraic("h4").unwrap())
+                .unwrap(),
+            &CollisionMasks::from(&game.piece_register),
+            &game.special_flags,
+            &game.piece_register,
+        )
+        .unwrap();
+        assert_eq!(moves.len(), 2);
     }
-
 }
