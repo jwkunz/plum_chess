@@ -5,7 +5,7 @@ use rand::{seq::IteratorRandom};
 use crate::{
     chess_engine_thread_trait::{
         ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
-    }, chess_errors::ChessErrors, game_state::GameState, generate_moves_level_5::generate_all_moves, move_description::MoveDescription
+    }, chess_errors::ChessErrors, game_state::GameState, generate_all_moves::generate_all_moves, move_description::MoveDescription
 };
 
 /// A trivial, purely random engine implementation used for testing and as a reference engine.

@@ -9,6 +9,7 @@ pub mod debug_utils;
 pub mod engine_greedy_1_move;
 pub mod engine_random;
 pub mod game_state;
+pub mod generate_all_moves;
 pub mod generate_movements;
 pub mod generate_moves_level_1;
 pub mod generate_moves_level_2;

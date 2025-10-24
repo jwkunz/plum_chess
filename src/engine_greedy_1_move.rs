@@ -3,7 +3,7 @@ use std::{collections::VecDeque, sync::mpsc, time::Instant};
 use crate::{
     apply_move_to_game::apply_move_to_game_unchecked, chess_engine_thread_trait::{
         ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
-    }, chess_errors::ChessErrors, game_state::GameState, generate_moves_level_5::generate_all_moves, move_description::MoveDescription
+    }, chess_errors::ChessErrors, game_state::GameState, generate_all_moves::generate_all_moves, move_description::MoveDescription
 };
 
 /// This engine simply looks at the next moves and picks the one that maximizes the conventional score on the next turn

@@ -1,7 +1,7 @@
 use std::{fs::{self, OpenOptions}};
 use std::thread;
 
-use crate::{chess_errors::ChessErrors, debug_utils::run_stockfish_perft, game_state::GameState, generate_moves_level_5::{CheckedMoveWithFutureGame, generate_all_moves}};
+use crate::{chess_errors::ChessErrors, debug_utils::run_stockfish_perft, game_state::GameState, generate_moves_level_5::{CheckedMoveWithFutureGame},generate_all_moves::generate_all_moves};
 use std::io::Write;
 
 #[derive(Debug, PartialEq)]
