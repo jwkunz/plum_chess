@@ -1,6 +1,7 @@
-use std::{fs::{self, OpenOptions}, os::linux::raw::stat};
+use std::{fs::{self, OpenOptions}};
+use std::thread;
 
-use crate::{checked_move_description, chess_errors::ChessErrors, debug_utils::run_stockfish_perft, game_state::GameState, generate_moves_level_5::{CheckedMoveWithFutureGame, generate_all_moves}};
+use crate::{chess_errors::ChessErrors, debug_utils::run_stockfish_perft, game_state::GameState, generate_moves_level_5::{CheckedMoveWithFutureGame, generate_all_moves}};
 use std::io::Write;
 
 #[derive(Debug, PartialEq)]
@@ -107,8 +108,31 @@ pub fn perft(game : &GameState, search_depth : u8, do_debug : bool) -> Result<Pe
     }
     let mut result = PerftCounts::new();
     let all_moves = generate_all_moves(&game)?;
-    for m in all_moves{
-        perft_recursion(&m, search_depth, 1,&mut result, filename)?;
+    // Spawn one thread per top-level move and sum their results
+    let mut handles = Vec::with_capacity(all_moves.len());
+    for m in all_moves {
+        let filename_copy = filename; // copy the Option<&str> into the closure
+        handles.push(thread::spawn(move || -> Result<PerftCounts, ChessErrors> {
+            let mut local_counts = PerftCounts::new();
+            perft_recursion(&m, search_depth, 1, &mut local_counts, filename_copy)?;
+            Ok(local_counts)
+        }));
+    }
+
+    for h in handles {
+        // If a thread panicked, this will panic the process (consistent with many threaded designs).
+        // Otherwise propagate any ChessErrors returned by perft_recursion.
+        let thread_result = h.join().expect("perft worker thread panicked")?;
+        // Aggregate counts field-by-field
+        result.nodes += thread_result.nodes;
+        result.captures += thread_result.captures;
+        result.en_passant += thread_result.en_passant;
+        result.castles += thread_result.castles;
+        result.promtions += thread_result.promtions;
+        result.checks += thread_result.checks;
+        result.discovery_checks += thread_result.discovery_checks;
+        result.double_checks += thread_result.double_checks;
+        result.checkmates += thread_result.checkmates;
     }
     Ok(result)
 }
@@ -242,7 +266,8 @@ mod tests{
             assert_eq!(count.nodes, target.nodes);
             println!("Passed!")
         }
-        // Oct 12 version passed up to depth 5 in 9.5 seconds
+        // Oct 12 version passed up to depth 4 in 9.5 seconds
+        // Oct 23 version passed all cases at 239s (mulithreaded)
     }
 
     #[test]
