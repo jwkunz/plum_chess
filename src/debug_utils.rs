@@ -15,13 +15,6 @@ use std::time::Duration;
 ///
 /// A `usize` representing the node count reported by Stockfish.
 ///
-/// # Example
-///
-/// ```
-/// let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-/// let nodes = run_stockfish_perft(fen, 3)?;
-/// println!("Nodes: {}", nodes);
-/// ```
 pub fn run_stockfish_perft(fen: &str, depth: u32) -> std::io::Result<(usize,Vec<String>)> {
     // Spawn Stockfish
     let mut child = Command::new("stockfish")
