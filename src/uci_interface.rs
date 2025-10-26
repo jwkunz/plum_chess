@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{apply_move_to_game::apply_move_to_game_unchecked, chess_engine_thread_trait::{ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType}, chess_errors::ChessErrors, engine_greedy_1_move::EngineGreedy1Move, engine_random::EngineRandom, game_state::GameState, move_description::MoveDescription};
+use crate::{apply_move_to_game::apply_move_to_game_unchecked, chess_engine_thread_trait::{ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType}, chess_errors::ChessErrors, engine_random::EngineRandom, game_state::GameState, move_description::MoveDescription};
 
 
 /// Tokens for setting position values in UCI options.
@@ -578,6 +578,8 @@ impl UCI {
 
         // State updated
         self.uci_state = next_state;
+        // Sleep to avoid busy waiting
+        thread::sleep(Duration::from_millis(10));
     }
 
     /// Gets a command from the input
@@ -686,14 +688,14 @@ impl UCI {
                     command_receiver,
                     response_sender,
                 )
-            } else if self.uci_limit_strength && self.uci_elo == 2 {
+            }/* else if self.uci_limit_strength && self.uci_elo == 2 {
                 self.create_engine_2(
                     game.clone(),
                     calculation_time,
                     command_receiver,
                     response_sender,
                 )
-            }/*else if self.uci_limit_strength && self.uci_elo == 3 {
+            }else if self.uci_limit_strength && self.uci_elo == 3 {
                 self.create_engine_3(
                     game.clone(),
                     calculation_time,
@@ -734,30 +736,42 @@ impl UCI {
     /// Polls the calculate and checks if done
     fn attend_to_engine_see_if_done(&mut self) -> bool {
         let mut done_status = false;
-        let response_timeout_ms = Duration::from_millis(100);
+        let response_timeout_ms = Duration::from_millis(5000);
         if let Some(cs) = &self.command_sender {
             if let Some(rr) = &self.response_receiver {
                 let _ = cs.send(EngineControlMessageType::AreYouStillCalculating);
-                let calc_response = rr.recv_timeout(response_timeout_ms);
-                if matches!(
-                    calc_response,
-                    Ok(EngineResponseMessageType::StillCalculatingStatus(false))
-                ) {
-                    let _ = cs.send(EngineControlMessageType::GiveMeYourBestMoveSoFar);
-                    if let Ok(EngineResponseMessageType::BestMoveFound(Some(best_move))) =
-                        rr.recv_timeout(response_timeout_ms)
-                    {
-                        self.give_response(generate_response(ResponseTokens::BestMove(
-                            best_move.get_long_algebraic(),
-                        )));
-                        done_status = true;
+                match rr.recv_timeout(response_timeout_ms) {
+                    Err(_) => {
+                        self.info_print("WARNING: Engine Thead Timed Out");
+                        return false;
                     }
+                    Ok(EngineResponseMessageType::StillCalculatingStatus(false)) => {
+                        let _ = cs.send(EngineControlMessageType::GiveMeYourBestMoveSoFar);
+                        match rr.recv_timeout(response_timeout_ms) {
+                            Ok(EngineResponseMessageType::BestMoveFound(Some(best_move))) => {
+                                self.give_response(generate_response(ResponseTokens::BestMove(
+                                    best_move.get_long_algebraic(),
+                                )));
+                                done_status = true;
+                            }
+                            Ok(_) => { /* other responses ignored */ }
+                            Err(_) => {
+                                self.info_print("WARNING: Engine Thead Timed Out");
+                            }
+                        }
+                    }
+                    Ok(_) => { /* still calculating or other status, continue */ }
                 }
+
                 let _ = cs.send(EngineControlMessageType::GiveMeAStringToLog);
-                if let Ok(EngineResponseMessageType::StringToLog(Some(s))) =
-                    rr.recv_timeout(response_timeout_ms)
-                {
-                    self.info_print(&s);
+                match rr.recv_timeout(response_timeout_ms) {
+                    Ok(EngineResponseMessageType::StringToLog(Some(s))) => {
+                        self.info_print(&s);
+                    }
+                    Ok(_) => { /* nothing to log */ }
+                    Err(_) => {
+                        self.info_print("WARNING: Engine Thead Timed Out");
+                    }
                 }
             }
         }
@@ -813,7 +827,7 @@ impl UCI {
             response_sender,
         ))
     }
-    
+    /*
     /// This is the engine level 2
     fn create_engine_2(
         &self,
@@ -829,7 +843,7 @@ impl UCI {
             response_sender,
         ))
     }
-    /*
+    
     /// This is the engine level 3
     fn create_engine_3(
         &self,

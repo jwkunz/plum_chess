@@ -20,4 +20,5 @@ pub enum ChessErrors {
     KingKeyRecordGotCorrupted,
     PieceRegisterDoesNotContainAKing,
     ErrorDuringCheckInspection(String),
+    NoLegalMoves,
 }

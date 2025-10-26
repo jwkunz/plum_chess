@@ -1,4 +1,4 @@
-use crate::{apply_move_to_game::apply_move_to_game_filtering_no_friendly_check, board_location::BoardLocation, board_mask::BoardMask, chess_errors::ChessErrors, collision_masks::{self, CollisionMasks}, game_state::GameState, generate_movements::{generate_bishop_movement, generate_king_movement, generate_knight_movement, generate_rook_movement}, generate_moves_level_3::GenerateLevel3Result, generate_moves_level_4::generate_moves_level_4, piece_record::PieceRecord, piece_register::{self, PieceRegister}, piece_team::PieceTeam, types_of_check::TypesOfCheck};
+use crate::{apply_move_to_game::apply_move_to_game_filtering_no_friendly_check, board_mask::BoardMask, chess_errors::ChessErrors, collision_masks::{CollisionMasks}, game_state::GameState, generate_movements::{generate_bishop_movement, generate_king_movement, generate_knight_movement, generate_rook_movement}, generate_moves_level_3::GenerateLevel3Result, generate_moves_level_4::generate_moves_level_4, piece_record::PieceRecord, piece_register::{PieceRegister}, types_of_check::TypesOfCheck};
 
 // Find all pieces causing check, or pinning down pieces
 fn find_threatening_pieces(piece_register : &PieceRegister, king : &PieceRecord)-> Result<Vec<PieceRecord>,ChessErrors>{
@@ -120,6 +120,7 @@ pub fn inspect_check(game: &GameState, last_piece_moved_option : Option<PieceRec
 #[cfg(test)]
 mod test{
     use super::*;
+    use crate::board_location::BoardLocation;
     #[test]
     fn test_inspect_check(){
         let game = GameState::from_fen("rnb1kbnr/ppp1pppp/8/8/4P3/8/PPP2PPP/RNBqKBNR w KQkq - 0 4").unwrap();

@@ -62,5 +62,17 @@ mod test{
         let moves = generate_all_moves(&game).unwrap();
         assert_eq!(moves.len(), 2);
 
+        let game =
+            GameState::from_fen("rnb2rk1/5ppp/p3pn2/2p5/P1B4P/1P2Bpq1/5bP1/5K1R w - - 1 20")
+                .unwrap();
+        let moves = generate_all_moves(&game).unwrap();
+        assert_eq!(moves.len(), 21);
+
+        let game =
+            GameState::from_fen("2kr1bnr/pppb1qpp/2n1pp2/3qP3/5B1P/8/PPP2PP1/R4RK1 w - - 0 14")
+                .unwrap();
+        let moves = generate_all_moves(&game).unwrap();
+        assert_eq!(moves.len(), 28);        
+
     }
 }

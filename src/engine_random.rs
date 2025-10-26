@@ -96,12 +96,13 @@ impl ChessEngineThreadTrait for EngineRandom {
 
     /// Pick a random move
     fn calculating_callback(&mut self) -> Result<(), ChessErrors> {
-        if let Ok(moves) = generate_all_moves(&self.starting_position) {
-            let mut rng = rand::rng();
-            if let Some(random_move) = moves.iter().choose(&mut rng) {
-                self.best_so_far = Some(random_move.checked_move.description.clone());
-                self.set_status_calculating(false);
-            }
+        let moves = generate_all_moves(&self.starting_position)?;        
+        let mut rng = rand::rng();
+        if let Some(random_move) = moves.iter().choose(&mut rng) {
+            self.best_so_far = Some(random_move.checked_move.description.clone());
+            self.set_status_calculating(false);
+        }else{
+            return Err(ChessErrors::NoLegalMoves);
         }
         Ok(())
     }

@@ -6,7 +6,6 @@ pub mod chess_engine_thread_trait;
 pub mod chess_errors;
 pub mod collision_masks;
 pub mod debug_utils;
-pub mod engine_greedy_1_move;
 pub mod engine_random;
 pub mod game_state;
 pub mod generate_all_moves;

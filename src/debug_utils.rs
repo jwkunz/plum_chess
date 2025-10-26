@@ -1,4 +1,3 @@
-use std::fs::read;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -84,7 +83,7 @@ mod test{
     #[test]
     fn test_run_stockfish_perft(){
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-        let (count,nodes) = run_stockfish_perft(fen, 3).unwrap();
+        let (count,_) = run_stockfish_perft(fen, 3).unwrap();
         assert_eq!(count,8902);
     }
 }
