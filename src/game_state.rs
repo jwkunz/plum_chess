@@ -17,8 +17,6 @@ pub struct MoveCounters{
     pub full_move_count: u16,
 }
 
-
-
 /// Represents the complete state of a chess game at a given moment.
 #[derive(Clone,Debug)]
 pub struct GameState {

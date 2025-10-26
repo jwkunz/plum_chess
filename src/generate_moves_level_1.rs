@@ -4,15 +4,6 @@ use crate::{
     board_location::BoardLocation, chess_errors::ChessErrors, collision_masks::CollisionMasks, generate_movements::*, piece_team::PieceTeam
 };
 
-/*
-Level 1 move generation is basic and only requires this information.
-#[derive(Debug,Clone)]
-pub struct GenerateLevel1Args{
-    pub start: BoardLocation,
-    pub masks: CollisionMasks,
-}
-*/
-
 /// Type alias for a linked list of move descriptions with collision information.
 pub type ListOfRawMoves = LinkedList<BoardLocation>;
 

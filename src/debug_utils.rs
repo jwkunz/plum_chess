@@ -77,6 +77,21 @@ pub fn run_stockfish_perft(fen: &str, depth: u32) -> std::io::Result<(usize,Vec<
 }
 
 #[cfg(test)]
+/// Tests that `run_stockfish_perft` returns the known perft node count for the
+/// standard chess starting position at depth 3.
+///
+/// The test calls `run_stockfish_perft` with the FEN for the initial position
+/// ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") and depth 3,
+/// then asserts the returned node count is 8,902 — the expected perft result
+/// for that position and depth.
+///
+/// Notes:
+/// - This test depends on `run_stockfish_perft` being implemented and able to
+///   invoke a Stockfish engine (or otherwise compute perft). If Stockfish is
+///   not available on the test machine, the test may fail or should be skipped.
+/// - Because it interacts with an external engine, consider treating this as
+///   an integration test or gating it behind an environment variable to avoid
+///   flakiness in automated CI environments.
 mod test{
     use super::*;
 

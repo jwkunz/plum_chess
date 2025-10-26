@@ -2,18 +2,6 @@ use crate::{
     board_location::BoardLocation, chess_errors::ChessErrors, collision_masks::CollisionMasks, generate_movements::*, generate_moves_level_1::*, piece_team::PieceTeam
 };
 
-/*
-Level 2 movement generations needs this information:
-
-#[derive(Debug,Clone)]
-pub struct GenerateLevel2Args{
-    pub start: BoardLocation,
-    pub masks: CollisionMasks,
-    pub team: PieceTeam
-}
-*/
-
-
 /// The results from level 2 generation are level 1 generations filtered into captures / movement of regular moves
 #[derive(Debug,Clone)]
 pub struct GenerateLevel2Result{

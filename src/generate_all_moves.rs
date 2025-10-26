@@ -1,12 +1,14 @@
 use crate::{chess_errors::ChessErrors, game_state::GameState, generate_moves_level_5::{GenerateLevel5Result, generate_moves_level_5}, piece_team::PieceTeam};
 use std::thread;
 
+/// Top wrapper for generationg all possible chess moves from a game state.
+/// Can be configured for single thread or multithreade
 pub fn generate_all_moves(game: &GameState)-> Result<GenerateLevel5Result, ChessErrors>{
     //generate_all_moves_multithread(game)
     generate_all_moves_single_threaded(game) // Tested is generally faster when optimized compiled
 }
 
-/// Generates all chess moves
+/// Generates all chess moves with muttiple threads
 pub fn generate_all_moves_multithread(game: &GameState) -> Result<GenerateLevel5Result, ChessErrors> {
     let mut result = GenerateLevel5Result::new();
 
@@ -36,7 +38,7 @@ pub fn generate_all_moves_multithread(game: &GameState) -> Result<GenerateLevel5
     Ok(result)
 }
 
-/// Generates all chess moves
+/// Generates all chess moves with a single thread
 pub fn generate_all_moves_single_threaded(game: &GameState) -> Result<GenerateLevel5Result, ChessErrors> {
     let mut result = GenerateLevel5Result::new();
     if matches!(game.turn, PieceTeam::Light) {

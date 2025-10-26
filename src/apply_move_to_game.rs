@@ -1,3 +1,44 @@
+//! Utilities for applying a MoveDescription to a GameState.
+//!
+//! This module contains two public helpers used by the move generation and
+//! validation pipeline:
+//!
+//! - apply_move_to_game_unchecked: performs an in-place logical application of
+//!   a move against a cloned GameState and returns the resulting GameState.
+//!   This function performs the piece movements, captures, promotions,
+//!   en-passant bookkeeping, castling rook movement, castling-rights updates,
+//!   and move-clock updates. It does NOT validate whether the move leaves the
+//!   moving side in check (i.e. it does not perform legality tests) — callers
+//!   must handle check detection if they require fully-legal move semantics.
+//!
+//! - apply_move_to_game_filtering_no_friendly_check: a thin wrapper that
+//!   applies a move and then rejects the result if the moving side would be
+//!   left in check (including special handling for castling to ensure no king
+//!   passing square is attacked).
+//!
+//! Both functions return ChessErrors on invalid internal operations (for
+//! example if piece_register operations fail). The filtering variant returns
+//! Ok(None) when the move is legal in terms of board operations but illegal
+//! because it results in the moving side's king being in check (or because
+//! a castling move would pass through or start in check).
+//!
+//! Implementation notes / invariants:
+//! - These functions operate on a cloned GameState and never mutate the
+//!   provided `game` argument.
+//! - apply_move_to_game_unchecked assumes MoveDescription is syntactically
+//!   valid for the given GameState; it will still return errors if the
+//!   underlying piece-register operations fail.
+//! - En passant handling requires MoveDescription::capture_status to be set
+//!   for MoveTypes::EnPassant — the current implementation uses an `expect`
+//!   and will panic if that invariant is violated. Callers constructing
+//!   MoveDescription for en-passant should ensure the capture_status is
+//!   present.
+//! - The functions update special flags (en-passant target, castling rights)
+//!   and move counters (halfmove clock, fullmove count) according to FIDE
+//!   style rules used in this engine.
+//!
+//! See the individual function docs for more-detailed behavior for each move
+//! type (regular, double pawn step, en-passant, castling, promotion).
 use crate::{
     board_location::BoardLocation,
     chess_errors::ChessErrors,
@@ -12,17 +53,62 @@ use crate::{
     piece_team::PieceTeam,
 };
 
-/// Applies an unchecked chess move to a given game state, returning the resulting game state or an error.
-/// This function handles all move types, including castling, en passant, promotion, and updates castling rights and clocks.
-/// It will not update the game's check status
+/// Apply a MoveDescription to a GameState without performing a legality check.
 ///
-/// # Arguments
-/// * `chess_move` - The move to apply.
-/// * `game` - The current game state.
+/// This function performs the low-level application of a chess move, returning
+/// a brand-new GameState with all of the engine bookkeeping updated. It is
+/// intentionally "unchecked": it does not guarantee that the resulting position
+/// leaves the moving side's king out of check. Use
+/// `apply_move_to_game_filtering_no_friendly_check` when you need to reject
+/// moves that leave the mover in check.
 ///
-/// # Returns
-/// * `Ok(GameState)` - The new game state after the move.
-/// * `Err(Errors)` - If the move is invalid or cannot be applied.
+/// The function handles the following move types:
+/// - MoveTypes::Regular:
+///   - Moves a piece from the start to destination, overwriting (capturing)
+///     any piece at the destination using the piece_register helpers.
+///   - If the moved piece is a King or a Rook from its original corner rank/file,
+///     the corresponding castling rights on the moving side are cleared.
+/// - MoveTypes::Castling(rook_vector):
+///   - Moves the king to its castled square and moves the rook according to the
+///     provided rook_vector. Clears both king- and queen-side castling rights
+///     for the moving side.
+/// - MoveTypes::DoubleStep(behind_pawn):
+///   - Moves a pawn two squares forward and sets the en-passant target square
+///     (`special_flags.en_passant_location`) to `behind_pawn` (the square behind
+///     the pawn where an en-passant capture may occur next ply).
+/// - MoveTypes::EnPassant:
+///   - Expects `chess_move.capture_status` to contain the captured pawn's
+///     location (the square behind the double-stepped pawn). Removes the
+///     captured pawn and moves the en-passant capturing pawn to the destination.
+///   - NOTE: an internal `expect` is used when reading capture_status; if the
+///     MoveDescription is malformed (missing capture_status) this will panic.
+///     Construct MoveDescription for en-passant carefully.
+/// - MoveTypes::Promote(promoted_piece):
+///   - Moves the pawn to the promotion square and edits the piece at that
+///     location to the promoted piece class. Capture is handled via the
+///     overwrite semantics of the piece register move.
+///
+/// Additionally, the function updates:
+/// - special_flags.en_passant_location: cleared for all move types except
+///   DoubleStep (where it is explicitly set).
+/// - special_flags.can_castle_* flags: cleared when the king or an original
+///   rook moves (or any castling move occurs).
+/// - move_counters.half_move_clock: reset to 0 when a pawn moves or a capture
+///   occurs; otherwise incremented by 1.
+/// - move_counters.full_move_count: incremented after Dark (black) completes a
+///   move (i.e., when the mover was Dark).
+/// - turn: flipped to the opposing team after the move is applied.
+///
+/// Errors:
+/// - Returns ChessErrors propagated from the piece_register operations, or any
+///   validation performed by internal helper methods called here.
+///
+/// Panics:
+/// - If MoveTypes::EnPassant is used but the MoveDescription lacks
+///   capture_status, this function will panic due to an `expect` call.
+///
+/// Example:
+/// let new_state = apply_move_to_game_unchecked(&move_desc, &old_state)?;
 pub fn apply_move_to_game_unchecked(
     chess_move: &MoveDescription,
     game: &GameState,
@@ -177,17 +263,46 @@ pub fn apply_move_to_game_unchecked(
     Ok(result)
 }
 
-/// Applies an unchecked chess move to a given game state and filters if the move does not allow enemy check via resulting Option<GameState>.
-/// This function handles all move types, including castling, en passant, promotion, and updates castling rights and clocks.
-/// It will not update the game's check status
+/// Apply a MoveDescription and reject results that leave the mover in check.
 ///
-/// # Arguments
-/// * `chess_move` - The move to apply.
-/// * `game` - The current game state.
+/// This wrapper performs two main responsibilities in addition to what
+/// `apply_move_to_game_unchecked` does:
 ///
-/// # Returns
-/// * `Ok(Some(GameState))` - The new game state after the move is Some if it did not create friendly check
-/// * `Err(Errors)` - If the move is invalid or cannot be applied.
+/// 1. Ensures castling does not occur when the king is currently in check or
+///    would pass through an attacked square. FIDE castling legality rules
+///    require that:
+///      - the king is not in check in the starting square,
+///      - the squares the king traverses (and the destination) are not attacked.
+///
+///    Because castling is represented by a single composite MoveDescription,
+///    this function breaks castling into intermediate regular king moves for
+///    the passing squares and checks each one for check using `inspect_check`.
+///
+/// 2. After applying the given move, it checks whether the mover's king is in
+///    check in the resulting position. If so, the function returns Ok(None),
+///    signalling the move is illegal for the moving side. Otherwise it returns
+///    Ok(Some(GameState)) with the legal updated position.
+///
+/// Behavior details:
+/// - For castling, the function computes the list of king-passing squares
+///   (for example: e1 -> f1 -> g1 for light kingside) and simulates moving
+///   the king to each passing square in isolation, checking for check. If any
+///   passing square is attacked (or inspect_check returns Some), the castling
+///   move is rejected by returning Ok(None).
+/// - After applying any move, the function temporarily flips candidate_game.turn
+///   and calls inspect_check to ask whether the moving side's king is in check
+///   in the resulting position. If check is present, the move is not legal and
+///   Ok(None) is returned. If check is absent, Ok(Some(GameState)) is returned.
+/// - The function preserves ChessErrors from underlying operations and returns
+///   them as Err(ChessErrors).
+///
+/// Returns:
+/// - Ok(Some(GameState)) when the move was applied successfully and does not
+///   leave the mover in check.
+/// - Ok(None) when the move would leave the mover in check or castling passes
+///   through an attacked square (i.e., the move is illegal).
+/// - Err(ChessErrors) for operational failures (invalid piece operations, bad
+///   board coordinates, or other internal errors).
 pub fn apply_move_to_game_filtering_no_friendly_check(
     chess_move: &MoveDescription,
     game: &GameState,
@@ -390,4 +505,4 @@ mod test {
             apply_move_to_game_filtering_no_friendly_check(&move_description, &new_game).unwrap();
         assert!(updated_game.is_none());
     }
-}   
+}  

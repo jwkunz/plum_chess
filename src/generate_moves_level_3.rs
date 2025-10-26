@@ -2,17 +2,6 @@ use crate::{
     chess_errors::ChessErrors, collision_masks::CollisionMasks, generate_moves_level_1::ListOfRawMoves, generate_moves_level_2::*, piece_record::PieceRecord
 };
 
-/*
-Level 3 movement generations needs this information:
-
-#[derive(Debug,Clone)]
-pub struct GenerateLevel3args{
-    pub pice: PieceRecord,
-    pub masks: CollisionMasks
-}
-*/
-
-
 /// The results from level 3 generation are type dispatched level 2 generations created from a PieceRecord
 #[derive(Debug,Clone)]
 pub struct GenerateLevel3Result{

@@ -15,9 +15,7 @@ use crate::{
 };
 
 
-/// At level 5 we provided the rule checked move description and future game state after that move.
-/// This layer can only find single checks, not double checks
-/// This layer does inspect to make sure a move does leave the friendly king in check
+/// At level 5 we provided a full check inspected move description and future game state after that move.
 #[derive(Clone, Debug)]
 pub struct CheckedMoveWithFutureGame {
     pub checked_move: CheckedMoveDescription,

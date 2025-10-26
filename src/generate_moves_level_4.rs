@@ -17,7 +17,7 @@ use crate::{
 pub type GenerateLevel4Result = LinkedList<MoveDescription>;
 
 /// Level 4 generates all moves for a piece and incorporate special moves
-/// Moves are unchecked; they do not filter what violates rules
+/// Moves are unchecked; they do not filter what violates check rules
 pub fn generate_moves_level_4(
     piece: &PieceRecord,
     masks: &CollisionMasks,

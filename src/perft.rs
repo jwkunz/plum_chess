@@ -1,9 +1,70 @@
+//! Perft (performance test) utilities and verified perft test cases.
+//!
+//! This module implements a perft driver used to exercise and validate the
+//! correctness of move generation and move application logic in the engine.
+//! Perft is a common debugging / verification tool in chess engine development:
+//! given a position and a search depth, it enumerates all legal move sequences
+//! to that depth and aggregates statistics (nodes, captures, en-passant,
+//! castlings, promotions, checks, check types, and checkmates).
+//!
+//! This implementation provides:
+//! - A PerftCounts struct containing aggregated counters for perft results.
+//! - A recursive perft worker that inspects moves at leaf nodes and updates
+//!   counters appropriately.
+//! - Multi-threaded and single-threaded entry points that run perft across the
+//!   top-level moves and aggregate results.
+//! - Integration with an optional Stockfish perft run (when debug logging is
+//!   enabled) to compare generated move lists for debugging mismatches.
+//!
+//! Notes on semantics and correctness:
+//! - The perft driver relies on generate_all_moves and the engine's move
+//!   application to produce legal future positions. Any bug in move generation
+//!   or move application will surface as mismatched node counts or differing
+//!   move lists compared to a reference engine.
+//! - This module records additional tactical metrics such as checks, discovery
+//!   checks, double checks, and checkmates. These metrics are computed from the
+//!   move-check status information associated with CheckedMoveWithFutureGame.
+//!
+//! Concurrency:
+//! - perft_multi_threaded spawns one worker thread per top-level move and joins
+//!   the results. Thread panics are propagated (the join will panic the
+//!   calling thread). ChessErrors produced inside workers are returned to the
+//!   caller as Err(...).
+//!
+//! Usage example:
+//! ```ignore
+//! let game = GameState::new_game();
+//! let counts = perft(&game, 4, false)?;
+//! println!("Nodes at depth 4: {}", counts.nodes);
+//! ```
+//!
+//! Debugging:
+//! - Pass do_debug=true to perft entrypoints to write a debug_log.txt that
+//!   contains mismatches against Stockfish perft output for top-level positions.
+//!   This requires an external stockfish binary accessible on PATH for the
+//!   run_stockfish_perft helper to work.
 use std::{fs::{self, OpenOptions}};
 use std::thread;
 
 use crate::{chess_errors::ChessErrors, debug_utils::run_stockfish_perft, game_state::GameState, generate_moves_level_5::{CheckedMoveWithFutureGame},generate_all_moves::generate_all_moves};
 use std::io::Write;
 
+/// Aggregated counters produced by a perft run.
+///
+/// PerftCounts tracks a number of useful metrics used to validate engine
+/// behavior and to compare against published perft tables:
+/// - nodes: total leaf nodes reached at the requested depth.
+/// - captures: total captures that occur on leaf moves.
+/// - en_passant: total en-passant captures observed.
+/// - castles: total castling moves observed.
+/// - promtions: total pawn promotions observed.
+/// - checks: total moves that leave the opponent in check at the leaf node.
+/// - discovery_checks: subset of checks that are discovery checks.
+/// - double_checks: subset of checks that are double checks (two attackers).
+/// - checkmates: leaf moves that produce a checkmate condition.
+///
+/// The struct derives Debug and PartialEq to allow test assertions comparing
+/// expected perft targets with computed results.
 #[derive(Debug, PartialEq)]
 pub struct PerftCounts{
     pub nodes : usize,
@@ -17,21 +78,46 @@ pub struct PerftCounts{
     pub checkmates : usize,
 }
 impl PerftCounts {
+    /// Create an empty PerftCounts with all counters set to zero.
     fn new() -> Self{
         PerftCounts{
-    nodes : 0,
-    captures : 0,
-    en_passant : 0,
-    castles : 0,
-    promtions : 0,
-    checks : 0,
-    discovery_checks : 0,
-    double_checks : 0,
-    checkmates : 0,
+            nodes : 0,
+            captures : 0,
+            en_passant : 0,
+            castles : 0,
+            promtions : 0,
+            checks : 0,
+            discovery_checks : 0,
+            double_checks : 0,
+            checkmates : 0,
         }
     }
 }
 
+/// Recursive perft worker that traverses the move tree from a given state.
+///
+/// This function is the core recursion used by both single- and multi-threaded
+/// drivers. It receives a CheckedMoveWithFutureGame (which pairs a move with
+/// the resulting GameState), the target search_depth, the current_depth (how
+/// many plies have been taken so far), and a mutable PerftCounts to update.
+/// When the recursion reaches the specified search_depth, it treats the node as
+/// a leaf and updates counters based on the move's metadata:
+/// - capture presence, move type (en-passant, castling, promotion), and check
+///   classification.
+/// Otherwise it generates all legal moves for the child position and recurses.
+///
+/// Parameters:
+/// - state: CheckedMoveWithFutureGame containing a move and the future GameState.
+/// - search_depth: target depth (in plies) to reach before counting nodes.
+/// - current_depth: current recursion depth (starts at 1 for top-level moves).
+/// - counts: mutable PerftCounts to aggregate results into.
+/// - log_file_name: optional path to a debug log file; when present the routine
+///   compares the engine's generated top-level moves against Stockfish's output
+///   and appends diagnostics for mismatches (used when do_debug=true).
+///
+/// Returns:
+/// - Ok(()) on success, with counts mutated in-place.
+/// - Err(ChessErrors) if move generation or any internal operation fails.
 fn perft_recursion(state : &CheckedMoveWithFutureGame, search_depth : u8, current_depth : u8, counts : &mut PerftCounts, log_file_name: Option<&str>) -> Result<(),ChessErrors>{
     if current_depth == search_depth{
         counts.nodes += 1;        
@@ -100,7 +186,21 @@ fn perft_recursion(state : &CheckedMoveWithFutureGame, search_depth : u8, curren
     Ok(())
 }
 
-
+/// Run perft with multi-threading across top-level moves.
+///
+/// perft_multi_threaded spawns one worker thread for each top-level move
+/// returned by generate_all_moves(game). Each worker executes the perft
+/// recursion from that top-level move and returns a PerftCounts. The main
+/// thread joins all workers and aggregates their counts.
+///
+/// Parameters:
+/// - game: the starting GameState for the perft run.
+/// - search_depth: search depth in plies (u8).
+/// - do_debug: when true, a debug_log.txt file is created and top-level move
+///   lists are compared to Stockfish for mismatches (useful for debugging).
+///
+/// Returns:
+/// - Ok(PerftCounts) with aggregated results, or Err(ChessErrors) on failure.
 pub fn perft_multi_threaded(game : &GameState, search_depth : u8, do_debug : bool) -> Result<PerftCounts,ChessErrors>{
     let filename = if do_debug{
         Some("debug_log.txt")
@@ -141,6 +241,12 @@ pub fn perft_multi_threaded(game : &GameState, search_depth : u8, do_debug : boo
     Ok(result)
 }
 
+/// Run perft single-threaded.
+///
+/// This is the simpler, single-threaded variant useful for deterministic debug
+/// runs or environments where thread creation is undesirable.
+///
+/// Parameters are the same as perft_multi_threaded.
 pub fn perft_single_thread(game : &GameState, search_depth : u8, do_debug : bool) -> Result<PerftCounts,ChessErrors>{
     let filename = if do_debug{
         Some("debug_log.txt")
@@ -158,6 +264,10 @@ pub fn perft_single_thread(game : &GameState, search_depth : u8, do_debug : bool
     Ok(result)
 }
 
+/// Convenience wrapper that chooses the perft mode to run.
+///
+/// Currently this wrapper calls perft_multi_threaded by default. Switch to
+/// perft_single_threaded for deterministic/sequential execution if desired.
 pub fn perft(game : &GameState, search_depth : u8, do_debug : bool) -> Result<PerftCounts,ChessErrors>{
     perft_multi_threaded(game, search_depth, do_debug)
     //perft_single_threaded(game, search_depth, do_debug)

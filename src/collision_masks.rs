@@ -6,6 +6,25 @@ pub struct CollisionMasks{
     pub dark_mask : BoardMask
 }
 
+/// Creates a CollisionMasks populated from the given PieceRegister.
+///
+/// Constructs a CollisionMasks by computing the occupancy masks for all light
+/// and dark pieces using the provided `PieceRegister`. The function borrows the
+/// register immutably and does not take ownership.
+///
+/// # Parameters
+/// - `piece_register`: Reference to the `PieceRegister` used to generate the
+///   light and dark occupancy masks.
+///
+/// # Returns
+/// A `CollisionMasks` with `light_mask` set to
+/// `piece_register.generate_mask_all_light()` and `dark_mask` set to
+/// `piece_register.generate_mask_all_dark()`.
+///
+/// # Examples
+/// ```
+/// let masks = CollisionMasks::from(&piece_register);
+/// ```
 impl CollisionMasks{
     pub fn from(piece_register : &PieceRegister) ->Self{
         CollisionMasks{

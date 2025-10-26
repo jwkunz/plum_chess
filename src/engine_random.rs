@@ -40,6 +40,48 @@ pub struct EngineRandom {
     response_sender: mpsc::Sender<EngineResponseMessageType>,
 }
 
+/// Implementation of the ChessEngineThreadTrait for EngineRandom.
+///
+/// This impl provides all lifecycle, timing, logging, and messaging helpers
+/// required for an engine thread that selects moves at random. It is intended
+/// for use in situations where a lightweight, non-deterministic move chooser
+/// is sufficient (for testing, fuzzing, or as a baseline).
+///
+/// Behavior summary:
+/// - configure: initialize the thread state (starting position, time limit,
+///   and channel endpoints for control/response).
+/// - record_start_time / compute_elapsed_micros: capture and query elapsed time
+///   using std::time::Instant (microsecond precision).
+/// - set_status_calculating / get_status_calculating: track whether the engine
+///   is currently performing a calculation.
+/// - get_command_receiver / get_response_sender: provide access to the control
+///   and response channels used to communicate with the engine thread.
+/// - get_best_move_so_far: return the last chosen move (cloned Option<MoveDescription>).
+/// - add_string_to_print_log / pop_next_string_to_log: enqueue and dequeue
+///   textual log entries in a FIFO manner.
+/// - get_calculation_time_as_micros: convert the configured calculation time
+///   (seconds as f32) into microseconds as u128, rounding to the nearest microsecond.
+/// - calculating_callback: the core routine for this engine; it generates all
+///   legal moves for the configured starting position and picks one uniformly
+///   at random. If a move is found it records it as the best-so-far and clears
+///   the calculating flag; if no legal moves are available it returns
+///   ChessErrors::NoLegalMoves. Any errors from move generation are propagated.
+///
+/// Notes and considerations:
+/// - This implementation assumes single-threaded ownership of EngineRandom's
+///   fields; concurrency-safe wrappers are not provided here.
+/// - Randomness source is obtained via rand::rng(); if deterministic behavior
+///   is required (reproducible tests), ensure the RNG is seeded appropriately
+///   or replaced with a deterministic generator.
+/// - Time arithmetic uses Instant, which is monotonic but not related to wall-clock time.
+/// - Error propagation: callers should handle ChessErrors coming from move generation.
+///
+/// Typical usage:
+/// 1. configure the engine thread with a position, calculation time, and channels.
+/// 2. call record_start_time() before beginning calculation.
+/// 3. invoke calculating_callback() to pick a move; use get_best_move_so_far()
+///    to retrieve the result and use get_response_sender() / get_command_receiver()
+///    to integrate with the engine's control loop.
 impl ChessEngineThreadTrait for EngineRandom {
     fn configure(
         &mut self,
