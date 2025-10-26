@@ -688,14 +688,14 @@ impl UCI {
                     command_receiver,
                     response_sender,
                 )
-            }/* else if self.uci_limit_strength && self.uci_elo == 2 {
+            }else if self.uci_limit_strength && self.uci_elo == 2 {
                 self.create_engine_2(
                     game.clone(),
                     calculation_time,
                     command_receiver,
                     response_sender,
                 )
-            }else if self.uci_limit_strength && self.uci_elo == 3 {
+            }/*else if self.uci_limit_strength && self.uci_elo == 3 {
                 self.create_engine_3(
                     game.clone(),
                     calculation_time,
@@ -805,7 +805,7 @@ impl UCI {
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Box<dyn ChessEngineThreadTrait> {
-        self.create_engine_1(
+        self.create_engine_2(
             starting_position,
             calculation_time_s,
             command_receiver,
@@ -827,7 +827,7 @@ impl UCI {
             response_sender,
         ))
     }
-    /*
+    
     /// This is the engine level 2
     fn create_engine_2(
         &self,
@@ -836,14 +836,14 @@ impl UCI {
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Box<dyn ChessEngineThreadTrait> {
-        Box::new(EngineGreedy1Move::new(
+        Box::new(crate::engine_greedy::EngineGreedy::new(
             starting_position,
             calculation_time_s,
             command_receiver,
             response_sender,
         ))
     }
-    
+    /*
     /// This is the engine level 3
     fn create_engine_3(
         &self,
