@@ -4,7 +4,7 @@ use crate::piece_register::PieceRegister;
 use crate::piece_class::PieceClass;
 use crate::piece_team::PieceTeam;
 use crate::piece_record::PieceRecord;
-use crate::scoring::conventional_score;
+use crate::scoring::{Score, conventional_score};
 use crate::special_move_flags::SpecialMoveFlags;
 
 
@@ -358,13 +358,13 @@ impl GameState {
     ///
     /// # Returns
     /// * `i8` - Positive favors light, negative favors dark.
-    pub fn get_material_score(&self) -> i8 {
-        let mut score = 0;
+    pub fn get_material_score(&self) -> Score {
+        let mut score = 0.0;
         for (_,piece_record) in &self.piece_register.light_pieces {
-            score += conventional_score(&piece_record.class) as i8;
+            score += conventional_score(&piece_record.class);
         }
         for (_,piece_record) in &self.piece_register.dark_pieces {
-            score -= conventional_score(&piece_record.class) as i8;       
+            score -= conventional_score(&piece_record.class);       
         }     
         score
     }
@@ -384,26 +384,26 @@ mod tests {
             "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string();
         assert_eq!(dut.get_fen(), new_game_string);
         let score = dut.get_material_score();
-        assert_eq!(score,0);
+        assert_eq!(score,0.0);
 
         let game_string =
             "1r4k1/7p/3p1bp1/p1pP4/P1P1prP1/1N2R2P/1P1N1PK1/8 b - - 3 31".to_string();
         let dut = GameState::from_fen(&game_string).expect("Should parse this string");
         assert_eq!(dut.get_fen(), game_string);
         let score = dut.get_material_score();
-        assert_eq!(score,-1);
+        assert_eq!(score,-1.0);
 
         let game_string =
             "r1bq1rk1/ppp2ppp/2n5/2bp4/4n3/1P2PNP1/PBP2PBP/RN1Q1RK1 b - - 2 9".to_string();
         let dut = GameState::from_fen(&game_string).expect("Should parse this string");
         assert_eq!(dut.get_fen(), game_string);
         let score = dut.get_material_score();
-        assert_eq!(score,0);
+        assert_eq!(score,0.0);
 
         let game_string = "8/bpp1k2p/p2pP1p1/P5q1/1P5N/8/6PP/5Q1K b - - 0 35".to_string();
         let dut = GameState::from_fen(&game_string).expect("Should parse this string");
         assert_eq!(dut.get_fen(), game_string);
         let score = dut.get_material_score();
-        assert_eq!(score,-1);
+        assert_eq!(score,-1.0);
     }
 }

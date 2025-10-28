@@ -1,8 +1,7 @@
 use std::{collections::VecDeque, sync::mpsc, time::Instant};
 
-use rand::seq::IteratorRandom;
-
 use crate::{
+    apply_move_to_game::apply_move_to_game_unchecked,
     chess_engine_thread_trait::{
         ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
     },
@@ -10,10 +9,11 @@ use crate::{
     game_state::{self, GameState},
     generate_all_moves::generate_all_moves,
     move_description::MoveDescription,
-    scoring,
+    piece_team::PieceTeam,
+    scoring::{self, compare_scores, generate_losing_score, Score},
 };
 
-pub struct EngineGreedy {
+pub struct EngineMinimax {
     /// The cloned game state provided during `setup`. None until setup is called.
     starting_position: GameState,
     /// Requested calculation time in seconds. None until setup is called.
@@ -31,7 +31,7 @@ pub struct EngineGreedy {
     response_sender: mpsc::Sender<EngineResponseMessageType>,
 }
 
-/// Implementation of the ChessEngineThreadTrait for EngineGreedy.
+/// Implementation of the ChessEngineThreadTrait for EngineMinimax.
 ///
 /// This impl provides all lifecycle, timing, logging, and messaging helpers
 /// required for an engine thread that selects moves at random. It is intended
@@ -73,7 +73,7 @@ pub struct EngineGreedy {
 /// 3. invoke calculating_callback() to pick a move; use get_best_move_so_far()
 ///    to retrieve the result and use get_response_sender() / get_command_receiver()
 ///    to integrate with the engine's control loop.
-impl ChessEngineThreadTrait for EngineGreedy {
+impl ChessEngineThreadTrait for EngineMinimax {
     fn configure(
         &mut self,
         starting_position: GameState,
@@ -129,37 +129,24 @@ impl ChessEngineThreadTrait for EngineGreedy {
 
     /// Pick the best move based on material in the position alone
     fn calculating_callback(&mut self) -> Result<(), ChessErrors> {
-        let moves = generate_all_moves(&self.starting_position)?;
-        if moves.len() == 0 {
+        if let Ok(best_move) = minimax_top(&self.starting_position.clone(), 3) {
+            self.best_so_far = Some(best_move);
+            self.set_status_calculating(false);
+        } else {
             return Err(ChessErrors::NoLegalMoves);
         }
-        let multiplier = match self.starting_position.turn {
-                crate::piece_team::PieceTeam::Light => 1.0,
-                crate::piece_team::PieceTeam::Dark => -1.0,
-        };
-        let mut best = moves.front().unwrap();
-        let mut best_score = best.game_after_move.get_material_score()*multiplier;
-        for i in moves.iter().skip(1) {
-            let score = i.game_after_move.get_material_score()*multiplier;
-            if score >= best_score {
-                best = i;
-                best_score = score;
-            }
-        }
-        self.best_so_far = Some(best.checked_move.description.clone());
-        self.set_status_calculating(false);
         Ok(())
     }
 }
 
-impl EngineGreedy {
+impl EngineMinimax {
     pub fn new(
         starting_position: GameState,
         calculation_time_s: f32,
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Self {
-        EngineGreedy {
+        EngineMinimax {
             starting_position,
             calculation_time_s,
             command_receiver,
@@ -169,5 +156,110 @@ impl EngineGreedy {
             best_so_far: None,
             string_log: VecDeque::new(),
         }
+    }
+}
+
+
+fn recurse(
+    move_to_make: MoveDescription,
+    game: &GameState,
+    direction_flipper: Score,
+    minmax_flipper : Score,
+    current_depth: usize,
+    max_depth: usize,
+) -> Result<Score, ChessErrors> {
+    let next_game = apply_move_to_game_unchecked(&move_to_make, game)?;
+    if current_depth == max_depth {
+        return Ok(next_game.get_material_score());
+    } else {
+        let exploring_moves = generate_all_moves(&next_game)?;
+        if exploring_moves.len() == 0 {
+            return Ok(generate_losing_score(next_game.turn));
+        }
+        let mut best_so_far = recurse(
+            exploring_moves
+                .front()
+                .unwrap()
+                .checked_move
+                .description
+                .clone(),
+            &next_game,
+            direction_flipper,
+            -minmax_flipper,
+            current_depth + 1,
+            max_depth,
+        )?;
+        best_so_far *= direction_flipper;
+        best_so_far *= minmax_flipper; 
+        for i in exploring_moves.into_iter().skip(1) {
+            let mut branch_result = recurse(
+                i.checked_move.description,
+                &next_game,
+                direction_flipper,
+                -minmax_flipper,
+                current_depth + 1,
+                max_depth,
+            )?;
+            branch_result *= direction_flipper;
+            branch_result *= minmax_flipper; 
+            if branch_result > best_so_far{
+                best_so_far = branch_result;
+            }
+        }
+        Ok(best_so_far)
+    }
+}
+
+fn minimax_top(
+    game: &GameState,
+    max_depth: usize,
+) -> Result<MoveDescription, ChessErrors> {
+    let exploring_moves = generate_all_moves(game)?;
+    if exploring_moves.len() == 0 {
+        return Err(ChessErrors::NoLegalMoves);
+    }
+    let direction_flipper = match game.turn {
+        PieceTeam::Light => -1.0,
+        PieceTeam::Dark => 1.0
+    };
+    let mut best_move_so_far =exploring_moves
+            .front()
+            .unwrap()
+            .checked_move
+            .description
+            .clone();
+
+    let mut best_score_so_far = recurse(
+        best_move_so_far.clone(),
+        &game,
+        direction_flipper,
+        -1.0,
+        1,
+        max_depth,
+    )?;
+    
+    best_score_so_far *= direction_flipper;
+    for i in exploring_moves.into_iter().skip(1) {
+        let mut branch_result =
+            recurse(i.checked_move.description.clone(), &game, direction_flipper,-1.0,1, max_depth)?;
+        branch_result *= direction_flipper;
+        if branch_result > best_score_so_far{
+            best_score_so_far = branch_result;
+            best_move_so_far = i.checked_move.description;
+        }
+    }
+    Ok(best_move_so_far)
+}
+
+#[cfg(test)]
+mod test{
+    use super::*;
+
+    #[test]
+    fn test_minimax(){
+        let game = GameState::from_fen("7k/8/8/8/6r1/5P2/8/7K w - - 0 1").unwrap();
+        let result = minimax_top(&game, 4).unwrap();
+        dbg!(result);
+
     }
 }
