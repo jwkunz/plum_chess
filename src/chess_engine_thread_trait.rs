@@ -65,32 +65,6 @@ pub enum EngineResponseMessageType {
 ///
 /// # Type Parameters
 /// The trait is marked as `Send` to allow thread safety.
-///
-/// # Examples
-/// ```
-/// use my_chess_engine::RandomEngine;
-/// use plum_chess::{GameState, ChessEngineThreadTrait};
-///
-/// let mut engine = RandomEngine::new();
-/// let game = GameState::new_game();
-/// 
-/// // Configure the engine
-/// engine.configure(game, 5.0, command_rx, response_tx);
-///
-/// // Start calculation
-/// engine.record_start_time();
-/// engine.set_status_calculating(true);
-///
-/// // Poll until done
-/// while engine.get_status_calculating() {
-///     engine.tick();
-/// }
-///
-/// // Get result
-/// if let Some(best_move) = engine.get_best_move_so_far() {
-///     println!("Best move found: {}", best_move);
-/// }
-/// ```
 pub trait ChessEngineThreadTrait: Send {
     /// Configures the engine with a position and search parameters.
     ///

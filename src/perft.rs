@@ -31,13 +31,6 @@
 //!   calling thread). ChessErrors produced inside workers are returned to the
 //!   caller as Err(...).
 //!
-//! Usage example:
-//! ```ignore
-//! let game = GameState::new_game();
-//! let counts = perft(&game, 4, false)?;
-//! println!("Nodes at depth 4: {}", counts.nodes);
-//! ```
-//!
 //! Debugging:
 //! - Pass do_debug=true to perft entrypoints to write a debug_log.txt that
 //!   contains mismatches against Stockfish perft output for top-level positions.

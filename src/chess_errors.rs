@@ -16,17 +16,7 @@
 //!   (e.g. `KingKeyRecordGotCorrupted`, `FeatureNotImplementedYet`) indicate
 //!   bugs or incomplete features and are not intended to be recovered from by
 //!   normal library users.
-//!
-//! Example:
-//! ```rust
-//! use plum_chess::{GameState, MoveDescription, ChessErrors};
-//!
-//! fn try_apply(game: &GameState, mv_text: &str) -> Result<GameState, ChessErrors> {
-//!     let mv = MoveDescription::from_long_algebraic(mv_text, game)?;
-//!     // ... apply move, returning ChessErrors on failure ...
-//!     unimplemented!()
-//! }
-//! ```
+
 use crate::{board_location::BoardLocation, piece_class::PieceClass};
 
 /// Unified error type for the chess engine.

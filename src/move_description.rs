@@ -184,23 +184,30 @@ impl MoveDescription {
             } else {
                 // Not a king move
 
-                // Is this a pawn en passant capture?
-                if matches!(piece_at_start.class, PieceClass::Pawn)
-                    && file_from != file_to
-                    && capture_status.is_none()
-                {
-                    // The location next door for en passant
-                    capture_status = Some(*game
+                // Is this a pawn en passant capture or double-step?
+                if matches!(piece_at_start.class, PieceClass::Pawn) {
+                    // Pawn moved diagonally into an empty square -> en passant capture
+                    if file_from != file_to && capture_status.is_none() {
+                        capture_status = Some(*game
                             .piece_register
                             .view_piece_at_location(BoardLocation::from_file_rank(file_to, rank_from)?)?);
-                    MoveTypes::EnPassant
-                } else {
-                    if (rank_from as i8 - rank_to as i8).abs() >= 2{ // Double step?
-                            MoveTypes::DoubleStep(BoardLocation::from_file_rank(file_to, (rank_from+rank_to)/2)?)
-                    }else{
-                            // Just a regular move
+                        MoveTypes::EnPassant
+                    } else {
+                        // Pawn moved two ranks -> double step (vulnerable square is midway)
+                        let rank_diff = (rank_from as i8 - rank_to as i8).abs();
+                        if rank_diff >= 2 {
+                            MoveTypes::DoubleStep(BoardLocation::from_file_rank(
+                                file_to,
+                                (rank_from + rank_to) / 2,
+                            )?)
+                        } else {
+                            // Regular pawn move or capture
                             MoveTypes::Regular
+                        }
                     }
+                } else {
+                    // Non-pawn moves are regular unless handled elsewhere
+                    MoveTypes::Regular
                 }
             }
         };

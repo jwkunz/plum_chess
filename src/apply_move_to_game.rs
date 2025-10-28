@@ -374,6 +374,8 @@ pub fn apply_move_to_game_filtering_no_friendly_check(
 
 #[cfg(test)]
 mod test {
+    use crate::generate_all_moves;
+
     use super::*;
     #[test]
     fn test_apply_move_to_game_checked() {
@@ -504,5 +506,17 @@ mod test {
         let updated_game =
             apply_move_to_game_filtering_no_friendly_check(&move_description, &new_game).unwrap();
         assert!(updated_game.is_none());
+    }
+
+
+    #[test]
+    fn test_setup_complex_position(){
+        let mut game = GameState::from_fen("rn1qkbnr/ppp1pppp/8/3p1b2/3P4/4P3/PPP2PPP/RNBQKBNR w KQkq - 1 3").unwrap();
+        let moves = vec![" c2c3","f5b1","a1b1","e7e6","g1f3","f7f6","f1b5","b8d7","e1g1","f8a3","b2a3","e8f7","d1d3","b7b6","e3e4","d5e4","d3e4","d7e5","d4e5","f6e5","f3e5","f7f6","c1f4","g7g6","b1d1","d8d1","f1d1","h7h6","e5d7"];
+        for move_description in moves {
+            game = apply_move_to_game_unchecked(&MoveDescription::from_long_algebraic(move_description, &game).unwrap(),&game).unwrap();
+        }
+        let generated_moves = crate::generate_all_moves::generate_all_moves(&game).unwrap();
+        assert_eq!(generated_moves.len(),3);
     }
 }  

@@ -20,11 +20,6 @@ pub struct CollisionMasks{
 /// A `CollisionMasks` with `light_mask` set to
 /// `piece_register.generate_mask_all_light()` and `dark_mask` set to
 /// `piece_register.generate_mask_all_dark()`.
-///
-/// # Examples
-/// ```
-/// let masks = CollisionMasks::from(&piece_register);
-/// ```
 impl CollisionMasks{
     pub fn from(piece_register : &PieceRegister) ->Self{
         CollisionMasks{

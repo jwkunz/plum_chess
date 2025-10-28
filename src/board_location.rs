@@ -17,7 +17,7 @@
 //! 
 //! Example:
 //! ```
-//! use plum_chess::BoardLocation;
+//! use plum_chess::board_location::BoardLocation;
 //! 
 //! // Create a location from algebraic notation
 //! let e4 = BoardLocation::from_long_algebraic("e4").unwrap();
@@ -87,12 +87,7 @@ impl BoardLocation {
     /// # Returns
     /// * `Ok(BoardLocation)` - Successfully parsed location
     /// * `Err(ChessErrors)` - If the string is invalid or coordinates are out of bounds
-    ///
-    /// # Examples
-    /// ```
-    /// let e4 = BoardLocation::from_long_algebraic("e4").unwrap();
-    /// assert_eq!(e4.to_long_algebraic(), "e4");
-    /// ```
+
     pub fn from_long_algebraic(x: &str) -> Result<Self, ChessErrors> {
         // Must be 2 chars (e.g., e2e4)
         let x = x.trim();

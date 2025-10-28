@@ -39,19 +39,7 @@
 //! Error handling:
 //! - All internal errors from piece register access or move-generation are
 //!   returned as `Err(ChessErrors)` to the caller.
-//!
-//! Examples:
-//! - To simply test if the current side to move is in check (without
-//!   classification):
-//!   ```ignore
-//!   let maybe_check = inspect_check(&game_state, None)?;
-//!   if maybe_check.is_some() { /* in-check */ }
-//!   ```
-//! - To fully classify a check after applying a move, pass the last moved
-//!   piece record:
-//!   ```ignore
-//!   let classification = inspect_check(&game_state, Some(last_moved_piece))?;
-//!   ```
+
 use crate::{apply_move_to_game::apply_move_to_game_filtering_no_friendly_check, board_mask::BoardMask, chess_errors::ChessErrors, collision_masks::{CollisionMasks}, game_state::GameState, generate_movements::{generate_bishop_movement, generate_king_movement, generate_knight_movement, generate_rook_movement}, generate_moves_level_3::GenerateLevel3Result, generate_moves_level_4::generate_moves_level_4, piece_record::PieceRecord, piece_register::{PieceRegister}, types_of_check::TypesOfCheck};
 
 /// Gather enemy pieces that could be giving check or creating pins against the king.
