@@ -14,8 +14,6 @@ pub fn conventional_score(x : &PieceClass) -> Score{
     }
 }
 
-pub const MIN_SCORE : Score = -1E9; 
-pub const MAX_SCORE : Score = 1E9; 
 pub enum ScoreComparison{
     Better,
     Equal,
