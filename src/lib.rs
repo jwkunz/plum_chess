@@ -7,7 +7,6 @@ pub mod chess_errors;
 pub mod collision_masks;
 pub mod debug_utils;
 pub mod engine_minimax;
-pub mod engine_greedy;
 pub mod engine_random;
 pub mod game_state;
 pub mod generate_all_moves;

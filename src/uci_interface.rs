@@ -8,8 +8,17 @@ use std::{
     time::Duration,
 };
 
-use crate::{apply_move_to_game::apply_move_to_game_unchecked, chess_engine_thread_trait::{ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType}, chess_errors::ChessErrors, engine_minimax::EngineMinimax, engine_random::EngineRandom, game_state::GameState, move_description::MoveDescription};
-
+use crate::{
+    apply_move_to_game::apply_move_to_game_unchecked,
+    chess_engine_thread_trait::{
+        ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
+    },
+    chess_errors::ChessErrors,
+    engine_minimax::EngineMinimax,
+    engine_random::EngineRandom,
+    game_state::GameState,
+    move_description::MoveDescription,
+};
 
 /// Tokens for setting position values in UCI options.
 #[derive(Debug)]
@@ -662,10 +671,12 @@ impl UCI {
 
         for move_description in moves {
             if let Ok(m) = MoveDescription::from_long_algebraic(move_description, &game) {
-                game = apply_move_to_game_unchecked(&m,&game)?;
+                game = apply_move_to_game_unchecked(&m, &game)?;
             } else {
                 self.position_to_analyze = None;
-                return Err(ChessErrors::InvalidAlgebraicString(move_description.clone()));
+                return Err(ChessErrors::InvalidAlgebraicString(
+                    move_description.clone(),
+                ));
             }
         }
 
@@ -688,28 +699,42 @@ impl UCI {
                     command_receiver,
                     response_sender,
                 )
-            }else if self.uci_limit_strength && self.uci_elo == 2 {
+            } else if self.uci_limit_strength && self.uci_elo == 2 {
                 self.create_engine_2(
                     game.clone(),
                     calculation_time,
                     command_receiver,
                     response_sender,
                 )
-            }else if self.uci_limit_strength && self.uci_elo == 3 {
+            } else if self.uci_limit_strength && self.uci_elo == 3 {
                 self.create_engine_3(
                     game.clone(),
                     calculation_time,
                     command_receiver,
                     response_sender,
                 )
-            }/*else if self.uci_limit_strength && self.uci_elo == 4 {
+            } else if self.uci_limit_strength && self.uci_elo == 4 {
                 self.create_engine_4(
                     game.clone(),
                     calculation_time,
                     command_receiver,
                     response_sender,
                 )
-            }*/else {
+            } else if self.uci_limit_strength && self.uci_elo == 5 {
+                self.create_engine_5(
+                    game.clone(),
+                    calculation_time,
+                    command_receiver,
+                    response_sender,
+                )
+            } else if self.uci_limit_strength && self.uci_elo == 6 {
+                self.create_engine_6(
+                    game.clone(),
+                    calculation_time,
+                    command_receiver,
+                    response_sender,
+                )
+            } else {
                 self.create_best_engine(
                     game.clone(),
                     calculation_time,
@@ -736,7 +761,6 @@ impl UCI {
     /// Polls the calculate and checks if done
     fn attend_to_engine_see_if_done(&mut self) -> bool {
         let mut done_status = false;
-        let response_timeout_ms = Duration::from_millis(5000);
         if let Some(cs) = &self.command_sender {
             if let Some(rr) = &self.response_receiver {
                 let _ = cs.send(EngineControlMessageType::AreYouStillCalculating);
@@ -808,7 +832,7 @@ impl UCI {
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Box<dyn ChessEngineThreadTrait> {
-        self.create_engine_3(
+        self.create_engine_6(
             starting_position,
             calculation_time_s,
             command_receiver,
@@ -830,7 +854,7 @@ impl UCI {
             response_sender,
         ))
     }
-    
+
     /// This is the engine level 2
     fn create_engine_2(
         &self,
@@ -839,14 +863,14 @@ impl UCI {
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Box<dyn ChessEngineThreadTrait> {
-        Box::new(crate::engine_greedy::EngineGreedy::new(
+        Box::new(EngineMinimax::<1>::new(
             starting_position,
             calculation_time_s,
             command_receiver,
             response_sender,
         ))
     }
-    
+
     /// This is the engine level 3
     fn create_engine_3(
         &self,
@@ -855,14 +879,14 @@ impl UCI {
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Box<dyn ChessEngineThreadTrait> {
-        Box::new(EngineMinimax::new(
+        Box::new(EngineMinimax::<2>::new(
             starting_position,
             calculation_time_s,
             command_receiver,
             response_sender,
         ))
     }
-    /*
+
     /// This is the engine level 4
     fn create_engine_4(
         &self,
@@ -871,12 +895,43 @@ impl UCI {
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Box<dyn ChessEngineThreadTrait> {
-        Box::new(EngineMinimax1DeepV1::new(
+        Box::new(EngineMinimax::<3>::new(
             starting_position,
             calculation_time_s,
             command_receiver,
             response_sender,
         ))
-    }       
-    */
+    }
+
+    /// This is the engine level 5
+    fn create_engine_5(
+        &self,
+        starting_position: GameState,
+        calculation_time_s: f32,
+        command_receiver: mpsc::Receiver<EngineControlMessageType>,
+        response_sender: mpsc::Sender<EngineResponseMessageType>,
+    ) -> Box<dyn ChessEngineThreadTrait> {
+        Box::new(EngineMinimax::<4>::new(
+            starting_position,
+            calculation_time_s,
+            command_receiver,
+            response_sender,
+        ))
+    }
+
+    /// This is the engine level 6
+    fn create_engine_6(
+        &self,
+        starting_position: GameState,
+        calculation_time_s: f32,
+        command_receiver: mpsc::Receiver<EngineControlMessageType>,
+        response_sender: mpsc::Sender<EngineResponseMessageType>,
+    ) -> Box<dyn ChessEngineThreadTrait> {
+        Box::new(EngineMinimax::<5>::new(
+            starting_position,
+            calculation_time_s,
+            command_receiver,
+            response_sender,
+        ))
+    }
 }

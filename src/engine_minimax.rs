@@ -30,14 +30,14 @@ use crate::{
 ///
 /// This engine evaluates positions by looking ahead a configurable number of moves
 /// and selecting the move that leads to the best material count for the current player.
-/// It implements the standard engine thread interface for integration with the game's
-/// control system.
-pub struct EngineMinimax {
-    /// The cloned game state provided during `setup`. None until setup is called.
+/// The search depth is now a compile-time constant (const generic) specified as
+/// EngineMinimax::<N>.
+pub struct EngineMinimax<const MAX_DEPTH: usize> {
+    /// The cloned game state provided during `setup`.
     starting_position: GameState,
-    /// Requested calculation time in seconds. None until setup is called.
+    /// Requested calculation time in seconds.
     calculation_time_s: f32,
-    /// The instant at which a search was started. Used to emulate timing behavior.
+    /// The instant at which a search was started.
     start_time: Instant,
     /// Calculation status
     status_calculating: bool,
@@ -92,7 +92,7 @@ pub struct EngineMinimax {
 /// 3. invoke calculating_callback() to pick a move; use get_best_move_so_far()
 ///    to retrieve the result and use get_response_sender() / get_command_receiver()
 ///    to integrate with the engine's control loop.
-impl ChessEngineThreadTrait for EngineMinimax {
+impl<const MAX_DEPTH: usize> ChessEngineThreadTrait for EngineMinimax<MAX_DEPTH> {
     fn configure(
         &mut self,
         starting_position: GameState,
@@ -148,7 +148,8 @@ impl ChessEngineThreadTrait for EngineMinimax {
 
     /// Pick the best move based on material in the position alone
     fn calculating_callback(&mut self) -> Result<(), ChessErrors> {
-        if let Ok(best_move) = minimax_top(&self.starting_position.clone(), 4) {
+        // Use the compile-time depth parameter MAX_DEPTH instead of a runtime value.
+        if let Ok(best_move) = minimax_top(&self.starting_position.clone(), MAX_DEPTH) {
             self.best_so_far = Some(best_move);
             self.set_status_calculating(false);
         } else {
@@ -158,7 +159,7 @@ impl ChessEngineThreadTrait for EngineMinimax {
     }
 }
 
-impl EngineMinimax {
+impl<const MAX_DEPTH: usize> EngineMinimax<MAX_DEPTH> {
     pub fn new(
         starting_position: GameState,
         calculation_time_s: f32,
