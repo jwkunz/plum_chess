@@ -374,8 +374,6 @@ pub fn apply_move_to_game_filtering_no_friendly_check(
 
 #[cfg(test)]
 mod test {
-    use crate::generate_all_moves;
-
     use super::*;
     #[test]
     fn test_apply_move_to_game_checked() {

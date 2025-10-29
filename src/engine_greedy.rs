@@ -1,16 +1,13 @@
 use std::{collections::VecDeque, sync::mpsc, time::Instant};
 
-use rand::seq::IteratorRandom;
-
 use crate::{
     chess_engine_thread_trait::{
         ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
     },
     chess_errors::ChessErrors,
-    game_state::{self, GameState},
+    game_state::{GameState},
     generate_all_moves::generate_all_moves,
     move_description::MoveDescription,
-    scoring,
 };
 
 pub struct EngineGreedy {
