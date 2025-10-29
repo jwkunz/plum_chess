@@ -6,11 +6,11 @@ use crate::{
         ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
     },
     chess_errors::ChessErrors,
-    game_state::{self, GameState},
+    game_state::GameState,
     generate_all_moves::generate_all_moves,
     move_description::MoveDescription,
     piece_team::PieceTeam,
-    scoring::{self, compare_scores, generate_losing_score, Score},
+    scoring::{MAX_SCORE, MIN_SCORE, Score, generate_losing_score},
 };
 
 pub struct EngineMinimax {
@@ -167,6 +167,8 @@ fn recurse(
     minimax_flipper : Score,
     current_depth: usize,
     max_depth: usize,
+    alpha : &mut Score,
+    beta : &mut Score
 ) -> Result<Score, ChessErrors> {
     let next_game = apply_move_to_game_unchecked(&move_to_make, game)?;
     if current_depth == max_depth {
@@ -176,21 +178,9 @@ fn recurse(
         if exploring_moves.len() == 0 {
             return Ok(generate_losing_score(next_game.turn));
         }
-        let mut best_so_far = recurse(
-            exploring_moves
-                .front()
-                .unwrap()
-                .checked_move
-                .description
-                .clone(),
-            &next_game,
-            direction_flipper,
-            -minimax_flipper,
-            current_depth + 1,
-            max_depth,
-        )?;
+        let mut best_so_far = MIN_SCORE*direction_flipper;
         let flip = direction_flipper*minimax_flipper;
-        for i in exploring_moves.into_iter().skip(1) {
+        for i in exploring_moves{
             let branch_result = recurse(
                 i.checked_move.description,
                 &next_game,
@@ -198,6 +188,8 @@ fn recurse(
                 -minimax_flipper,
                 current_depth + 1,
                 max_depth,
+                alpha,
+                beta
             )?;
             if branch_result*flip > best_so_far*flip{
                 best_so_far = branch_result;
@@ -220,6 +212,8 @@ fn minimax_top(
         PieceTeam::Dark => -1.0
     };
     let minimax_flipper = 1.0;
+    let mut alpha = MIN_SCORE*direction_flipper;
+    let mut beta = MAX_SCORE*direction_flipper;
     let mut best_move_so_far =exploring_moves
             .front()
             .unwrap()
@@ -227,18 +221,11 @@ fn minimax_top(
             .description
             .clone();
 
-    let mut best_score_so_far = recurse(
-        best_move_so_far.clone(),
-        &game,
-        direction_flipper,
-        -minimax_flipper,
-        1,
-        max_depth,
-    )?;
+    let mut best_score_so_far = MIN_SCORE*direction_flipper;
     let flip = direction_flipper*minimax_flipper;
-    for i in exploring_moves.into_iter().skip(1) {
+    for i in exploring_moves{
         let branch_result =
-            recurse(i.checked_move.description.clone(), &game, direction_flipper,-minimax_flipper,1, max_depth)?;
+            recurse(i.checked_move.description.clone(), &game, direction_flipper,-minimax_flipper,1, max_depth,&mut alpha,&mut beta)?;
         if branch_result*flip > best_score_so_far*flip{
             best_score_so_far = branch_result;
             best_move_so_far = i.checked_move.description;
