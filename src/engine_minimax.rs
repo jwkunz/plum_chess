@@ -23,7 +23,7 @@ use crate::{
     generate_all_moves::generate_all_moves,
     move_description::MoveDescription,
     piece_team::PieceTeam,
-    scoring::{generate_losing_score, Score},
+    scoring::{generate_losing_score, Score, MIN_SCORE, MAX_SCORE},
 };
 
 /// A chess engine implementation using the minimax algorithm for move selection.
@@ -178,79 +178,102 @@ impl EngineMinimax {
     }
 }
 
-/// Recursively evaluates a position using the minimax algorithm.
+/// Recursively evaluates a position using the minimax algorithm with alpha-beta pruning.
+///
+/// This function applies `move_to_make` to `game`, producing a next_game. It then
+/// either returns a material evaluation at leaf depth or performs a minimax search
+/// with alpha-beta pruning over all legal moves in the next_game. Alpha and beta
+/// are passed and updated down the tree. The maximizing player for a node is
+/// inferred from next_game.turn (Light => maximize, Dark => minimize).
 ///
 /// # Arguments
-/// * `move_to_make` - The candidate move to evaluate
-/// * `game` - Current game state
-/// * `direction_flipper` - Multiplier (1.0 or -1.0) to maintain score perspective
-/// * `minimax_flipper` - Alternates between 1.0 and -1.0 to implement minimax
-/// * `current_depth` - Current depth in the search tree
-/// * `max_depth` - Maximum depth to search
+/// * `move_to_make` - The candidate move to evaluate (applied immediately).
+/// * `game` - Current game state (move will be applied against this).
+/// * `current_depth` - Current depth in the search tree (1 for a single applied move).
+/// * `max_depth` - Maximum depth to search.
+/// * `alpha` - Current alpha bound (lower bound for maximizing).
+/// * `beta` - Current beta bound (upper bound for minimizing).
 ///
 /// # Returns
-/// * `Ok(Score)` - The evaluated score for this position
-/// * `Err(ChessErrors)` - If an illegal position is encountered
-fn recurse(
+/// * `Ok(Score)` - The evaluated score for this position in the same score convention
+///                 used by get_material_score() (positive favors Light).
+/// * `Err(ChessErrors)` - If applying moves or generating moves produces an error.
+fn recurse_ab(
     move_to_make: MoveDescription,
     game: &GameState,
-    direction_flipper: Score,
-    minimax_flipper : Score,
     current_depth: usize,
     max_depth: usize,
+    mut alpha: Score,
+    mut beta: Score,
 ) -> Result<Score, ChessErrors> {
     let next_game = apply_move_to_game_unchecked(&move_to_make, game)?;
     if current_depth == max_depth {
         return Ok(next_game.get_material_score());
-    } else {
-        let exploring_moves = generate_all_moves(&next_game)?;
-        if exploring_moves.len() == 0 {
-            return Ok(generate_losing_score(next_game.turn));
-        }
-        let mut best_so_far = recurse(
-            exploring_moves
-                .front()
-                .unwrap()
-                .checked_move
-                .description
-                .clone(),
-            &next_game,
-            direction_flipper,
-            -minimax_flipper,
-            current_depth + 1,
-            max_depth,
-        )?;
-        let flip = direction_flipper*minimax_flipper;
-        for i in exploring_moves.into_iter().skip(1) {
-            let branch_result = recurse(
-                i.checked_move.description,
+    }
+
+    let exploring_moves = generate_all_moves(&next_game)?;
+    if exploring_moves.len() == 0 {
+        // No legal moves from this position -> losing score for side to move in next_game
+        return Ok(generate_losing_score(next_game.turn));
+    }
+
+    // Determine whether the player to move in next_game is maximizing (Light) or minimizing (Dark)
+    let is_maximizing = matches!(next_game.turn, PieceTeam::Light);
+
+    if is_maximizing {
+        let mut value = MIN_SCORE;
+        for mv in exploring_moves.into_iter() {
+            let child = recurse_ab(
+                mv.checked_move.description.clone(),
                 &next_game,
-                direction_flipper,
-                -minimax_flipper,
                 current_depth + 1,
                 max_depth,
+                alpha,
+                beta,
             )?;
-            if branch_result*flip > best_so_far*flip{
-                best_so_far = branch_result;
+            if child > value {
+                value = child;
+            }
+            if value > alpha {
+                alpha = value;
+            }
+            // Beta cutoff
+            if alpha >= beta {
+                break;
             }
         }
-        Ok(best_so_far)
+        Ok(value)
+    } else {
+        let mut value = MAX_SCORE;
+        for mv in exploring_moves.into_iter() {
+            let child = recurse_ab(
+                mv.checked_move.description.clone(),
+                &next_game,
+                current_depth + 1,
+                max_depth,
+                alpha,
+                beta,
+            )?;
+            if child < value {
+                value = child;
+            }
+            if value < beta {
+                beta = value;
+            }
+            // Alpha cutoff
+            if beta <= alpha {
+                break;
+            }
+        }
+        Ok(value)
     }
 }
 
-/// Performs a minimax search from the root position to find the best move.
+/// Performs a minimax search with alpha-beta pruning from the root position to find the best move.
 ///
-/// This is the top-level entry point for the minimax algorithm. It generates
-/// all legal moves in the current position and evaluates each one using the
-/// recursive minimax implementation.
-///
-/// # Arguments
-/// * `game` - The starting position to analyze
-/// * `max_depth` - Maximum depth of the minimax search tree
-///
-/// # Returns
-/// * `Ok(MoveDescription)` - The best move found within the search parameters
-/// * `Err(ChessErrors)` - If no legal moves exist or an illegal position is reached
+/// Generates all legal moves at the root and evaluates each one via recurse_ab using
+/// full alpha/beta window [MIN_SCORE, MAX_SCORE]. The root decision selects the move
+/// yielding the numerically largest score when Light to move, or numerically smallest when Dark to move.
 fn minimax_top(
     game: &GameState,
     max_depth: usize,
@@ -259,35 +282,23 @@ fn minimax_top(
     if exploring_moves.len() == 0 {
         return Err(ChessErrors::NoLegalMoves);
     }
-    let direction_flipper = match game.turn {
-        PieceTeam::Light => 1.0,
-        PieceTeam::Dark => -1.0
-    };
-    let minimax_flipper = 1.0;
-    let mut best_move_so_far =exploring_moves
-            .front()
-            .unwrap()
-            .checked_move
-            .description
-            .clone();
 
-    let mut best_score_so_far = recurse(
-        best_move_so_far.clone(),
-        &game,
-        direction_flipper,
-        -minimax_flipper,
-        1,
-        max_depth,
-    )?;
-    let flip = direction_flipper*minimax_flipper;
-    for i in exploring_moves.into_iter().skip(1) {
-        let branch_result =
-            recurse(i.checked_move.description.clone(), &game, direction_flipper,-minimax_flipper,1, max_depth)?;
-        if branch_result*flip > best_score_so_far*flip{
-            best_score_so_far = branch_result;
-            best_move_so_far = i.checked_move.description;
+    // Evaluate the first move to initialize best score/move
+    let first_move = exploring_moves.front().unwrap().checked_move.description.clone();
+    let first_score = recurse_ab(first_move.clone(), &game, 1, max_depth, MIN_SCORE, MAX_SCORE)?;
+    let mut best_move_so_far = first_move;
+    let mut best_score_so_far = first_score;
+
+    let is_root_maximizing = matches!(game.turn, PieceTeam::Light);
+
+    for mv in exploring_moves.into_iter().skip(1) {
+        let score = recurse_ab(mv.checked_move.description.clone(), &game, 1, max_depth, MIN_SCORE, MAX_SCORE)?;
+        if (is_root_maximizing && score > best_score_so_far) || (!is_root_maximizing && score < best_score_so_far) {
+            best_score_so_far = score;
+            best_move_so_far = mv.checked_move.description;
         }
     }
+
     Ok(best_move_so_far)
 }
 
