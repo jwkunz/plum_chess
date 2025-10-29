@@ -129,7 +129,7 @@ impl ChessEngineThreadTrait for EngineMinimax {
 
     /// Pick the best move based on material in the position alone
     fn calculating_callback(&mut self) -> Result<(), ChessErrors> {
-        if let Ok(best_move) = minimax_top(&self.starting_position.clone(), 3) {
+        if let Ok(best_move) = minimax_top(&self.starting_position.clone(), 4) {
             self.best_so_far = Some(best_move);
             self.set_status_calculating(false);
         } else {
