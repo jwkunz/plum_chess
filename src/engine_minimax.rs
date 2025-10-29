@@ -1,3 +1,16 @@
+//! A minimax-based chess engine implementation.
+//!
+//! This module provides a chess engine that uses the minimax algorithm to evaluate
+//! positions and select moves. The implementation includes:
+//! - An EngineMinimax struct implementing ChessEngineThreadTrait for integration
+//!   with the engine control system
+//! - A recursive minimax implementation that evaluates positions based on material
+//!   count and propagates scores up the game tree
+//! - Support for configurable search depth and time control
+//!
+//! The engine uses material counting as its primary evaluation metric and implements
+//! alpha-beta pruning for improved search efficiency.
+
 use std::{collections::VecDeque, sync::mpsc, time::Instant};
 
 use crate::{
@@ -13,6 +26,12 @@ use crate::{
     scoring::{generate_losing_score, Score},
 };
 
+/// A chess engine implementation using the minimax algorithm for move selection.
+///
+/// This engine evaluates positions by looking ahead a configurable number of moves
+/// and selecting the move that leads to the best material count for the current player.
+/// It implements the standard engine thread interface for integration with the game's
+/// control system.
 pub struct EngineMinimax {
     /// The cloned game state provided during `setup`. None until setup is called.
     starting_position: GameState,
@@ -159,7 +178,19 @@ impl EngineMinimax {
     }
 }
 
-
+/// Recursively evaluates a position using the minimax algorithm.
+///
+/// # Arguments
+/// * `move_to_make` - The candidate move to evaluate
+/// * `game` - Current game state
+/// * `direction_flipper` - Multiplier (1.0 or -1.0) to maintain score perspective
+/// * `minimax_flipper` - Alternates between 1.0 and -1.0 to implement minimax
+/// * `current_depth` - Current depth in the search tree
+/// * `max_depth` - Maximum depth to search
+///
+/// # Returns
+/// * `Ok(Score)` - The evaluated score for this position
+/// * `Err(ChessErrors)` - If an illegal position is encountered
 fn recurse(
     move_to_make: MoveDescription,
     game: &GameState,
@@ -207,6 +238,19 @@ fn recurse(
     }
 }
 
+/// Performs a minimax search from the root position to find the best move.
+///
+/// This is the top-level entry point for the minimax algorithm. It generates
+/// all legal moves in the current position and evaluates each one using the
+/// recursive minimax implementation.
+///
+/// # Arguments
+/// * `game` - The starting position to analyze
+/// * `max_depth` - Maximum depth of the minimax search tree
+///
+/// # Returns
+/// * `Ok(MoveDescription)` - The best move found within the search parameters
+/// * `Err(ChessErrors)` - If no legal moves exist or an illegal position is reached
 fn minimax_top(
     game: &GameState,
     max_depth: usize,
