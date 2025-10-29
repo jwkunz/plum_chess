@@ -740,14 +740,14 @@ impl UCI {
         if let Some(cs) = &self.command_sender {
             if let Some(rr) = &self.response_receiver {
                 let _ = cs.send(EngineControlMessageType::AreYouStillCalculating);
-                match rr.recv() {
+                match rr.recv_timeout(response_timeout_ms) {
                     Err(_) => {
-                        self.info_print("Error: Engine Thread Hung Up");
+                        self.info_print("WARNING: Engine Thead Timed Out");
                         return false;
                     }
                     Ok(EngineResponseMessageType::StillCalculatingStatus(false)) => {
                         let _ = cs.send(EngineControlMessageType::GiveMeYourBestMoveSoFar);
-                        match rr.recv() {
+                        match rr.recv_timeout(response_timeout_ms) {
                             Ok(EngineResponseMessageType::BestMoveFound(Some(best_move))) => {
                                 self.give_response(generate_response(ResponseTokens::BestMove(
                                     best_move.get_long_algebraic(),
@@ -756,24 +756,21 @@ impl UCI {
                             }
                             Ok(_) => { /* other responses ignored */ }
                             Err(_) => {
-                                self.info_print("Error: Engine Thread Hung Up");
+                                self.info_print("WARNING: Engine Thead Timed Out");
                             }
                         }
                     }
-                    Ok(_) => {
-                        self.info_print("Error: Engine Thread Got Out of Order in Responses");
-                        return false;
-                    }
+                    Ok(_) => { /* still calculating or other status, continue */ }
                 }
 
                 let _ = cs.send(EngineControlMessageType::GiveMeAStringToLog);
-                match rr.recv() {
+                match rr.recv_timeout(response_timeout_ms) {
                     Ok(EngineResponseMessageType::StringToLog(Some(s))) => {
                         self.info_print(&s);
                     }
                     Ok(_) => { /* nothing to log */ }
                     Err(_) => {
-                        self.info_print("Error: Engine Thread Hung Up");
+                        self.info_print("WARNING: Engine Thead Timed Out");
                     }
                 }
             }
