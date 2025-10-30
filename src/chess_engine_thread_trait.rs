@@ -14,7 +14,7 @@
 //! must implement, allowing both direct usage and trait object boxing.
 
 use std::{sync::mpsc, thread::sleep, time::Duration};
-use crate::{scoring::CanScoreGame, chess_errors::ChessErrors, game_state::GameState, move_description::MoveDescription};
+use crate::{chess_errors::ChessErrors, game_state::GameState, move_description::MoveDescription};
 
 /// Control messages that can be sent to a chess engine thread.
 ///
@@ -91,7 +91,7 @@ pub enum EngineResponseMessageType {
 ///     println!("Best move found: {}", best_move);
 /// }
 /// ```
-pub trait ChessEngineThreadTrait<T:CanScoreGame>: Send {
+pub trait ChessEngineThreadTrait: Send {
     /// Configures the engine with a position and search parameters.
     ///
     /// # Arguments
@@ -106,7 +106,6 @@ pub trait ChessEngineThreadTrait<T:CanScoreGame>: Send {
         calculation_time_s: f32,
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
-        scoring_object: T
     );
 
     /// Records the search start time for managing time controls.

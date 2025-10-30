@@ -3,7 +3,7 @@ use std::{collections::VecDeque, sync::mpsc, time::Instant};
 use rand::{seq::IteratorRandom};
 
 use crate::{
-    scoring::CanScoreGame, chess_engine_thread_trait::{
+    chess_engine_thread_trait::{
         ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
     }, chess_errors::ChessErrors, game_state::GameState, generate_all_moves::generate_all_moves, move_description::MoveDescription
 };
@@ -22,7 +22,7 @@ use crate::{
 /// - Unit tests that need a deterministic or cheap engine alternative (random but safe).
 /// - Exercising the UCI handler and threading logic without implementing a complex engine.
 /// - Providing a concrete implementation for APIs that expect an engine instance.
-pub struct EngineRandom<T:CanScoreGame> {
+pub struct EngineRandom {
     /// The cloned game state provided during `setup`. None until setup is called.
     starting_position: GameState,
     /// Requested calculation time in seconds. None until setup is called.
@@ -38,8 +38,6 @@ pub struct EngineRandom<T:CanScoreGame> {
     /// IO
     command_receiver: mpsc::Receiver<EngineControlMessageType>,
     response_sender: mpsc::Sender<EngineResponseMessageType>,
-    // Scoring object
-    scoring_object : T
 }
 
 /// Implementation of the ChessEngineThreadTrait for EngineRandom.
@@ -84,20 +82,18 @@ pub struct EngineRandom<T:CanScoreGame> {
 /// 3. invoke calculating_callback() to pick a move; use get_best_move_so_far()
 ///    to retrieve the result and use get_response_sender() / get_command_receiver()
 ///    to integrate with the engine's control loop.
-impl <T:CanScoreGame> ChessEngineThreadTrait<T> for EngineRandom<T> {
+impl  ChessEngineThreadTrait for EngineRandom {
     fn configure(
         &mut self,
         starting_position: GameState,
         calculation_time_s: f32,
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
-        scoring_object: T
     ){
         self.starting_position = starting_position;
         self.calculation_time_s = calculation_time_s;
         self.command_receiver = command_receiver;
         self.response_sender = response_sender;
-        self.scoring_object = scoring_object;
     }
 
     fn record_start_time(&mut self) {
@@ -154,15 +150,14 @@ impl <T:CanScoreGame> ChessEngineThreadTrait<T> for EngineRandom<T> {
     }
 }
 
-impl <T:CanScoreGame> EngineRandom<T>{
+impl  EngineRandom{
     pub fn new(
         starting_position: GameState,
         calculation_time_s: f32,
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
-        response_sender: mpsc::Sender<EngineResponseMessageType>,
-        scoring_object : T
+        response_sender: mpsc::Sender<EngineResponseMessageType>
     ) -> Self {
-        EngineRandom::<T> {
+        EngineRandom{
             starting_position,
             calculation_time_s,
             command_receiver,
@@ -170,8 +165,7 @@ impl <T:CanScoreGame> EngineRandom<T>{
             start_time: Instant::now(),
             status_calculating: false,
             best_so_far: None,
-            string_log: VecDeque::new(),
-            scoring_object
+            string_log: VecDeque::new()
         }
     }
 }

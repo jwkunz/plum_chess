@@ -14,9 +14,9 @@
 use std::{collections::VecDeque, sync::mpsc, time::Instant};
 
 use crate::{
-    apply_move_to_game::apply_move_to_game_unchecked, scoring::CanScoreGame, chess_engine_thread_trait::{
+    apply_move_to_game::apply_move_to_game_unchecked, chess_engine_thread_trait::{
         ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
-    }, chess_errors::ChessErrors, game_state::GameState, generate_all_moves::generate_all_moves, move_description::MoveDescription, piece_team::PieceTeam, scoring::{MAX_SCORE, MIN_SCORE, Score, generate_losing_score}
+    }, chess_errors::ChessErrors, game_state::GameState, generate_all_moves::generate_all_moves, move_description::MoveDescription, piece_team::PieceTeam, scoring::{CanScoreGame, MAX_SCORE, MIN_SCORE, Score, generate_losing_score}, scoring_strategy_1::ScoringStrategy1
 };
 
 /// A chess engine implementation using the minimax algorithm for move selection.
@@ -25,7 +25,7 @@ use crate::{
 /// and selecting the move that leads to the best material count for the current player.
 /// The search depth is now a compile-time constant (const generic) specified as
 /// EngineMinimax::<N>.
-pub struct EngineMinimax<const MAX_DEPTH: usize, T : CanScoreGame> {
+pub struct EngineMinimaxStrategy1<const MAX_DEPTH: usize> {
     /// The cloned game state provided during `setup`.
     starting_position: GameState,
     /// Requested calculation time in seconds.
@@ -41,8 +41,8 @@ pub struct EngineMinimax<const MAX_DEPTH: usize, T : CanScoreGame> {
     /// IO
     command_receiver: mpsc::Receiver<EngineControlMessageType>,
     response_sender: mpsc::Sender<EngineResponseMessageType>,
-    // Scoring object
-    scoring_object : T
+    /// Scoring object
+    scoring_object : ScoringStrategy1
 }
 
 /// Implementation of the ChessEngineThreadTrait for EngineMinimax.
@@ -87,20 +87,19 @@ pub struct EngineMinimax<const MAX_DEPTH: usize, T : CanScoreGame> {
 /// 3. invoke calculating_callback() to pick a move; use get_best_move_so_far()
 ///    to retrieve the result and use get_response_sender() / get_command_receiver()
 ///    to integrate with the engine's control loop.
-impl<const MAX_DEPTH: usize, T : CanScoreGame> ChessEngineThreadTrait<T> for EngineMinimax<MAX_DEPTH,T> {
+impl<const MAX_DEPTH: usize> ChessEngineThreadTrait for EngineMinimaxStrategy1<MAX_DEPTH> {
     fn configure(
         &mut self,
         starting_position: GameState,
         calculation_time_s: f32,
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
-        response_sender: mpsc::Sender<EngineResponseMessageType>,
-        scoring_object: T
+        response_sender: mpsc::Sender<EngineResponseMessageType>
     ){
         self.starting_position = starting_position;
         self.calculation_time_s = calculation_time_s;
         self.command_receiver = command_receiver;
         self.response_sender = response_sender;
-        self.scoring_object = scoring_object;
+        self.scoring_object = ScoringStrategy1::new();
     }
 
     fn record_start_time(&mut self) {
@@ -156,15 +155,14 @@ impl<const MAX_DEPTH: usize, T : CanScoreGame> ChessEngineThreadTrait<T> for Eng
     }
 }
 
-impl<const MAX_DEPTH: usize, T:CanScoreGame> EngineMinimax<MAX_DEPTH,T> {
+impl<const MAX_DEPTH: usize> EngineMinimaxStrategy1<MAX_DEPTH> {
     pub fn new(
         starting_position: GameState,
         calculation_time_s: f32,
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
-        scoring_object : T,
     ) -> Self {
-        EngineMinimax::<MAX_DEPTH,T> {
+        EngineMinimaxStrategy1::<MAX_DEPTH> {
             starting_position,
             calculation_time_s,
             command_receiver,
@@ -173,7 +171,7 @@ impl<const MAX_DEPTH: usize, T:CanScoreGame> EngineMinimax<MAX_DEPTH,T> {
             status_calculating: false,
             best_so_far: None,
             string_log: VecDeque::new(),
-            scoring_object
+            scoring_object: ScoringStrategy1::new()
         }
     }
 }
