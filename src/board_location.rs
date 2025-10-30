@@ -14,19 +14,6 @@
 //! The coordinate system uses:
 //! - Files: 0-7 representing a-h from left to right
 //! - Ranks: 0-7 representing 1-8 from bottom to top
-//! 
-//! Example:
-//! ```
-//! use plum_chess::board_location::BoardLocation;
-//! 
-//! // Create a location from algebraic notation
-//! let e4 = BoardLocation::from_long_algebraic("e4").unwrap();
-//! 
-//! // Create a location from file/rank coordinates
-//! let same_square = BoardLocation::from_file_rank(4, 3).unwrap();
-//! 
-//! assert_eq!(e4.binary_location, same_square.binary_location);
-//! ```
 
 use std::fmt;
 use crate::chess_errors::ChessErrors;

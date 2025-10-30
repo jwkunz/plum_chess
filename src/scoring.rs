@@ -11,7 +11,7 @@
 //! - generate_winning_score / generate_losing_score return extreme sentinel
 //!   values used to indicate forced win/loss conditions in search/evaluation.
 
-use crate::{piece_class::PieceClass, piece_team::PieceTeam};
+use crate::{game_state::GameState, piece_class::PieceClass, piece_team::PieceTeam};
 
 /// Numeric representation of an evaluation score.
 ///
@@ -124,5 +124,25 @@ pub fn generate_losing_score(turn : PieceTeam) -> Score{
     match turn {
        PieceTeam::Light => generate_winning_score(PieceTeam::Dark),
        PieceTeam::Dark => generate_winning_score(PieceTeam::Light)
+    }
+}
+
+
+/// A trait of an object that can score a game
+pub trait CanScoreGame : Send{
+    fn calculate_score(game : &GameState) -> Score;
+}
+
+
+/// The simplest scoring object
+pub struct BasicScoringObject{}
+impl CanScoreGame for BasicScoringObject{
+    fn calculate_score(game : &GameState) -> Score {
+        game.get_material_score()
+    }
+}
+impl BasicScoringObject{
+    pub fn new() -> Self{
+        BasicScoringObject {  }
     }
 }

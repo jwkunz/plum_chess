@@ -17,7 +17,7 @@ use crate::{
     engine_minimax::EngineMinimax,
     engine_random::EngineRandom,
     game_state::GameState,
-    move_description::MoveDescription,
+    move_description::MoveDescription, scoring::{BasicScoringObject},
 };
 
 /// Tokens for setting position values in UCI options.
@@ -831,7 +831,7 @@ impl UCI {
         calculation_time_s: f32,
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
-    ) -> Box<dyn ChessEngineThreadTrait> {
+    ) -> Box<dyn ChessEngineThreadTrait<BasicScoringObject>> {
         self.create_engine_6(
             starting_position,
             calculation_time_s,
@@ -846,12 +846,13 @@ impl UCI {
         calculation_time_s: f32,
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
-    ) -> Box<dyn ChessEngineThreadTrait> {
-        Box::new(EngineRandom::new(
+    ) -> Box<dyn ChessEngineThreadTrait<BasicScoringObject>> {
+        Box::new(EngineRandom::<BasicScoringObject>::new(
             starting_position,
             calculation_time_s,
             command_receiver,
             response_sender,
+            BasicScoringObject::new(),
         ))
     }
 
@@ -862,12 +863,13 @@ impl UCI {
         calculation_time_s: f32,
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
-    ) -> Box<dyn ChessEngineThreadTrait> {
-        Box::new(EngineMinimax::<1>::new(
+    ) -> Box<dyn ChessEngineThreadTrait<BasicScoringObject>> {
+        Box::new(EngineMinimax::<1,BasicScoringObject>::new(
             starting_position,
             calculation_time_s,
             command_receiver,
             response_sender,
+            BasicScoringObject::new(),
         ))
     }
 
@@ -878,12 +880,13 @@ impl UCI {
         calculation_time_s: f32,
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
-    ) -> Box<dyn ChessEngineThreadTrait> {
-        Box::new(EngineMinimax::<2>::new(
+    ) -> Box<dyn ChessEngineThreadTrait<BasicScoringObject>> {
+        Box::new(EngineMinimax::<2,BasicScoringObject>::new(
             starting_position,
             calculation_time_s,
             command_receiver,
             response_sender,
+            BasicScoringObject::new(),
         ))
     }
 
@@ -894,12 +897,13 @@ impl UCI {
         calculation_time_s: f32,
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
-    ) -> Box<dyn ChessEngineThreadTrait> {
-        Box::new(EngineMinimax::<3>::new(
+    ) -> Box<dyn ChessEngineThreadTrait<BasicScoringObject>> {
+        Box::new(EngineMinimax::<3,BasicScoringObject>::new(
             starting_position,
             calculation_time_s,
             command_receiver,
             response_sender,
+            BasicScoringObject::new(),
         ))
     }
 
@@ -910,12 +914,13 @@ impl UCI {
         calculation_time_s: f32,
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
-    ) -> Box<dyn ChessEngineThreadTrait> {
-        Box::new(EngineMinimax::<4>::new(
+    ) -> Box<dyn ChessEngineThreadTrait<BasicScoringObject>> {
+        Box::new(EngineMinimax::<4,BasicScoringObject>::new(
             starting_position,
             calculation_time_s,
             command_receiver,
             response_sender,
+            BasicScoringObject::new(),
         ))
     }
 
@@ -926,12 +931,13 @@ impl UCI {
         calculation_time_s: f32,
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
-    ) -> Box<dyn ChessEngineThreadTrait> {
-        Box::new(EngineMinimax::<5>::new(
+    ) -> Box<dyn ChessEngineThreadTrait<BasicScoringObject>> {
+        Box::new(EngineMinimax::<5,BasicScoringObject>::new(
             starting_position,
             calculation_time_s,
             command_receiver,
             response_sender,
+            BasicScoringObject::new(),
         ))
     }
 }
