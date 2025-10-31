@@ -11,8 +11,7 @@ use std::{
 use crate::{
     apply_move_to_game::apply_move_to_game_unchecked, chess_engine_thread_trait::{
         ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
-    }, chess_errors::ChessErrors, engine_minimax_basicscore::EngineMinimaxBasicScore, engine_minimax_strategy1::EngineMinimaxStrategy1, engine_random::EngineRandom, game_state::GameState, move_description::MoveDescription, scoring::{BasicScoringObject, CanScoreGame}
-};
+    }, chess_errors::ChessErrors, engine_minimax::EngineMinimax, engine_random::EngineRandom, game_state::GameState, move_description::MoveDescription};
 
 /// Tokens for setting position values in UCI options.
 #[derive(Debug)]
@@ -864,7 +863,7 @@ impl UCI {
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Box<dyn ChessEngineThreadTrait> {
-        Box::new(EngineMinimaxBasicScore::<1>::new(
+        Box::new(EngineMinimax::<1,0>::new(
             starting_position,
             calculation_time_s,
             command_receiver,
@@ -880,7 +879,7 @@ impl UCI {
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Box<dyn ChessEngineThreadTrait> {
-        Box::new(EngineMinimaxBasicScore::<2>::new(
+        Box::new(EngineMinimax::<2,0>::new(
             starting_position,
             calculation_time_s,
             command_receiver,
@@ -897,7 +896,7 @@ impl UCI {
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Box<dyn ChessEngineThreadTrait> {
-        Box::new(EngineMinimaxBasicScore::<3>::new(
+        Box::new(EngineMinimax::<3,0>::new(
             starting_position,
             calculation_time_s,
             command_receiver,
@@ -914,7 +913,7 @@ impl UCI {
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Box<dyn ChessEngineThreadTrait> {
-        Box::new(EngineMinimaxBasicScore::<4>::new(
+        Box::new(EngineMinimax::<4,0>::new(
             starting_position,
             calculation_time_s,
             command_receiver,
@@ -931,7 +930,7 @@ impl UCI {
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Box<dyn ChessEngineThreadTrait> {
-        Box::new(EngineMinimaxBasicScore::<5>::new(
+        Box::new(EngineMinimax::<5,0>::new(
             starting_position,
             calculation_time_s,
             command_receiver,
@@ -948,7 +947,7 @@ impl UCI {
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Box<dyn ChessEngineThreadTrait> {
-        Box::new(EngineMinimaxStrategy1::<5>::new(
+        Box::new(EngineMinimax::<5,1>::new(
             starting_position,
             calculation_time_s,
             command_receiver,

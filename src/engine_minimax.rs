@@ -14,18 +14,30 @@
 use std::{collections::VecDeque, sync::mpsc, time::Instant};
 
 use crate::{
-    apply_move_to_game::apply_move_to_game_unchecked, chess_engine_thread_trait::{
+    chess_engine_thread_trait::{
         ChessEngineThreadTrait, EngineControlMessageType, EngineResponseMessageType,
-    }, chess_errors::ChessErrors, game_state::GameState, generate_all_moves::generate_all_moves, move_description::MoveDescription, piece_team::PieceTeam, scoring::{CanScoreGame, MAX_SCORE, MIN_SCORE, Score, generate_losing_score}, scoring_strategy_1::ScoringStrategy1
+    },
+    chess_errors::ChessErrors,
+    game_state::GameState,
+    generate_all_moves::generate_all_moves,
+    generate_moves_level_5::CheckedMoveWithFutureGame,
+    move_description::MoveDescription,
+    piece_team::PieceTeam,
+    scoring::{
+        MAX_SCORE, MIN_SCORE, Score, ScoringTypes, generate_losing_score, score_game
+    },
 };
 
 /// A chess engine implementation using the minimax algorithm for move selection.
 ///
 /// This engine evaluates positions by looking ahead a configurable number of moves
 /// and selecting the move that leads to the best material count for the current player.
-/// The search depth is now a compile-time constant (const generic) specified as
-/// EngineMinimax::<N>.
-pub struct EngineMinimaxStrategy1<const MAX_DEPTH: usize> {
+/// There are two configurable parameters for EngineMinimax::<MAX_DEPTH,SCORING_ALGORITHM>.
+/// MAX_DEPTH : The search depth is now a compile-time constant (const generic)
+/// SCORING_ALGORITHM : 
+/// 1: alpha-zero material score
+/// other: standard material score 
+pub struct EngineMinimax<const MAX_DEPTH: usize, const SCORING_ALGORITHM : usize> {
     /// The cloned game state provided during `setup`.
     starting_position: GameState,
     /// Requested calculation time in seconds.
@@ -41,8 +53,6 @@ pub struct EngineMinimaxStrategy1<const MAX_DEPTH: usize> {
     /// IO
     command_receiver: mpsc::Receiver<EngineControlMessageType>,
     response_sender: mpsc::Sender<EngineResponseMessageType>,
-    /// Scoring object
-    scoring_object : ScoringStrategy1
 }
 
 /// Implementation of the ChessEngineThreadTrait for EngineMinimax.
@@ -87,19 +97,18 @@ pub struct EngineMinimaxStrategy1<const MAX_DEPTH: usize> {
 /// 3. invoke calculating_callback() to pick a move; use get_best_move_so_far()
 ///    to retrieve the result and use get_response_sender() / get_command_receiver()
 ///    to integrate with the engine's control loop.
-impl<const MAX_DEPTH: usize> ChessEngineThreadTrait for EngineMinimaxStrategy1<MAX_DEPTH> {
+impl<const MAX_DEPTH: usize, const SCORING_ALGORITHM : usize> ChessEngineThreadTrait for EngineMinimax<MAX_DEPTH,SCORING_ALGORITHM> {
     fn configure(
         &mut self,
         starting_position: GameState,
         calculation_time_s: f32,
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
-        response_sender: mpsc::Sender<EngineResponseMessageType>
-    ){
+        response_sender: mpsc::Sender<EngineResponseMessageType>,
+    ) {
         self.starting_position = starting_position;
         self.calculation_time_s = calculation_time_s;
         self.command_receiver = command_receiver;
         self.response_sender = response_sender;
-        self.scoring_object = ScoringStrategy1::new();
     }
 
     fn record_start_time(&mut self) {
@@ -145,7 +154,7 @@ impl<const MAX_DEPTH: usize> ChessEngineThreadTrait for EngineMinimaxStrategy1<M
     /// Pick the best move based on material in the position alone
     fn calculating_callback(&mut self) -> Result<(), ChessErrors> {
         // Use the compile-time depth parameter MAX_DEPTH instead of a runtime value.
-        if let Ok(best_move) = minimax_top(&self.starting_position.clone(), MAX_DEPTH) {
+        if let Ok(best_move) = self.minimax_top(&self.starting_position.clone(), MAX_DEPTH) {
             self.best_so_far = Some(best_move);
             self.set_status_calculating(false);
         } else {
@@ -155,14 +164,14 @@ impl<const MAX_DEPTH: usize> ChessEngineThreadTrait for EngineMinimaxStrategy1<M
     }
 }
 
-impl<const MAX_DEPTH: usize> EngineMinimaxStrategy1<MAX_DEPTH> {
+impl<const MAX_DEPTH: usize, const SCORING_ALGORITHM : usize> EngineMinimax<MAX_DEPTH,SCORING_ALGORITHM> {
     pub fn new(
         starting_position: GameState,
         calculation_time_s: f32,
         command_receiver: mpsc::Receiver<EngineControlMessageType>,
         response_sender: mpsc::Sender<EngineResponseMessageType>,
     ) -> Self {
-        EngineMinimaxStrategy1::<MAX_DEPTH> {
+        EngineMinimax::<MAX_DEPTH,SCORING_ALGORITHM> {
             starting_position,
             calculation_time_s,
             command_receiver,
@@ -170,145 +179,124 @@ impl<const MAX_DEPTH: usize> EngineMinimaxStrategy1<MAX_DEPTH> {
             start_time: Instant::now(),
             status_calculating: false,
             best_so_far: None,
-            string_log: VecDeque::new(),
-            scoring_object: ScoringStrategy1::new()
-        }
-    }
-}
-
-/// Recursively evaluates a position using the minimax algorithm with alpha-beta pruning.
-///
-/// This function applies `move_to_make` to `game`, producing a next_game. It then
-/// either returns a material evaluation at leaf depth or performs a minimax search
-/// with alpha-beta pruning over all legal moves in the next_game. Alpha and beta
-/// are passed and updated down the tree. The maximizing player for a node is
-/// inferred from next_game.turn (Light => maximize, Dark => minimize).
-///
-/// # Arguments
-/// * `move_to_make` - The candidate move to evaluate (applied immediately).
-/// * `game` - Current game state (move will be applied against this).
-/// * `current_depth` - Current depth in the search tree (1 for a single applied move).
-/// * `max_depth` - Maximum depth to search.
-/// * `alpha` - Current alpha bound (lower bound for maximizing).
-/// * `beta` - Current beta bound (upper bound for minimizing).
-///
-/// # Returns
-/// * `Ok(Score)` - The evaluated score for this position in the same score convention
-///                 used by get_material_score() (positive favors Light).
-/// * `Err(ChessErrors)` - If applying moves or generating moves produces an error.
-fn recurse_ab(
-    move_to_make: MoveDescription,
-    game: &GameState,
-    current_depth: usize,
-    max_depth: usize,
-    mut alpha: Score,
-    mut beta: Score,
-) -> Result<Score, ChessErrors> {
-    let next_game = apply_move_to_game_unchecked(&move_to_make, game)?;
-    if current_depth == max_depth {
-        return Ok(next_game.get_material_score());
-    }
-
-    let exploring_moves = generate_all_moves(&next_game)?;
-    if exploring_moves.len() == 0 {
-        // No legal moves from this position -> losing score for side to move in next_game
-        return Ok(generate_losing_score(next_game.turn));
-    }
-
-    // Determine whether the player to move in next_game is maximizing (Light) or minimizing (Dark)
-    let is_maximizing = matches!(next_game.turn, PieceTeam::Light);
-
-    if is_maximizing {
-        let mut value = MIN_SCORE;
-        for mv in exploring_moves.into_iter() {
-            let child = recurse_ab(
-                mv.checked_move.description.clone(),
-                &next_game,
-                current_depth + 1,
-                max_depth,
-                alpha,
-                beta,
-            )?;
-            if child > value {
-                value = child;
-            }
-            if value > alpha {
-                alpha = value;
-            }
-            // Beta cutoff
-            if alpha >= beta {
-                break;
-            }
-        }
-        Ok(value)
-    } else {
-        let mut value = MAX_SCORE;
-        for mv in exploring_moves.into_iter() {
-            let child = recurse_ab(
-                mv.checked_move.description.clone(),
-                &next_game,
-                current_depth + 1,
-                max_depth,
-                alpha,
-                beta,
-            )?;
-            if child < value {
-                value = child;
-            }
-            if value < beta {
-                beta = value;
-            }
-            // Alpha cutoff
-            if beta <= alpha {
-                break;
-            }
-        }
-        Ok(value)
-    }
-}
-
-/// Performs a minimax search with alpha-beta pruning from the root position to find the best move.
-///
-/// Generates all legal moves at the root and evaluates each one via recurse_ab using
-/// full alpha/beta window [MIN_SCORE, MAX_SCORE]. The root decision selects the move
-/// yielding the numerically largest score when Light to move, or numerically smallest when Dark to move.
-fn minimax_top(
-    game: &GameState,
-    max_depth: usize,
-) -> Result<MoveDescription, ChessErrors> {
-    let exploring_moves = generate_all_moves(game)?;
-    if exploring_moves.len() == 0 {
-        return Err(ChessErrors::NoLegalMoves);
-    }
-
-    // Evaluate the first move to initialize best score/move
-    let first_move = exploring_moves.front().unwrap().checked_move.description.clone();
-    let first_score = recurse_ab(first_move.clone(), &game, 1, max_depth, MIN_SCORE, MAX_SCORE)?;
-    let mut best_move_so_far = first_move;
-    let mut best_score_so_far = first_score;
-
-    let is_root_maximizing = matches!(game.turn, PieceTeam::Light);
-
-    for mv in exploring_moves.into_iter().skip(1) {
-        let score = recurse_ab(mv.checked_move.description.clone(), &game, 1, max_depth, MIN_SCORE, MAX_SCORE)?;
-        if (is_root_maximizing && score > best_score_so_far) || (!is_root_maximizing && score < best_score_so_far) {
-            best_score_so_far = score;
-            best_move_so_far = mv.checked_move.description;
+            string_log: VecDeque::new()
         }
     }
 
-    Ok(best_move_so_far)
-}
+    /// Recursively evaluates a position using the minimax algorithm with alpha-beta pruning.
+    ///
+    /// This function applies `move_to_make` to `game`, producing a next_game. It then
+    /// either returns a material evaluation at leaf depth or performs a minimax search
+    /// with alpha-beta pruning over all legal moves in the next_game. Alpha and beta
+    /// are passed and updated down the tree. The maximizing player for a node is
+    /// inferred from next_game.turn (Light => maximize, Dark => minimize).
+    ///
+    /// # Arguments
+    /// * `move_to_make` - The candidate move to evaluate (applied immediately).
+    /// * `game` - Current game state (move will be applied against this).
+    /// * `current_depth` - Current depth in the search tree (1 for a single applied move).
+    /// * `max_depth` - Maximum depth to search.
+    /// * `alpha` - Current alpha bound (lower bound for maximizing).
+    /// * `beta` - Current beta bound (upper bound for minimizing).
+    ///
+    /// # Returns
+    /// * `Ok(Score)` - The evaluated score for this position in the same score convention
+    ///                 used by get_material_score() (positive favors Light).
+    /// * `Err(ChessErrors)` - If applying moves or generating moves produces an error.
+    fn recurse_ab(
+        &self,
+        move_to_make: CheckedMoveWithFutureGame,
+        current_depth: usize,
+        max_depth: usize,
+        mut alpha: Score,
+        mut beta: Score,
+    ) -> Result<Score, ChessErrors> {
+        if let Some(x) = move_to_make.checked_move.check_status {
+            if matches!(x, crate::types_of_check::TypesOfCheck::Checkmate(_, _)) {
+                return Ok(generate_losing_score(move_to_make.game_after_move.turn));
+            }
+        }
 
-#[cfg(test)]
-mod test{
-    use super::*;
+        if current_depth == max_depth {
+            return match SCORING_ALGORITHM {
+                1 => score_game(&move_to_make.game_after_move, ScoringTypes::Material(crate::scoring::MaterialScoringTypes::AlphaZero)),
+                _ => score_game(&move_to_make.game_after_move, ScoringTypes::Material(crate::scoring::MaterialScoringTypes::Conventional))
+            };
+        }
 
-    #[test]
-    fn test_minimax(){
-        let game = GameState::from_fen("7k/8/8/8/6r1/5P2/8/7K w - - 0 1").unwrap();
-        let result = minimax_top(&game, 4).unwrap();
-        dbg!(result);
+        let exploring_moves = generate_all_moves(&move_to_make.game_after_move)?;
+        if exploring_moves.len() == 0 {
+            // Not checkmate, so must be stalemate
+            return Ok(0.0);
+        }
 
+        // Determine whether the player to move in next_game is maximizing (Light) or minimizing (Dark)
+        let is_maximizing = matches!(move_to_make.game_after_move.turn, PieceTeam::Light);
+
+        if is_maximizing {
+            let mut value = MIN_SCORE;
+            for mv in exploring_moves.into_iter() {
+                let child = self.recurse_ab(mv, current_depth + 1, max_depth, alpha, beta)?;
+                if child > value {
+                    value = child;
+                }
+                if value > alpha {
+                    alpha = value;
+                }
+                // Beta cutoff
+                if alpha >= beta {
+                    break;
+                }
+            }
+            Ok(value)
+        } else {
+            let mut value = MAX_SCORE;
+            for mv in exploring_moves.into_iter() {
+                let child = self.recurse_ab(mv, current_depth + 1, max_depth, alpha, beta)?;
+                if child < value {
+                    value = child;
+                }
+                if value < beta {
+                    beta = value;
+                }
+                // Alpha cutoff
+                if beta <= alpha {
+                    break;
+                }
+            }
+            Ok(value)
+        }
+    }
+
+    /// Performs a minimax search with alpha-beta pruning from the root position to find the best move.
+    ///
+    /// Generates all legal moves at the root and evaluates each one via recurse_ab using
+    /// full alpha/beta window [MIN_SCORE, MAX_SCORE]. The root decision selects the move
+    /// yielding the numerically largest score when Light to move, or numerically smallest when Dark to move.
+    fn minimax_top(&self, game: &GameState, max_depth: usize) -> Result<MoveDescription, ChessErrors> {
+        let exploring_moves = generate_all_moves(game)?;
+        if exploring_moves.len() == 0 {
+            return Err(ChessErrors::NoLegalMoves);
+        }
+
+        // Evaluate the first move to initialize best score/move
+        let first_move = exploring_moves.front().unwrap().clone();
+        let first_score = self.recurse_ab(first_move.clone(), 1, max_depth, MIN_SCORE, MAX_SCORE)?;
+        let mut best_move_so_far = first_move;
+        let mut best_score_so_far = first_score;
+
+        let is_root_maximizing = matches!(game.turn, PieceTeam::Light);
+
+        for mv in exploring_moves.into_iter().skip(1) {
+            let score = self.recurse_ab(mv.clone(), 1, max_depth, MIN_SCORE, MAX_SCORE)?;
+            if (is_root_maximizing && score > best_score_so_far)
+                || (!is_root_maximizing && score < best_score_so_far)
+            {
+                best_score_so_far = score;
+                best_move_so_far = mv;
+            }
+        }
+
+        Ok(best_move_so_far.checked_move.description)
     }
 }
