@@ -60,6 +60,48 @@ pub fn alpha_zero_score(x : &PieceClass) -> Score{
     }
 }
 
+/// Types of material counting scales
+#[derive(Debug)]
+pub enum MaterialScoringTypes{
+    Conventional,
+    AlphaZero,
+}
+
+/// Use material to score a game
+fn score_game_material(game: &GameState, material_scoring_type : MaterialScoringTypes) -> Result<Score,ChessErrors>{
+    let mut result : Score = 0.0;
+    for i in &game.piece_register.light_pieces{
+        let value = match material_scoring_type{
+            MaterialScoringTypes::Conventional => conventional_score(&i.1.class),
+            MaterialScoringTypes::AlphaZero => alpha_zero_score(&i.1.class)
+        };
+        result += value;
+    }
+    for i in &game.piece_register.dark_pieces{
+        let value = match material_scoring_type{
+            MaterialScoringTypes::Conventional => conventional_score(&i.1.class),
+            MaterialScoringTypes::AlphaZero => alpha_zero_score(&i.1.class)
+        };
+        result -= value;
+    }
+    Ok(result)
+}
+
+/// The types of scoring algorithms
+#[derive(Debug)]
+pub enum ScoringTypes{
+    Material(MaterialScoringTypes),
+    Other
+}
+
+
+/// Mutate to score a game by the type
+pub fn score_game(game : &GameState, scoring_type : ScoringTypes) -> Result<Score, ChessErrors>{
+    match scoring_type {
+        ScoringTypes::Material(material_scoring_type) => score_game_material(game, material_scoring_type),
+        ScoringTypes::Other => Err(ChessErrors::FeatureNotImplementedYet)
+    }
+}
 
 /// Result of comparing two scores from potentially different sides' perspectives.
 ///
@@ -141,23 +183,5 @@ pub fn generate_losing_score(turn : PieceTeam) -> Score{
     match turn {
        PieceTeam::Light => generate_winning_score(PieceTeam::Dark),
        PieceTeam::Dark => generate_winning_score(PieceTeam::Light)
-    }
-}
-
-
-/// A trait of an object that can score a game
-pub trait CanScoreGame : Send{
-    fn calculate_score(game : &GameState) -> Result<Score,ChessErrors>;
-    fn new() -> Self;
-}
-
-/// The simplest scoring object
-pub struct BasicScoringObject{}
-impl CanScoreGame for BasicScoringObject{
-    fn calculate_score(game : &GameState) -> Result<Score,ChessErrors> {
-        Ok(game.get_material_score())
-    }
-    fn new() -> Self{
-        BasicScoringObject {  }
     }
 }
