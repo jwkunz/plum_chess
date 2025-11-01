@@ -3,6 +3,7 @@ use std::io::{self, BufRead, Write};
 use std::sync::mpsc::channel;
 use std::thread;
 use std::time::Duration;
+use std::path::PathBuf;
 
 use chrono::Local;
 
@@ -18,7 +19,9 @@ use plum_chess::uci_interface::UCI;
 /// and ensures that the engine runs responsively by using non-blocking I/O and periodic sleeps.
 fn main() {
     // Name of the log file to which all engine activity will be written.
-    let log_file_name = "Plum_Chess_log.txt";
+    let mut temp_buffer : PathBuf =  std::env::temp_dir();
+    temp_buffer.push("Plum_Chess_log.txt");
+    let log_file_name = String::from(temp_buffer.to_str().expect("Log file names should be well formed"));
     // Timestamp format including milliseconds.
     let time_format = "%Y-%m-%d %H:%M:%S%.3f";
 
@@ -27,7 +30,7 @@ fn main() {
         .create(true)
         .write(true)      // open for writing
         .truncate(true)   // clear the file if it exists
-        .open(log_file_name)
+        .open(&log_file_name)
     {
         let timestamp = Local::now().format(time_format);
         let _ = writeln!(file, "[{}] Starting Log", timestamp);
@@ -50,10 +53,11 @@ fn main() {
 
     // Spawn a thread to handle responses from the engine.
     // This thread logs each response with a timestamp and prints it to stdout.
+    let log_file_name_cloned = log_file_name.clone();
     thread::spawn(move || loop {
         while let Ok(response) = response_rx.try_recv() {
             // Append the engine's response to the log file with a timestamp.
-            if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_file_name) {
+            if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_file_name_cloned) {
                 let timestamp = Local::now().format(time_format);
                 let _ = writeln!(file, "[{}] Engine Said:{}", timestamp, response);
             }
@@ -80,7 +84,7 @@ fn main() {
                 let trimmed = input.trim_end().to_string();
                 if !trimmed.is_empty() {
                     // Append the received command to the log file with a timestamp.
-                    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_file_name) {
+                    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_file_name) {
                         let timestamp = Local::now().format(time_format);
                         let _ = writeln!(file, "[{}] Engine Received:{}", timestamp, trimmed);
                     }
