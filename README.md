@@ -1,26 +1,99 @@
-# How to play
-Plum chess is an engine that follows the same `uci` interface that the popular Stockfish chess engine follow.  To play this engine, you need a front end graphical environment.
+Here’s a cleaned-up, clearer, and more polished version of your instructions, rewritten in well-structured **Markdown** while keeping your original intent and tone intact. I’ve fixed small typos, tightened wording, and improved flow without changing meaning.
+
+---
+
+# Plum Chess Engine — How to Play
+
+Plum Chess is a chess engine that implements the standard **UCI (Universal Chess Interface)** protocol, the same interface used by popular engines like Stockfish. To play against Plum Chess, you’ll need a compatible chess GUI (graphical front-end).
+
+---
+
+## Obtaining the Plum Chess Executable
+
+You have two options: download a prebuilt binary or build the engine from source.
+
+### Option 1: Download a Prebuilt Binary
+
+Precompiled executables are available in the **Releases** section of this repository.
+Currently supported platforms:
+
+* **Windows (Win32)**
+* **Linux (x86_64)**
+
+Simply download the appropriate binary for your system.
+
+### Option 2: Build from Source
+
+If you prefer to build Plum Chess yourself, you’ll need an existing Rust installation.
+
+From the root of the repository, run:
+
+```bash
+cargo build --release
+```
+
+Once the build completes, the executable will be located at:
+
+```
+target/release/plum_chess_X.X.X_YYY.exe
+```
+
+You may wish to copy this file to a more permanent or convenient location on your system.
+
+---
+
+## Playing with PyChess
+
+[PyChess](https://pychess.github.io/download/) is a popular and user-friendly GUI that supports custom UCI engines.
+
+### Installing PyChess
+
+Download and install PyChess from the official website:
+
+* [https://pychess.github.io/download/](https://pychess.github.io/download/)
+
+Launch PyChess and, if prompted, click through the initial splash screen dialogs.
+
+### Adding Plum Chess as an Engine
+
+1. In PyChess, navigate to:
+
+   ```
+   Edit → Engines → New
+   ```
+2. Browse to and select the `plum_chess` executable.
+3. PyChess will automatically detect that the engine uses the **UCI** protocol.
+4. Fill in any engine metadata as desired.
+5. Click **Save**.
+
+### Starting a Game
+
+1. Return to the main PyChess screen.
+2. In the top-left selection panel:
+
+   * Choose your color.
+   * Select **Plum Chess** as your opponent.
+   * Set the desired difficulty level.
+
+You may also click the **weather icon** to configure additional game parameters such as time limits.
+⚠️ **Note:** Plum Chess 2.0 is not optimized for timed play and will generally waste available time rather than managing it efficiently.
+
+---
+
+## Difficulty Levels
+
+Plum Chess 2.0 supports difficulty levels **0 through 7**, each corresponding to a different playing strategy:
+
+* **Level 0** — Fully random move generation
+* **Level 1** — Greedy play (always attacks)
+* **Levels 2–7** — Iterative deepening using a conventional material-based evaluation, searching progressively deeper layers
+
+The highest level plays at approximately level 1800 ELO as determined by centipawn loss using the the Chessis analysis toolkit over candidate 10 games against stockfish.
+
+---
+
+## Enjoy!
+
+That’s it—set it up, experiment with the levels, and have fun playing against Plum Chess ♟️
 
 
-# Obtaining the Plum Chess Executable
-One can simply download the pre-built executable from the releases folder in this repository. I have uploaded precompiled binaries for for Win32 and Linux x86_64 architectures.
-
-Alternatively, one can build this rust project from source by using and existing rust installation with `cargo build --release` from the root of this directory.  
-The resulting binary will appear in `target/release/plum_chess_X.X.X_YYY.exe`.   You may wish to copy this file to another more permanent place on your computer.
-
-# How to play with Pychess
-A popular front-end GUI for custom chess engines is pychess.  Pychess can be installed from the [website](https://pychess.github.io/download/).
-
-Launch Pychess.  If this is the first time,  click your way through the splash screen pop-ups.
-
-Select `edit >> engines >> new` then navigate to the plum_chess executable.  Pychess will then query the executable and determine it uses the `uci` interface.
-Fill in the engine metadata as you see fit and then click save.
-
-Return to the main screen.  In the top left corner selection panel you can select your color and an engine for your opponent and determine the difficulty level.  Plum chess 2.0 only has levels 0 - 7.
-If you select the weather icon, you can adjust other game parameters like time limits.  Plum Chess 2.0 is not optimized around time limits and will simply waste time.
-
-Levels 0 - Full random move generation
-Levels 1 - Greedy (always attatck)
-Levels 2 - 7) Iterative deepening with conventional material metric to more and more layers.
-
-Have fun!
