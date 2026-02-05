@@ -40,7 +40,7 @@ You may wish to copy this file to a more permanent or convenient location on you
 
 ## Playing with PyChess
 
-[PyChess](https://pychess.github.io/download/) is a popular and user-friendly GUI that supports custom UCI engines.
+[PyChess](https://pychess.github.io) is a popular and user-friendly GUI that supports custom UCI engines.
 
 ### Installing PyChess
 
