@@ -3,7 +3,7 @@ Plum chess is an engine that follows the same `uci` interface that the popular S
 
 
 # Obtaining the Plum Chess Executable
-One can simply download the pre-build executable from the releases page.  I have uploaded precompiled binaries for for Win32 and Linux x86_64 architectures.
+One can simply download the pre-built executable from the releases folder in this repository. I have uploaded precompiled binaries for for Win32 and Linux x86_64 architectures.
 
 Alternatively, one can build this rust project from source by using and existing rust installation with `cargo build --release` from the root of this directory.  
 The resulting binary will appear in `target/release/plum_chess_X.X.X_YYY.exe`.   You may wish to copy this file to another more permanent place on your computer.
