@@ -10,7 +10,7 @@ You have two options: download a prebuilt binary or build the engine from source
 
 ### Option 1: Download a Prebuilt Binary
 
-Precompiled executables are available in the **Releases** section of this repository.
+Precompiled executables are available in the **releases** folder of this repository.
 Currently supported platforms:
 
 * **Windows (Win32)**
