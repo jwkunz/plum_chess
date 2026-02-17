@@ -30,6 +30,8 @@ pub mod move_generation{
     pub mod perft;
 }
 
+pub mod search;
+
 pub mod utils {
     pub mod fen_generator;
     pub mod fen_parser;
