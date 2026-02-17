@@ -5,7 +5,6 @@
 
 use crate::game_state::{chess_types::*, game_state::GameState};
 
-
 /// Render the board to a Unicode string for terminal output.
 ///
 /// Assumes square indexing where `0 == a1`, `7 == h1`, and `63 == h8`.

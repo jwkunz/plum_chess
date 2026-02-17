@@ -70,8 +70,10 @@ impl Engine for GreedyEngine {
         ));
 
         if let Some(depth) = params.depth {
-            out.info_lines
-                .push(format!("info string greedy_engine requested_depth {}", depth));
+            out.info_lines.push(format!(
+                "info string greedy_engine requested_depth {}",
+                depth
+            ));
         }
 
         if legal_moves.is_empty() {

@@ -32,7 +32,12 @@ pub fn generate_pawn_moves(game_state: &GameState, out: &mut Vec<u64>) {
             if (to_mask & empty) != 0 {
                 let promotion_rank = if side == Color::Light { 7 } else { 0 };
                 if to / 8 == promotion_rank {
-                    for promo in [PieceKind::Knight, PieceKind::Bishop, PieceKind::Rook, PieceKind::Queen] {
+                    for promo in [
+                        PieceKind::Knight,
+                        PieceKind::Bishop,
+                        PieceKind::Rook,
+                        PieceKind::Queen,
+                    ] {
                         out.push(build_move(from, to, PieceKind::Pawn, None, Some(promo), 0));
                     }
                 } else {
@@ -40,7 +45,11 @@ pub fn generate_pawn_moves(game_state: &GameState, out: &mut Vec<u64>) {
 
                     let start_rank = if side == Color::Light { 1 } else { 6 };
                     if rank == start_rank {
-                        let two_step = if side == Color::Light { from + 16 } else { from - 16 };
+                        let two_step = if side == Color::Light {
+                            from + 16
+                        } else {
+                            from - 16
+                        };
                         let two_mask = 1u64 << two_step;
                         if (two_mask & empty) != 0 {
                             out.push(build_move(
@@ -69,14 +78,21 @@ pub fn generate_pawn_moves(game_state: &GameState, out: &mut Vec<u64>) {
             } else {
                 from.checked_sub((8 - file_delta) as u8)
             };
-            let Some(to) = to_opt else { continue; };
+            let Some(to) = to_opt else {
+                continue;
+            };
             let to_mask = 1u64 << to;
 
             if (to_mask & enemy_occ) != 0 {
                 let captured_piece = enemy_piece_on(game_state, to);
                 let promotion_rank = if side == Color::Light { 7 } else { 0 };
                 if to / 8 == promotion_rank {
-                    for promo in [PieceKind::Knight, PieceKind::Bishop, PieceKind::Rook, PieceKind::Queen] {
+                    for promo in [
+                        PieceKind::Knight,
+                        PieceKind::Bishop,
+                        PieceKind::Rook,
+                        PieceKind::Queen,
+                    ] {
                         out.push(build_move(
                             from,
                             to,

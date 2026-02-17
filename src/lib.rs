@@ -1,5 +1,5 @@
 //! Crate root module declarations for the Plum Chess engine project.
-//! 
+//!
 //! This file exposes all top-level subsystems (game state, move generation,
 //! search, engines, UCI protocol handling, and utility helpers) so binaries,
 //! tests, and external tooling can import stable module paths.
@@ -39,6 +39,7 @@ pub mod move_generation {
 pub mod search {
     pub mod board_scoring;
     pub mod iterative_deepening;
+    pub mod zobrist;
 }
 pub mod uci {
     pub mod uci_top;

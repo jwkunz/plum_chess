@@ -92,25 +92,27 @@ fn bench_perft(c: &mut Criterion) {
             // Correctness guard before benchmarking.
             let warmup = perft_legal(&game, depth).expect("perft should run");
             assert_eq!(
-                warmup.nodes as u64,
-                *expected_nodes,
+                warmup.nodes as u64, *expected_nodes,
                 "node mismatch in warmup for {} depth {}",
-                case.name,
-                depth
+                case.name, depth
             );
 
             group.throughput(Throughput::Elements(*expected_nodes));
             let bench_name = format!("{}_d{}", case.name, depth);
             let bench_game = game.clone();
 
-            group.bench_with_input(BenchmarkId::from_parameter(bench_name), expected_nodes, |b, expected| {
-                b.iter(|| {
-                    let count = perft_legal(black_box(&bench_game), black_box(depth))
-                        .expect("perft benchmark run should succeed");
-                    assert_eq!(count.nodes as u64, *expected);
-                    black_box(count.nodes)
-                });
-            });
+            group.bench_with_input(
+                BenchmarkId::from_parameter(bench_name),
+                expected_nodes,
+                |b, expected| {
+                    b.iter(|| {
+                        let count = perft_legal(black_box(&bench_game), black_box(depth))
+                            .expect("perft benchmark run should succeed");
+                        assert_eq!(count.nodes as u64, *expected);
+                        black_box(count.nodes)
+                    });
+                },
+            );
         }
     }
 

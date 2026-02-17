@@ -132,8 +132,8 @@ mod tests {
     use super::generate_fen;
     use crate::game_state::chess_rules::STARTING_POSITION_FEN;
     use crate::game_state::chess_types::{
-        CASTLE_DARK_KINGSIDE, CASTLE_DARK_QUEENSIDE, CASTLE_LIGHT_KINGSIDE,
-        CASTLE_LIGHT_QUEENSIDE, Color,
+        Color, CASTLE_DARK_KINGSIDE, CASTLE_DARK_QUEENSIDE, CASTLE_LIGHT_KINGSIDE,
+        CASTLE_LIGHT_QUEENSIDE,
     };
     use crate::utils::fen_parser::parse_fen;
 

@@ -4,11 +4,10 @@
 //! occupancy caches, turn/state flags, clocks, and history stacks used by
 //! make/unmake style workflows and higher-level engine systems.
 
-use crate::game_state::chess_types::*;
 use crate::game_state::chess_rules::STARTING_POSITION_FEN;
+use crate::game_state::chess_types::*;
 use crate::utils::fen_generator::generate_fen;
 use crate::utils::fen_parser::parse_fen;
-
 
 /// Incremental game state optimized for fast move making/unmaking.
 #[derive(Debug, Clone)]

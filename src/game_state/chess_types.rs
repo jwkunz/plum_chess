@@ -6,7 +6,6 @@
 /// Core game state representation for a high-performance bitboard engine.
 /// This module intentionally contains structural placeholders to be filled in
 /// as move generation, hashing, and search are implemented.
-
 pub use crate::game_state::game_state::GameState;
 pub use crate::game_state::undo_state::UndoState;
 
@@ -62,8 +61,6 @@ impl PieceKind {
 
 /// Packed move type placeholder. The exact bit layout is defined later.
 pub type Move = u32;
-
-
 
 /// Compact castling rights bitmask placeholder.
 pub const CASTLE_LIGHT_KINGSIDE: CastlingRights = 1 << 0;

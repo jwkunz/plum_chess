@@ -54,8 +54,10 @@ impl Engine for RandomEngine {
         ));
 
         if let Some(depth) = params.depth {
-            out.info_lines
-                .push(format!("info string random_engine requested_depth {}", depth));
+            out.info_lines.push(format!(
+                "info string random_engine requested_depth {}",
+                depth
+            ));
         }
 
         if legal_moves.is_empty() {

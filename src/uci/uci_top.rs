@@ -250,7 +250,10 @@ mod tests {
             .handle_position("position startpos moves e2e4 e7e5 g1f3")
             .expect("position command should parse");
 
-        assert_eq!(state.game_state.side_to_move, crate::game_state::chess_types::Color::Dark);
+        assert_eq!(
+            state.game_state.side_to_move,
+            crate::game_state::chess_types::Color::Dark
+        );
     }
 
     #[test]

@@ -182,7 +182,10 @@ fn strip_pgn_comments_and_variations(text: &str) -> String {
 
 fn is_move_number_token(token: &str) -> bool {
     if token.ends_with('.') {
-        return token.trim_end_matches('.').chars().all(|c| c.is_ascii_digit());
+        return token
+            .trim_end_matches('.')
+            .chars()
+            .all(|c| c.is_ascii_digit());
     }
     if token.contains("...") {
         let head = token.split("...").next().unwrap_or_default();

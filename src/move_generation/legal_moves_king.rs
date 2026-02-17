@@ -5,8 +5,8 @@
 
 use crate::game_state::{chess_types::*, game_state::GameState};
 use crate::move_generation::legal_move_apply::build_move;
-use crate::move_generation::legal_move_shared::enemy_piece_on;
 use crate::move_generation::legal_move_checks::is_square_attacked;
+use crate::move_generation::legal_move_shared::enemy_piece_on;
 use crate::moves::king_moves::king_attacks;
 use crate::moves::move_descriptions::{FLAG_CAPTURE, FLAG_CASTLING};
 
@@ -81,7 +81,14 @@ fn generate_castling_moves(game_state: &GameState, out: &mut Vec<u64>, king_from
                     && !is_square_attacked(game_state, 61, enemy)
                     && !is_square_attacked(game_state, 62, enemy)
                 {
-                    out.push(build_move(60, 62, PieceKind::King, None, None, FLAG_CASTLING));
+                    out.push(build_move(
+                        60,
+                        62,
+                        PieceKind::King,
+                        None,
+                        None,
+                        FLAG_CASTLING,
+                    ));
                 }
             }
             if king_from == 60 && (game_state.castling_rights & CASTLE_DARK_QUEENSIDE) != 0 {
@@ -90,7 +97,14 @@ fn generate_castling_moves(game_state: &GameState, out: &mut Vec<u64>, king_from
                     && !is_square_attacked(game_state, 59, enemy)
                     && !is_square_attacked(game_state, 58, enemy)
                 {
-                    out.push(build_move(60, 58, PieceKind::King, None, None, FLAG_CASTLING));
+                    out.push(build_move(
+                        60,
+                        58,
+                        PieceKind::King,
+                        None,
+                        None,
+                        FLAG_CASTLING,
+                    ));
                 }
             }
         }

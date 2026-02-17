@@ -87,4 +87,3 @@ pub fn piece_kind_from_code(code: u64) -> Option<PieceKind> {
         _ => None,
     }
 }
-

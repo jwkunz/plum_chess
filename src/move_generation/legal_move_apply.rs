@@ -9,6 +9,7 @@ use crate::moves::move_descriptions::{
     move_from, move_promotion_piece_code, move_to, pack_move_description, piece_kind_from_code,
     FLAG_CAPTURE, FLAG_CASTLING, FLAG_DOUBLE_PAWN_PUSH, FLAG_EN_PASSANT,
 };
+use crate::search::zobrist::refresh_game_state_hashes;
 
 pub fn apply_move(game_state: &GameState, move_description: u64) -> Result<GameState, String> {
     let from = move_from(move_description);
@@ -86,6 +87,8 @@ pub fn apply_move(game_state: &GameState, move_description: u64) -> Result<GameS
     next.ply = next.ply.saturating_add(1);
 
     recalc_occupancy(&mut next);
+    refresh_game_state_hashes(&mut next);
+    next.repetition_history.push(next.zobrist_key);
 
     Ok(next)
 }
@@ -99,7 +102,14 @@ pub fn build_move(
     promotion_piece: Option<PieceKind>,
     flags: u64,
 ) -> u64 {
-    pack_move_description(from, to, moved_piece, captured_piece, promotion_piece, flags)
+    pack_move_description(
+        from,
+        to,
+        moved_piece,
+        captured_piece,
+        promotion_piece,
+        flags,
+    )
 }
 
 fn clear_enemy_piece_on_square(game_state: &mut GameState, enemy_color: Color, square_mask: u64) {

@@ -40,8 +40,10 @@ impl MaterialScorer {
             PieceKind::King,
         ] {
             let value = Self::piece_value(piece);
-            let white_count = game_state.pieces[Color::Light.index()][piece.index()].count_ones() as i32;
-            let black_count = game_state.pieces[Color::Dark.index()][piece.index()].count_ones() as i32;
+            let white_count =
+                game_state.pieces[Color::Light.index()][piece.index()].count_ones() as i32;
+            let black_count =
+                game_state.pieces[Color::Dark.index()][piece.index()].count_ones() as i32;
             score += (white_count - black_count) * value;
         }
 

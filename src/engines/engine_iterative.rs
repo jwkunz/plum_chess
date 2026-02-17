@@ -88,7 +88,13 @@ mod tests {
             .expect("engine should choose a move");
         let joined = out.info_lines.join("\n");
 
-        assert!(joined.contains("info depth 1"), "expected depth-1 search info");
-        assert!(joined.contains("used_depth 1"), "expected used_depth=1 info");
+        assert!(
+            joined.contains("info depth 1"),
+            "expected depth-1 search info"
+        );
+        assert!(
+            joined.contains("used_depth 1"),
+            "expected used_depth=1 info"
+        );
     }
 }

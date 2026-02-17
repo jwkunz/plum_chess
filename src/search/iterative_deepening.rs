@@ -48,7 +48,8 @@ pub fn iterative_deepening_search<G: MoveGenerator, S: BoardScorer>(
 
     for depth in 1..=config.max_depth {
         let mut nodes = 0u64;
-        let (best_move, best_score) = negamax_root(game_state, generator, scorer, depth, &mut nodes)?;
+        let (best_move, best_score) =
+            negamax_root(game_state, generator, scorer, depth, &mut nodes)?;
 
         result.best_move = best_move;
         result.best_score = best_score;
@@ -180,8 +181,9 @@ mod tests {
         let gen = LegalMoveGenerator;
         let scorer = MaterialScorer;
 
-        let result = iterative_deepening_search(&game, &gen, &scorer, SearchConfig { max_depth: 0 })
-            .expect("search should run");
+        let result =
+            iterative_deepening_search(&game, &gen, &scorer, SearchConfig { max_depth: 0 })
+                .expect("search should run");
 
         assert_eq!(result.best_move, None);
         assert_eq!(result.best_score, 0);
@@ -190,13 +192,14 @@ mod tests {
 
     #[test]
     fn search_prefers_winning_capture_in_simple_position() {
-        let game = GameState::from_fen("4k3/8/8/8/8/8/4q3/4KQ2 w - - 0 1")
-            .expect("FEN should parse");
+        let game =
+            GameState::from_fen("4k3/8/8/8/8/8/4q3/4KQ2 w - - 0 1").expect("FEN should parse");
         let gen = LegalMoveGenerator;
         let scorer = MaterialScorer;
 
-        let result = iterative_deepening_search(&game, &gen, &scorer, SearchConfig { max_depth: 1 })
-            .expect("search should run");
+        let result =
+            iterative_deepening_search(&game, &gen, &scorer, SearchConfig { max_depth: 1 })
+                .expect("search should run");
 
         let best_move = result.best_move.expect("best move should exist");
         let lan = move_description_to_long_algebraic(best_move, &game)
@@ -233,8 +236,8 @@ mod tests {
         use crate::move_generation::legal_move_apply::apply_move;
         use crate::move_generation::move_generator::MoveGenerator;
 
-        let game = GameState::from_fen("6k1/5Q2/6K1/8/8/8/8/8 w - - 0 1")
-            .expect("FEN should parse");
+        let game =
+            GameState::from_fen("6k1/5Q2/6K1/8/8/8/8/8 w - - 0 1").expect("FEN should parse");
         let gen = LegalMoveGenerator;
         let scorer = MaterialScorer;
 

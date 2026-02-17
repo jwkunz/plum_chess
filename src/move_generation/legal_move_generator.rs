@@ -5,7 +5,9 @@
 
 use crate::game_state::game_state::GameState;
 use crate::move_generation::legal_move_apply::apply_move;
-use crate::move_generation::legal_move_checks::{attackers_to_square, is_king_in_check, king_square};
+use crate::move_generation::legal_move_checks::{
+    attackers_to_square, is_king_in_check, king_square,
+};
 use crate::move_generation::legal_moves_bishop::generate_bishop_moves;
 use crate::move_generation::legal_moves_king::generate_king_moves;
 use crate::move_generation::legal_moves_knight::generate_knight_moves;
@@ -44,8 +46,9 @@ impl LegalMoveGenerator {
 
         let mut legal = Vec::<GeneratedMove>::with_capacity(pseudo.len());
         for mv in pseudo {
-            let next = apply_move(game_state, mv)
-                .map_err(|x| MoveGenerationError::InvalidState(format!("apply_move failed: {x}")))?;
+            let next = apply_move(game_state, mv).map_err(|x| {
+                MoveGenerationError::InvalidState(format!("apply_move failed: {x}"))
+            })?;
 
             // Illegal if own king is in check after move.
             if is_king_in_check(&next, game_state.side_to_move) {
@@ -88,8 +91,8 @@ fn classify_move_annotations(
     let to = move_to(move_description);
     let moved_piece = piece_kind_from_code(move_moved_piece_code(move_description))
         .ok_or_else(|| MoveGenerationError::InvalidState("invalid moved piece code".to_owned()))?;
-    let moved_piece_after = piece_kind_from_code(move_promotion_piece_code(move_description))
-        .unwrap_or(moved_piece);
+    let moved_piece_after =
+        piece_kind_from_code(move_promotion_piece_code(move_description)).unwrap_or(moved_piece);
 
     let moved_piece_is_checker = checkers
         .iter()
@@ -114,7 +117,11 @@ fn classify_move_annotations(
     })
 }
 
-fn is_discovered_line_check(from: u8, checker: (u8, crate::game_state::chess_types::PieceKind), king_sq: u8) -> bool {
+fn is_discovered_line_check(
+    from: u8,
+    checker: (u8, crate::game_state::chess_types::PieceKind),
+    king_sq: u8,
+) -> bool {
     use crate::game_state::chess_types::PieceKind;
     let (checker_sq, checker_piece) = checker;
     match checker_piece {

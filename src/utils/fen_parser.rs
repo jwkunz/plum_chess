@@ -4,6 +4,7 @@
 //! string, including piece bitboards, rights, clocks, and occupancies.
 
 use crate::game_state::{chess_types::*, game_state::GameState};
+use crate::search::zobrist::refresh_game_state_hashes;
 use crate::utils::algebraic::algebraic_to_square;
 
 pub fn parse_fen(fen: &str) -> Result<GameState, String> {
@@ -33,12 +34,20 @@ pub fn parse_fen(fen: &str) -> Result<GameState, String> {
         .parse::<u16>()
         .map_err(|_| format!("Invalid fullmove number: {fullmove_part}"))?;
 
-    game_state.occupancy_by_color[Color::Light.index()] =
-        game_state.pieces[Color::Light.index()].iter().copied().fold(0u64, |acc, bb| acc | bb);
-    game_state.occupancy_by_color[Color::Dark.index()] =
-        game_state.pieces[Color::Dark.index()].iter().copied().fold(0u64, |acc, bb| acc | bb);
-    game_state.occupancy_all =
-        game_state.occupancy_by_color[Color::Light.index()] | game_state.occupancy_by_color[Color::Dark.index()];
+    game_state.occupancy_by_color[Color::Light.index()] = game_state.pieces[Color::Light.index()]
+        .iter()
+        .copied()
+        .fold(0u64, |acc, bb| acc | bb);
+    game_state.occupancy_by_color[Color::Dark.index()] = game_state.pieces[Color::Dark.index()]
+        .iter()
+        .copied()
+        .fold(0u64, |acc, bb| acc | bb);
+    game_state.occupancy_all = game_state.occupancy_by_color[Color::Light.index()]
+        | game_state.occupancy_by_color[Color::Dark.index()];
+
+    refresh_game_state_hashes(&mut game_state);
+    game_state.repetition_history.clear();
+    game_state.repetition_history.push(game_state.zobrist_key);
 
     Ok(game_state)
 }
@@ -154,7 +163,10 @@ mod tests {
 
         println!("\n{}", render_game_state(&game_state));
 
-        assert_eq!(game_state.side_to_move, crate::game_state::chess_types::Color::Light);
+        assert_eq!(
+            game_state.side_to_move,
+            crate::game_state::chess_types::Color::Light
+        );
         assert_eq!(game_state.fullmove_number, 1);
         assert_eq!(game_state.halfmove_clock, 0);
     }

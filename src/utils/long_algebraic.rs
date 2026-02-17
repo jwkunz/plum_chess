@@ -18,8 +18,9 @@ pub fn move_description_to_long_algebraic(
 
     let (color_on_from, piece_on_from) = piece_on_square(game_state, from)
         .ok_or_else(|| format!("No piece found on from-square {}", from))?;
-    let moved_piece = piece_kind_from_code(moved_piece_code)
-        .ok_or_else(|| format!("Invalid moved-piece code in move description: {moved_piece_code}"))?;
+    let moved_piece = piece_kind_from_code(moved_piece_code).ok_or_else(|| {
+        format!("Invalid moved-piece code in move description: {moved_piece_code}")
+    })?;
 
     if moved_piece != piece_on_from {
         return Err(format!(
@@ -180,9 +181,7 @@ fn piece_on_square(game_state: &GameState, square: Square) -> Option<(Color, Pie
 #[cfg(test)]
 mod tests {
     use super::{long_algebraic_to_move_description, move_description_to_long_algebraic};
-    use crate::moves::move_descriptions::{
-        FLAG_CASTLING, FLAG_DOUBLE_PAWN_PUSH, FLAG_EN_PASSANT,
-    };
+    use crate::moves::move_descriptions::{FLAG_CASTLING, FLAG_DOUBLE_PAWN_PUSH, FLAG_EN_PASSANT};
     use crate::utils::fen_parser::parse_fen;
 
     #[test]
