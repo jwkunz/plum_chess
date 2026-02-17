@@ -1,29 +1,23 @@
-pub mod apply_move_to_game;
-pub mod board_location;
-pub mod board_mask;
-pub mod checked_move_description;
-pub mod chess_engine_thread_trait;
-pub mod chess_errors;
-pub mod collision_masks;
-pub mod debug_utils;
-pub mod engine_minimax;
-pub mod engine_random;
-pub mod game_state;
-pub mod generate_all_moves;
-pub mod generate_movements;
-pub mod generate_moves_level_1;
-pub mod generate_moves_level_2;
-pub mod generate_moves_level_3;
-pub mod generate_moves_level_4;
-pub mod generate_moves_level_5;
-pub mod inspect_check;
-pub mod move_description;
-pub mod perft;
-pub mod piece_class;
-pub mod piece_record;
-pub mod piece_register;
-pub mod piece_team;
-pub mod scoring;
-pub mod special_move_flags;
-pub mod types_of_check;
-pub mod uci_interface;
+pub mod game_state{
+    pub mod chess_types;
+    pub mod game_state;
+    pub mod undo_state;
+    pub mod chess_rules;
+}
+
+pub mod moves{
+    pub mod bishop_moves;
+    pub mod king_moves;
+    pub mod knight_moves;
+    pub mod pawn_moves;
+    pub mod queen_moves;
+    pub mod rook_moves;
+    pub mod move_descriptions;
+}
+
+pub mod utils {
+    pub mod fen_generator;
+    pub mod fen_parser;
+    pub mod algebraic;
+    pub mod render_game_state;
+}
