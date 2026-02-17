@@ -195,6 +195,7 @@ impl UciState {
         if params.depth.is_none() {
             params.depth = self.fixed_depth_override;
         }
+        apply_basic_time_management(&self.game_state, &mut params);
         let result = self.engine.choose_move(&self.game_state, &params)?;
 
         for info in &result.info_lines {
@@ -209,6 +210,23 @@ impl UciState {
         }
 
         Ok(())
+    }
+}
+
+fn apply_basic_time_management(game_state: &GameState, params: &mut GoParams) {
+    // Keep existing explicit limits unchanged.
+    if params.movetime_ms.is_some() {
+        return;
+    }
+
+    let remaining_ms = match game_state.side_to_move {
+        crate::game_state::chess_types::Color::Light => params.wtime_ms,
+        crate::game_state::chess_types::Color::Dark => params.btime_ms,
+    };
+
+    if let Some(clock) = remaining_ms {
+        // Requested policy: always spend roughly one quarter of remaining time.
+        params.movetime_ms = Some((clock / 4).max(1));
     }
 }
 
@@ -242,6 +260,9 @@ fn build_engine(skill_level: u8) -> Box<dyn Engine> {
 #[cfg(test)]
 mod tests {
     use super::UciState;
+    use crate::engines::engine_trait::GoParams;
+    use crate::game_state::chess_types::Color;
+    use crate::game_state::game_state::GameState;
 
     #[test]
     fn position_startpos_with_moves_updates_state() {
@@ -296,5 +317,41 @@ mod tests {
             .handle_setoption("setoption name FixedDepth value 0")
             .expect("setoption should parse");
         assert_eq!(state.fixed_depth_override, None);
+    }
+
+    #[test]
+    fn go_time_management_uses_quarter_of_remaining_time_for_side_to_move() {
+        let game = GameState::new_game();
+        assert_eq!(game.side_to_move, Color::Light);
+        let mut params = GoParams {
+            wtime_ms: Some(120_000),
+            btime_ms: Some(60_000),
+            ..GoParams::default()
+        };
+        super::apply_basic_time_management(&game, &mut params);
+        assert_eq!(params.movetime_ms, Some(30_000));
+
+        let game_dark =
+            GameState::from_fen("8/8/8/8/8/8/8/4k2K b - - 0 1").expect("fen should parse");
+        let mut params_dark = GoParams {
+            wtime_ms: Some(120_000),
+            btime_ms: Some(60_000),
+            ..GoParams::default()
+        };
+        super::apply_basic_time_management(&game_dark, &mut params_dark);
+        assert_eq!(params_dark.movetime_ms, Some(15_000));
+    }
+
+    #[test]
+    fn go_time_management_does_not_override_explicit_movetime() {
+        let game = GameState::new_game();
+        let mut params = GoParams {
+            movetime_ms: Some(250),
+            wtime_ms: Some(120_000),
+            btime_ms: Some(60_000),
+            ..GoParams::default()
+        };
+        super::apply_basic_time_management(&game, &mut params);
+        assert_eq!(params.movetime_ms, Some(250));
     }
 }

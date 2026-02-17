@@ -7,17 +7,22 @@ use crate::game_state::game_state::GameState;
 use crate::move_generation::legal_move_checks::is_king_in_check;
 use crate::move_generation::move_generator::{MoveGenResult, MoveGenerator};
 use crate::search::board_scoring::BoardScorer;
+use std::time::{Duration, Instant};
 
 const MATE_SCORE: i32 = 30000;
 
 #[derive(Debug, Clone, Copy)]
 pub struct SearchConfig {
     pub max_depth: u8,
+    pub movetime_ms: Option<u64>,
 }
 
 impl Default for SearchConfig {
     fn default() -> Self {
-        Self { max_depth: 4 }
+        Self {
+            max_depth: 4,
+            movetime_ms: None,
+        }
     }
 }
 
@@ -35,6 +40,11 @@ pub fn iterative_deepening_search<G: MoveGenerator, S: BoardScorer>(
     scorer: &S,
     config: SearchConfig,
 ) -> MoveGenResult<SearchResult> {
+    let started_at = Instant::now();
+    let deadline = config
+        .movetime_ms
+        .map(|ms| started_at + Duration::from_millis(ms.max(1)));
+
     if config.max_depth == 0 {
         return Ok(SearchResult {
             best_move: None,
@@ -47,9 +57,18 @@ pub fn iterative_deepening_search<G: MoveGenerator, S: BoardScorer>(
     let mut result = SearchResult::default();
 
     for depth in 1..=config.max_depth {
+        if let Some(limit) = deadline {
+            if Instant::now() >= limit {
+                break;
+            }
+        }
+
         let mut nodes = 0u64;
-        let (best_move, best_score) =
-            negamax_root(game_state, generator, scorer, depth, &mut nodes)?;
+        let Some((best_move, best_score)) =
+            negamax_root(game_state, generator, scorer, depth, &mut nodes, deadline)?
+        else {
+            break;
+        };
 
         result.best_move = best_move;
         result.best_score = best_score;
@@ -66,12 +85,13 @@ fn negamax_root<G: MoveGenerator, S: BoardScorer>(
     scorer: &S,
     depth: u8,
     nodes: &mut u64,
-) -> MoveGenResult<(Option<u64>, i32)> {
+    deadline: Option<Instant>,
+) -> MoveGenResult<Option<(Option<u64>, i32)>> {
     let moves = generator.generate_legal_moves(game_state)?;
     if moves.is_empty() {
         let score = terminal_score(game_state, 0);
         *nodes += 1;
-        return Ok((None, score));
+        return Ok(Some((None, score)));
     }
 
     let mut alpha = -MATE_SCORE;
@@ -80,7 +100,13 @@ fn negamax_root<G: MoveGenerator, S: BoardScorer>(
     let mut best_score = -MATE_SCORE;
 
     for mv in moves {
-        let score = -negamax(
+        if let Some(limit) = deadline {
+            if Instant::now() >= limit {
+                return Ok(None);
+            }
+        }
+
+        let Some(score) = negamax(
             &mv.game_after_move,
             generator,
             scorer,
@@ -89,7 +115,12 @@ fn negamax_root<G: MoveGenerator, S: BoardScorer>(
             -alpha,
             1,
             nodes,
-        )?;
+            deadline,
+        )?
+        else {
+            return Ok(None);
+        };
+        let score = -score;
 
         if score > best_score {
             best_score = score;
@@ -100,7 +131,7 @@ fn negamax_root<G: MoveGenerator, S: BoardScorer>(
         }
     }
 
-    Ok((best_move, best_score))
+    Ok(Some((best_move, best_score)))
 }
 
 fn negamax<G: MoveGenerator, S: BoardScorer>(
@@ -112,7 +143,14 @@ fn negamax<G: MoveGenerator, S: BoardScorer>(
     beta: i32,
     ply: u8,
     nodes: &mut u64,
-) -> MoveGenResult<i32> {
+    deadline: Option<Instant>,
+) -> MoveGenResult<Option<i32>> {
+    if let Some(limit) = deadline {
+        if Instant::now() >= limit {
+            return Ok(None);
+        }
+    }
+
     *nodes += 1;
 
     if depth == 0 {
@@ -120,20 +158,26 @@ fn negamax<G: MoveGenerator, S: BoardScorer>(
         // engine reliably chooses mating lines (for example, mate in 1).
         let horizon_moves = generator.generate_legal_moves(game_state)?;
         if horizon_moves.is_empty() {
-            return Ok(terminal_score(game_state, ply));
+            return Ok(Some(terminal_score(game_state, ply)));
         }
-        return Ok(scorer.score(game_state));
+        return Ok(Some(scorer.score(game_state)));
     }
 
     let moves = generator.generate_legal_moves(game_state)?;
     if moves.is_empty() {
-        return Ok(terminal_score(game_state, ply));
+        return Ok(Some(terminal_score(game_state, ply)));
     }
 
     let mut best = -MATE_SCORE;
 
     for mv in moves {
-        let score = -negamax(
+        if let Some(limit) = deadline {
+            if Instant::now() >= limit {
+                return Ok(None);
+            }
+        }
+
+        let Some(score) = negamax(
             &mv.game_after_move,
             generator,
             scorer,
@@ -142,7 +186,12 @@ fn negamax<G: MoveGenerator, S: BoardScorer>(
             -alpha,
             ply.saturating_add(1),
             nodes,
-        )?;
+            deadline,
+        )?
+        else {
+            return Ok(None);
+        };
+        let score = -score;
 
         if score > best {
             best = score;
@@ -155,7 +204,7 @@ fn negamax<G: MoveGenerator, S: BoardScorer>(
         }
     }
 
-    Ok(best)
+    Ok(Some(best))
 }
 
 fn terminal_score(game_state: &GameState, ply: u8) -> i32 {
@@ -181,9 +230,16 @@ mod tests {
         let gen = LegalMoveGenerator;
         let scorer = MaterialScorer;
 
-        let result =
-            iterative_deepening_search(&game, &gen, &scorer, SearchConfig { max_depth: 0 })
-                .expect("search should run");
+        let result = iterative_deepening_search(
+            &game,
+            &gen,
+            &scorer,
+            SearchConfig {
+                max_depth: 0,
+                ..SearchConfig::default()
+            },
+        )
+        .expect("search should run");
 
         assert_eq!(result.best_move, None);
         assert_eq!(result.best_score, 0);
@@ -197,9 +253,16 @@ mod tests {
         let gen = LegalMoveGenerator;
         let scorer = MaterialScorer;
 
-        let result =
-            iterative_deepening_search(&game, &gen, &scorer, SearchConfig { max_depth: 1 })
-                .expect("search should run");
+        let result = iterative_deepening_search(
+            &game,
+            &gen,
+            &scorer,
+            SearchConfig {
+                max_depth: 1,
+                ..SearchConfig::default()
+            },
+        )
+        .expect("search should run");
 
         let best_move = result.best_move.expect("best move should exist");
         let lan = move_description_to_long_algebraic(best_move, &game)
@@ -221,7 +284,10 @@ mod tests {
                 &game,
                 generator,
                 &scorer,
-                SearchConfig { max_depth: 1 },
+                SearchConfig {
+                    max_depth: 1,
+                    ..SearchConfig::default()
+                },
             )?;
             Ok(())
         }
@@ -241,9 +307,16 @@ mod tests {
         let gen = LegalMoveGenerator;
         let scorer = MaterialScorer;
 
-        let result =
-            iterative_deepening_search(&game, &gen, &scorer, SearchConfig { max_depth: 1 })
-                .expect("search should run");
+        let result = iterative_deepening_search(
+            &game,
+            &gen,
+            &scorer,
+            SearchConfig {
+                max_depth: 1,
+                ..SearchConfig::default()
+            },
+        )
+        .expect("search should run");
 
         let best_move = result.best_move.expect("best move should exist");
         let next = apply_move(&game, best_move).expect("best move should apply");

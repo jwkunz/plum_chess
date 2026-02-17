@@ -6,6 +6,7 @@
 use crate::engines::engine_trait::{Engine, EngineOutput, GoParams};
 use crate::game_state::game_state::GameState;
 use crate::move_generation::legal_move_generator::LegalMoveGenerator;
+use crate::move_generation::move_generator::MoveGenerator;
 use crate::search::board_scoring::MaterialScorer;
 use crate::search::iterative_deepening::{iterative_deepening_search, SearchConfig};
 
@@ -47,12 +48,22 @@ impl Engine for IterativeEngine {
             game_state,
             &self.move_generator,
             &self.scorer,
-            SearchConfig { max_depth: depth },
+            SearchConfig {
+                max_depth: depth,
+                movetime_ms: params.movetime_ms,
+            },
         )
         .map_err(|e| e.to_string())?;
 
         let mut out = EngineOutput::default();
         out.best_move = result.best_move;
+        if out.best_move.is_none() {
+            let legal = self
+                .move_generator
+                .generate_legal_moves(game_state)
+                .map_err(|e| e.to_string())?;
+            out.best_move = legal.first().map(|m| m.move_description);
+        }
         out.info_lines.push(format!(
             "info depth {} score cp {} nodes {}",
             result.reached_depth, result.best_score, result.nodes
@@ -63,6 +74,10 @@ impl Engine for IterativeEngine {
         ));
         out.info_lines
             .push(format!("info string iterative_engine used_depth {}", depth));
+        if let Some(ms) = params.movetime_ms {
+            out.info_lines
+                .push(format!("info string iterative_engine movetime_ms {}", ms));
+        }
 
         Ok(out)
     }
