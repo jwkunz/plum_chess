@@ -36,6 +36,7 @@ struct UciState {
     game_state: GameState,
     engine: Box<dyn Engine>,
     skill_level: u8,
+    fixed_depth_override: Option<u8>,
 }
 
 impl UciState {
@@ -45,6 +46,7 @@ impl UciState {
             game_state: GameState::new_game(),
             engine: build_engine(skill_level),
             skill_level,
+            fixed_depth_override: None,
         }
     }
 
@@ -64,6 +66,10 @@ impl UciState {
                 writeln!(
                     out,
                     "option name Skill Level type spin default 1 min 1 max 5"
+                )?;
+                writeln!(
+                    out,
+                    "option name FixedDepth type spin default 0 min 0 max 64"
                 )?;
                 writeln!(out, "uciok")?;
             }
@@ -135,6 +141,11 @@ impl UciState {
             self.skill_level = parsed;
             self.engine = build_engine(self.skill_level);
             self.engine.new_game();
+        } else if name.eq_ignore_ascii_case("FixedDepth") {
+            let parsed = value
+                .parse::<u8>()
+                .map_err(|_| format!("invalid FixedDepth value '{}'", value))?;
+            self.fixed_depth_override = if parsed == 0 { None } else { Some(parsed) };
         }
 
         Ok(())
@@ -180,7 +191,10 @@ impl UciState {
     }
 
     fn handle_go(&mut self, line: &str, out: &mut impl Write) -> Result<(), String> {
-        let params = parse_go_params(line);
+        let mut params = parse_go_params(line);
+        if params.depth.is_none() {
+            params.depth = self.fixed_depth_override;
+        }
         let result = self.engine.choose_move(&self.game_state, &params)?;
 
         for info in &result.info_lines {
@@ -263,5 +277,21 @@ mod tests {
             .handle_setoption("setoption name Skill Level value 3")
             .expect("setoption should parse");
         assert_eq!(state.engine.name(), "PlumChess Iterative");
+    }
+
+    #[test]
+    fn setoption_fixed_depth_sets_override() {
+        let mut state = UciState::new();
+        assert_eq!(state.fixed_depth_override, None);
+
+        state
+            .handle_setoption("setoption name FixedDepth value 4")
+            .expect("setoption should parse");
+        assert_eq!(state.fixed_depth_override, Some(4));
+
+        state
+            .handle_setoption("setoption name FixedDepth value 0")
+            .expect("setoption should parse");
+        assert_eq!(state.fixed_depth_override, None);
     }
 }

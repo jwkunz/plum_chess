@@ -5,6 +5,7 @@
 
 use crate::game_state::{chess_types::*, game_state::GameState};
 
+pub const MATE_SCORE: i32 = 30000;
 pub trait BoardScorer: Send + Sync {
     /// Score from the perspective of the side to move.
     fn score(&self, game_state: &GameState) -> i32;
@@ -22,7 +23,7 @@ impl MaterialScorer {
             PieceKind::Bishop => 330,
             PieceKind::Rook => 500,
             PieceKind::Queen => 900,
-            PieceKind::King => 0,
+            PieceKind::King => 5000,
         }
     }
 

@@ -39,7 +39,9 @@ impl Engine for IterativeEngine {
         game_state: &GameState,
         params: &GoParams,
     ) -> Result<EngineOutput, String> {
-        let depth = self.default_depth.max(1);
+        // Honor explicit UCI depth limits first; otherwise fall back to the
+        // configured difficulty depth for this engine instance.
+        let depth = params.depth.unwrap_or(self.default_depth).max(1);
 
         let result = iterative_deepening_search(
             game_state,
@@ -59,13 +61,34 @@ impl Engine for IterativeEngine {
             "info string iterative_engine default_depth {}",
             self.default_depth
         ));
-        if let Some(requested) = params.depth {
-            out.info_lines.push(format!(
-                "info string iterative_engine ignoring_go_depth {}",
-                requested
-            ));
-        }
+        out.info_lines
+            .push(format!("info string iterative_engine used_depth {}", depth));
 
         Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IterativeEngine;
+    use crate::engines::engine_trait::{Engine, GoParams};
+    use crate::game_state::game_state::GameState;
+
+    #[test]
+    fn iterative_engine_honors_go_depth_override() {
+        let game = GameState::new_game();
+        let mut engine = IterativeEngine::new(5);
+        let params = GoParams {
+            depth: Some(1),
+            ..GoParams::default()
+        };
+
+        let out = engine
+            .choose_move(&game, &params)
+            .expect("engine should choose a move");
+        let joined = out.info_lines.join("\n");
+
+        assert!(joined.contains("info depth 1"), "expected depth-1 search info");
+        assert!(joined.contains("used_depth 1"), "expected used_depth=1 info");
     }
 }

@@ -115,6 +115,12 @@ fn negamax<G: MoveGenerator, S: BoardScorer>(
     *nodes += 1;
 
     if depth == 0 {
+        // Even at horizon, terminal positions must dominate material so the
+        // engine reliably chooses mating lines (for example, mate in 1).
+        let horizon_moves = generator.generate_legal_moves(game_state)?;
+        if horizon_moves.is_empty() {
+            return Ok(terminal_score(game_state, ply));
+        }
         return Ok(scorer.score(game_state));
     }
 
@@ -220,5 +226,33 @@ mod tests {
         let null = NullMoveGenerator;
         let err = run_with_null(&null).expect_err("null move generator should error");
         assert!(matches!(err, MoveGenerationError::NotImplemented));
+    }
+
+    #[test]
+    fn search_finds_mate_in_one_at_depth_one() {
+        use crate::move_generation::legal_move_apply::apply_move;
+        use crate::move_generation::move_generator::MoveGenerator;
+
+        let game = GameState::from_fen("6k1/5Q2/6K1/8/8/8/8/8 w - - 0 1")
+            .expect("FEN should parse");
+        let gen = LegalMoveGenerator;
+        let scorer = MaterialScorer;
+
+        let result =
+            iterative_deepening_search(&game, &gen, &scorer, SearchConfig { max_depth: 1 })
+                .expect("search should run");
+
+        let best_move = result.best_move.expect("best move should exist");
+        let next = apply_move(&game, best_move).expect("best move should apply");
+        let replies = gen
+            .generate_legal_moves(&next)
+            .expect("move generation should succeed");
+
+        assert!(replies.is_empty(), "best move should deliver checkmate");
+        assert!(
+            result.best_score > 29000,
+            "mate score should dominate material, got {}",
+            result.best_score
+        );
     }
 }
