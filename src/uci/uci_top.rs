@@ -1,5 +1,6 @@
 use std::io::{self, BufRead, Write};
 
+use crate::engines::engine_greedy::GreedyEngine;
 use crate::engines::engine_random::RandomEngine;
 use crate::engines::engine_trait::{Engine, GoParams};
 use crate::game_state::game_state::GameState;
@@ -28,13 +29,16 @@ pub fn run_stdio_loop() -> io::Result<()> {
 struct UciState {
     game_state: GameState,
     engine: Box<dyn Engine>,
+    skill_level: u8,
 }
 
 impl UciState {
     fn new() -> Self {
+        let skill_level = 1;
         Self {
             game_state: GameState::new_game(),
-            engine: Box::new(RandomEngine::new()),
+            engine: build_engine(skill_level),
+            skill_level,
         }
     }
 
@@ -51,10 +55,19 @@ impl UciState {
             "uci" => {
                 writeln!(out, "id name {}", self.engine.name())?;
                 writeln!(out, "id author {}", self.engine.author())?;
+                writeln!(
+                    out,
+                    "option name Skill Level type spin default 1 min 1 max 2"
+                )?;
                 writeln!(out, "uciok")?;
             }
             "isready" => {
                 writeln!(out, "readyok")?;
+            }
+            "setoption" => {
+                if let Err(err) = self.handle_setoption(trimmed) {
+                    writeln!(out, "info string setoption error: {}", err)?;
+                }
             }
             "ucinewgame" => {
                 self.game_state = GameState::new_game();
@@ -83,6 +96,42 @@ impl UciState {
         }
 
         Ok(false)
+    }
+
+    fn handle_setoption(&mut self, line: &str) -> Result<(), String> {
+        let mut tokens = line.split_whitespace();
+        let _ = tokens.next(); // setoption
+
+        let mut name_tokens = Vec::<String>::new();
+        let mut value_tokens = Vec::<String>::new();
+        let mut mode = "";
+
+        while let Some(tok) = tokens.next() {
+            match tok {
+                "name" => mode = "name",
+                "value" => mode = "value",
+                _ if mode == "name" => name_tokens.push(tok.to_owned()),
+                _ if mode == "value" => value_tokens.push(tok.to_owned()),
+                _ => {}
+            }
+        }
+
+        let name = name_tokens.join(" ");
+        let value = value_tokens.join(" ");
+
+        if name.eq_ignore_ascii_case("Skill Level") {
+            let parsed = value
+                .parse::<u8>()
+                .map_err(|_| format!("invalid Skill Level value '{}'", value))?;
+            if !(1..=2).contains(&parsed) {
+                return Err(format!("Skill Level out of range: {}", parsed));
+            }
+            self.skill_level = parsed;
+            self.engine = build_engine(self.skill_level);
+            self.engine.new_game();
+        }
+
+        Ok(())
     }
 
     fn handle_position(&mut self, line: &str) -> Result<(), String> {
@@ -160,6 +209,13 @@ fn parse_go_params(line: &str) -> GoParams {
     params
 }
 
+fn build_engine(skill_level: u8) -> Box<dyn Engine> {
+    match skill_level {
+        2 => Box::new(GreedyEngine::new()),
+        _ => Box::new(RandomEngine::new()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::UciState;
@@ -182,5 +238,16 @@ mod tests {
             .expect("position fen should parse");
 
         assert_eq!(state.game_state.get_fen(), "8/8/8/8/8/8/4P3/4K3 w - - 0 1");
+    }
+
+    #[test]
+    fn setoption_skill_level_switches_engine() {
+        let mut state = UciState::new();
+        assert_eq!(state.engine.name(), "PlumChess Random");
+
+        state
+            .handle_setoption("setoption name Skill Level value 2")
+            .expect("setoption should parse");
+        assert_eq!(state.engine.name(), "PlumChess Greedy");
     }
 }
