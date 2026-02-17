@@ -1,0 +1,9 @@
+case,depth,expected_nodes,actual_nodes,iteration,elapsed_ms,nps
+position_1,1,20,20,1,0.152,131837
+position_1,2,400,400,1,1.789,223630
+position_1,3,8902,8902,1,21.270,418522
+position_2,1,48,48,1,0.278,172515
+position_2,2,2039,2039,1,6.426,317315
+position_3,1,14,14,1,0.138,101149
+position_3,2,191,191,1,0.775,246314
+position_3,3,2812,2812,1,12.434,226154
