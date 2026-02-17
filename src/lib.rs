@@ -15,9 +15,15 @@ pub mod moves{
     pub mod move_descriptions;
 }
 
+pub mod move_generation{
+    pub mod move_generator;
+    pub mod perft;
+}
+
 pub mod utils {
     pub mod fen_generator;
     pub mod fen_parser;
     pub mod algebraic;
+    pub mod long_algebraic;
     pub mod render_game_state;
 }
