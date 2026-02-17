@@ -1,0 +1,30 @@
+use crate::game_state::game_state::GameState;
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GoParams {
+    pub depth: Option<u8>,
+    pub movetime_ms: Option<u64>,
+    pub wtime_ms: Option<u64>,
+    pub btime_ms: Option<u64>,
+    pub winc_ms: Option<u64>,
+    pub binc_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct EngineOutput {
+    pub best_move: Option<u64>,
+    pub info_lines: Vec<String>,
+}
+
+pub trait Engine: Send {
+    fn name(&self) -> &str;
+    fn author(&self) -> &str;
+
+    fn new_game(&mut self) {}
+
+    fn choose_move(
+        &mut self,
+        game_state: &GameState,
+        params: &GoParams,
+    ) -> Result<EngineOutput, String>;
+}
