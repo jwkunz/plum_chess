@@ -35,5 +35,6 @@ pub mod utils {
     pub mod fen_parser;
     pub mod algebraic;
     pub mod long_algebraic;
+    pub mod pgn;
     pub mod render_game_state;
 }
