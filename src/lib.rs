@@ -41,6 +41,9 @@ pub mod search {
     pub mod iterative_deepening;
     pub mod zobrist;
 }
+pub mod tables {
+    pub mod opening_book;
+}
 pub mod uci {
     pub mod uci_top;
 }

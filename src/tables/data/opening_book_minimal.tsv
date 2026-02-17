@@ -1,0 +1,11 @@
+eco	name	uci	weight
+B00	King Pawn Game	e2e4	8
+D00	Queen Pawn Game	d2d4	6
+A40	English Opening	c2c4	3
+B20	Sicilian Defence	e2e4 c7c5	5
+C50	Italian Game	e2e4 e7e5 g1f3 b8c6 f1c4	4
+C60	Ruy Lopez	e2e4 e7e5 g1f3 b8c6 f1b5	4
+C00	French Defence	e2e4 e7e6	3
+B10	Caro-Kann Defence	e2e4 c7c6	3
+D06	Queen's Gambit	e2e4 d7d5 d2d4	1
+D20	Queen's Gambit Declined	d2d4 d7d5 c2c4 e7e6	3

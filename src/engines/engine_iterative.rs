@@ -9,11 +9,14 @@ use crate::move_generation::legal_move_generator::LegalMoveGenerator;
 use crate::move_generation::move_generator::MoveGenerator;
 use crate::search::board_scoring::MaterialScorer;
 use crate::search::iterative_deepening::{iterative_deepening_search, SearchConfig};
+use crate::tables::opening_book::OpeningBook;
+use rand::rng;
 
 pub struct IterativeEngine {
     default_depth: u8,
     move_generator: LegalMoveGenerator,
     scorer: MaterialScorer,
+    opening_book: OpeningBook,
 }
 
 impl IterativeEngine {
@@ -22,6 +25,7 @@ impl IterativeEngine {
             default_depth,
             move_generator: LegalMoveGenerator,
             scorer: MaterialScorer,
+            opening_book: OpeningBook::load_default(),
         }
     }
 }
@@ -40,6 +44,17 @@ impl Engine for IterativeEngine {
         game_state: &GameState,
         params: &GoParams,
     ) -> Result<EngineOutput, String> {
+        if params.depth.is_none() && game_state.ply < 20 {
+            let mut rng = rng();
+            if let Some(book_move) = self.opening_book.choose_weighted_move(game_state, &mut rng) {
+                let mut out = EngineOutput::default();
+                out.best_move = Some(book_move);
+                out.info_lines
+                    .push("info string opening book move".to_owned());
+                return Ok(out);
+            }
+        }
+
         // Honor explicit UCI depth limits first; otherwise fall back to the
         // configured difficulty depth for this engine instance.
         let depth = params.depth.unwrap_or(self.default_depth).max(1);
