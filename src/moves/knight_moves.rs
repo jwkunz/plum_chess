@@ -1,3 +1,9 @@
+//! Knight attack bitboard generation utilities.
+//!
+//! Provides precomputed and/or occupancy-aware attack maps used by legal move
+//! generation and tactical evaluation. These routines are performance-critical
+//! building blocks for both perft and search.
+
 pub const KNIGHT_ATTACKS: [u64; 64] = generate_knight_attacks();
 
 #[inline]

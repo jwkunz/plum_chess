@@ -1,3 +1,9 @@
+//! Pawn attack bitboard generation utilities.
+//!
+//! Provides precomputed and/or occupancy-aware attack maps used by legal move
+//! generation and tactical evaluation. These routines are performance-critical
+//! building blocks for both perft and search.
+
 use crate::game_state::chess_types::Color;
 
 pub const LIGHT_PAWN_ATTACKS: [u64; 64] = generate_light_pawn_attacks();

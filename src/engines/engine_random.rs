@@ -1,3 +1,8 @@
+//! Difficulty-1 random-move engine.
+//!
+//! Selects uniformly from legal moves and is primarily used for diagnostics,
+//! integration testing, and low-strength gameplay.
+
 use rand::prelude::IndexedRandom;
 
 use crate::engines::engine_trait::{Engine, EngineOutput, GoParams};

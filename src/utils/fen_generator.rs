@@ -1,3 +1,8 @@
+//! GameState-to-FEN serializer.
+//!
+//! Produces canonical FEN fields from the current position so state can be
+//! persisted, exchanged with UCI GUIs, and used in tests/benchmarks.
+
 use crate::game_state::{chess_types::*, game_state::GameState};
 use crate::utils::algebraic::square_to_algebraic;
 

@@ -1,3 +1,8 @@
+//! Terminal-oriented Unicode board renderer.
+//!
+//! Creates a human-readable board view from internal bitboards for debugging,
+//! tests, and diagnostics in text environments.
+
 use crate::game_state::{chess_types::*, game_state::GameState};
 
 

@@ -1,3 +1,9 @@
+//! Core incremental board state representation.
+//!
+//! `GameState` is the central model for the engine. It stores piece bitboards,
+//! occupancy caches, turn/state flags, clocks, and history stacks used by
+//! make/unmake style workflows and higher-level engine systems.
+
 use crate::game_state::chess_types::*;
 use crate::game_state::chess_rules::STARTING_POSITION_FEN;
 use crate::utils::fen_generator::generate_fen;

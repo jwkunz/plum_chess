@@ -1,3 +1,8 @@
+//! Check/attack detection primitives for legality validation.
+//!
+//! This module answers attack and checker queries that are reused by legal
+//! move filtering, castling validation, and search terminal conditions.
+
 use crate::game_state::{chess_types::*, game_state::GameState};
 use crate::moves::bishop_moves::bishop_attacks;
 use crate::moves::king_moves::king_attacks;

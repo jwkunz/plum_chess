@@ -1,3 +1,8 @@
+//! Perft validation and benchmarking counters.
+//!
+//! Recursively explores legal move trees to verify correctness and collect
+//! tactical event counts (captures, checks, promotions, etc.).
+
 use std::sync::Arc;
 use std::thread;
 

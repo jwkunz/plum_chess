@@ -1,3 +1,8 @@
+//! Difficulty-2 greedy capture engine.
+//!
+//! Chooses moves based on immediate captured-material value without lookahead,
+//! making it a lightweight tactical baseline stronger than random play.
+
 use rand::prelude::IndexedRandom;
 
 use crate::engines::engine_trait::{Engine, EngineOutput, GoParams};

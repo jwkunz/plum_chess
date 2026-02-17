@@ -1,3 +1,8 @@
+//! Legal rook move generation.
+//!
+//! Emits packed move descriptions for rook moves from the current side to
+//! move, including captures and special rules where applicable.
+
 use crate::game_state::{chess_types::*, game_state::GameState};
 use crate::move_generation::legal_move_apply::build_move;
 use crate::move_generation::legal_move_shared::enemy_piece_on;

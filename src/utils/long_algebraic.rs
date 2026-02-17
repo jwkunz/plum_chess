@@ -1,3 +1,8 @@
+//! Conversion between packed move descriptions and long algebraic moves.
+//!
+//! Bridges UCI/notation strings and engine-internal move encoding with state-
+//! aware validation of captures, promotions, castling, and en-passant.
+
 use crate::game_state::{chess_types::*, game_state::GameState};
 use crate::moves::move_descriptions::*;
 use crate::utils::algebraic::{algebraic_to_square, square_to_algebraic};

@@ -1,3 +1,9 @@
+//! Queen attack bitboard generation utilities.
+//!
+//! Provides precomputed and/or occupancy-aware attack maps used by legal move
+//! generation and tactical evaluation. These routines are performance-critical
+//! building blocks for both perft and search.
+
 use crate::moves::bishop_moves::{bishop_attacks, BISHOP_RAYS};
 use crate::moves::rook_moves::{rook_attacks, ROOK_RAYS};
 

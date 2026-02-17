@@ -1,3 +1,8 @@
+//! Packed move-description encoding and decoding helpers.
+//!
+//! This module defines the bit layout for the engine move format and provides
+//! utilities for packing, unpacking, and interpreting move metadata flags.
+
 use crate::game_state::chess_types::{PieceKind, Square};
 
 const FROM_SHIFT: u64 = 0;

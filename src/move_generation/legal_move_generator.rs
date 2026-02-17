@@ -1,3 +1,8 @@
+//! Full legal move generation pipeline.
+//!
+//! Orchestrates piece-wise pseudo-legal generation, applies candidate moves,
+//! filters illegal self-check outcomes, and annotates checking move metadata.
+
 use crate::game_state::game_state::GameState;
 use crate::move_generation::legal_move_apply::apply_move;
 use crate::move_generation::legal_move_checks::{attackers_to_square, is_king_in_check, king_square};

@@ -1,3 +1,8 @@
+//! Shared helpers reused by legal move generation modules.
+//!
+//! Consolidates common board queries to avoid duplicated logic across piece
+//! generators and move-application helpers.
+
 use crate::game_state::{chess_types::*, game_state::GameState};
 
 pub const ALL_PIECE_KINDS: [PieceKind; 6] = [

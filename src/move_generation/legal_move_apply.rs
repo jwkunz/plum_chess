@@ -1,3 +1,8 @@
+//! Legal move application logic for transitioning game states.
+//!
+//! Applies packed move descriptions to `GameState`, updating piece placement,
+//! castling rights, en-passant state, clocks, side-to-move, and occupancies.
+
 use crate::game_state::{chess_types::*, game_state::GameState};
 use crate::move_generation::legal_move_shared::{piece_on_square_any, ALL_PIECE_KINDS};
 use crate::moves::move_descriptions::{

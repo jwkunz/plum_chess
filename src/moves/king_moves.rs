@@ -1,3 +1,9 @@
+//! King attack bitboard generation utilities.
+//!
+//! Provides precomputed and/or occupancy-aware attack maps used by legal move
+//! generation and tactical evaluation. These routines are performance-critical
+//! building blocks for both perft and search.
+
 pub const KING_ATTACKS: [u64; 64] = generate_king_attacks();
 
 #[inline]

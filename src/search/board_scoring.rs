@@ -1,3 +1,8 @@
+//! Pluggable board evaluation interfaces and baseline implementations.
+//!
+//! Search remains modular by delegating static position scoring to this trait,
+//! allowing alternate heuristics to be swapped without altering search code.
+
 use crate::game_state::{chess_types::*, game_state::GameState};
 
 pub trait BoardScorer: Send + Sync {

@@ -1,3 +1,8 @@
+//! Iterative-deepening material-search engine.
+//!
+//! Wraps the core negamax alpha-beta search with fixed-depth configuration and
+//! material scoring for deterministic stronger difficulty levels.
+
 use crate::engines::engine_trait::{Engine, EngineOutput, GoParams};
 use crate::game_state::game_state::GameState;
 use crate::move_generation::legal_move_generator::LegalMoveGenerator;

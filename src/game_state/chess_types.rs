@@ -1,3 +1,8 @@
+//! Fundamental chess data types used across the codebase.
+//!
+//! Includes color/piece enums, square and move aliases, and castling-right
+//! bit flags that are shared by move generation, search, UCI, and utilities.
+
 /// Core game state representation for a high-performance bitboard engine.
 /// This module intentionally contains structural placeholders to be filled in
 /// as move generation, hashing, and search are implemented.

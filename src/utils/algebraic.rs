@@ -1,3 +1,8 @@
+//! Square and bitboard conversions for long algebraic coordinates.
+//!
+//! Converts between human-readable coordinates (e.g., `e4`) and internal
+//! square/bitboard representations reused by FEN/PGN/UCI components.
+
 use crate::game_state::chess_types::Square;
 
 /// Convert long algebraic notation (for example: "e4") to a square index.

@@ -1,3 +1,8 @@
+//! UCI protocol front-end and command loop.
+//!
+//! Parses UCI commands, maintains current position state, routes `go` requests
+//! to the selected engine implementation, and emits protocol-compliant output.
+
 use std::io::{self, BufRead, Write};
 
 use crate::engines::engine_greedy::GreedyEngine;

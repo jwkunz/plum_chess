@@ -1,3 +1,9 @@
+//! Rook attack bitboard generation utilities.
+//!
+//! Provides precomputed and/or occupancy-aware attack maps used by legal move
+//! generation and tactical evaluation. These routines are performance-critical
+//! building blocks for both perft and search.
+
 pub const ROOK_RAYS: [u64; 64] = generate_rook_rays();
 
 #[inline]

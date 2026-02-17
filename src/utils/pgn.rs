@@ -1,3 +1,8 @@
+//! PGN read/write utilities for game history interchange.
+//!
+//! Serializes move history and headers to PGN text and parses PGN back into
+//! engine state sequences suitable for replay and analysis workflows.
+
 use std::collections::BTreeMap;
 
 use crate::game_state::chess_rules::STARTING_POSITION_FEN;

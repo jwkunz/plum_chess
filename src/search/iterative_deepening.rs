@@ -1,3 +1,8 @@
+//! Iterative deepening search with negamax alpha-beta pruning.
+//!
+//! Implements depth-progressive search that repeatedly refines best-move
+//! output and supports configurable search depth limits.
+
 use crate::game_state::game_state::GameState;
 use crate::move_generation::legal_move_checks::is_king_in_check;
 use crate::move_generation::move_generator::{MoveGenResult, MoveGenerator};

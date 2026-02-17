@@ -1,3 +1,8 @@
+//! FEN-to-GameState parser.
+//!
+//! Builds fully-populated incremental state from a Forsyth-Edwards Notation
+//! string, including piece bitboards, rights, clocks, and occupancies.
+
 use crate::game_state::{chess_types::*, game_state::GameState};
 use crate::utils::algebraic::algebraic_to_square;
 

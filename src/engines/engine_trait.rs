@@ -1,3 +1,8 @@
+//! Engine abstraction layer used by the UCI subsystem.
+//!
+//! Defines common input parameters and output payloads so different engine
+//! strategies can be selected at runtime behind a single trait interface.
+
 use crate::game_state::game_state::GameState;
 
 #[derive(Debug, Clone, Copy, Default)]

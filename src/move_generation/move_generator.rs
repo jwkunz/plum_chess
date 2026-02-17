@@ -1,3 +1,8 @@
+//! Move generation interfaces and shared result types.
+//!
+//! Defines trait contracts and metadata structures consumed by search, perft,
+//! and engine implementations to request legal move lists from positions.
+
 use std::error::Error;
 use std::fmt;
 

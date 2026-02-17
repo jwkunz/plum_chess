@@ -1,3 +1,8 @@
+//! Undo snapshot structures for reversible move application.
+//!
+//! The undo payload preserves pre-move state fragments so search can restore
+//! previous positions efficiently when traversing game trees.
+
 use crate::game_state::chess_types::*;
 
 /// Single undo record for `make_move` / `unmake_move`.
