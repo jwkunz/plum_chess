@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::thread;
 
 use crate::game_state::game_state::GameState;
+use crate::move_generation::legal_move_generator::LegalMoveGenerator;
 use crate::move_generation::move_generator::{
     GeneratedMove, MoveGenResult, MoveGenerationError, MoveGenerator,
 };
@@ -38,6 +39,11 @@ impl PerftCounts {
 
 pub fn perft<G: MoveGenerator>(generator: &G, game_state: &GameState, depth: u8) -> MoveGenResult<PerftCounts> {
     perft_single_thread(generator, game_state, depth)
+}
+
+pub fn perft_legal(game_state: &GameState, depth: u8) -> MoveGenResult<PerftCounts> {
+    let generator = LegalMoveGenerator;
+    perft(&generator, game_state, depth)
 }
 
 pub fn perft_single_thread<G: MoveGenerator>(
@@ -147,6 +153,7 @@ fn perft_recurse(
 
 #[cfg(test)]
 mod tests {
+    use crate::game_state::game_state::GameState;
     use crate::game_state::chess_types::{Color, PieceKind};
     use crate::move_generation::move_generator::MoveAnnotations;
     use crate::moves::move_descriptions::{
@@ -287,5 +294,284 @@ mod tests {
                 checkmates: 1,
             }
         );
+    }
+
+    #[test]
+    fn perft_start_position_nodes_depth_1_to_3() {
+        let game = GameState::new_game();
+        let expected = [20usize, 400, 8902];
+
+        for (idx, target_nodes) in expected.iter().enumerate() {
+            let depth = (idx + 1) as u8;
+            let counts = perft_legal(&game, depth).expect("perft should run");
+            assert_eq!(
+                counts.nodes, *target_nodes,
+                "node mismatch at depth {depth}"
+            );
+        }
+    }
+
+    #[test]
+    fn perft_position_1_depth_1_to_4_full_counts() {
+        let game = GameState::new_game();
+        let results = [
+            PerftCounts {
+                nodes: 20,
+                captures: 0,
+                en_passant: 0,
+                castles: 0,
+                promotions: 0,
+                checks: 0,
+                discovery_checks: 0,
+                double_checks: 0,
+                checkmates: 0,
+            },
+            PerftCounts {
+                nodes: 400,
+                captures: 0,
+                en_passant: 0,
+                castles: 0,
+                promotions: 0,
+                checks: 0,
+                discovery_checks: 0,
+                double_checks: 0,
+                checkmates: 0,
+            },
+            PerftCounts {
+                nodes: 8902,
+                captures: 34,
+                en_passant: 0,
+                castles: 0,
+                promotions: 0,
+                checks: 12,
+                discovery_checks: 0,
+                double_checks: 0,
+                checkmates: 0,
+            },
+            PerftCounts {
+                nodes: 197281,
+                captures: 1576,
+                en_passant: 0,
+                castles: 0,
+                promotions: 0,
+                checks: 469,
+                discovery_checks: 0,
+                double_checks: 0,
+                checkmates: 8,
+            },
+        ];
+
+        for (idx, target) in results.iter().enumerate() {
+            let depth = (idx + 1) as u8;
+            let count = perft_legal(&game, depth).expect("perft should run");
+            assert_eq!(count, *target, "mismatch at depth {depth}");
+        }
+    }
+
+    #[test]
+    fn perft_position_2_depth_1_to_3_full_counts() {
+        let game = GameState::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 0")
+            .expect("FEN should parse");
+        let results = [
+            PerftCounts {
+                nodes: 48,
+                captures: 8,
+                en_passant: 0,
+                castles: 2,
+                promotions: 0,
+                checks: 0,
+                discovery_checks: 0,
+                double_checks: 0,
+                checkmates: 0,
+            },
+            PerftCounts {
+                nodes: 2039,
+                captures: 351,
+                en_passant: 1,
+                castles: 91,
+                promotions: 0,
+                checks: 3,
+                discovery_checks: 0,
+                double_checks: 0,
+                checkmates: 0,
+            },
+            PerftCounts {
+                nodes: 97862,
+                captures: 17102,
+                en_passant: 45,
+                castles: 3162,
+                promotions: 0,
+                checks: 993,
+                discovery_checks: 0,
+                double_checks: 0,
+                checkmates: 1,
+            },
+        ];
+
+        for (idx, target) in results.iter().enumerate() {
+            let depth = (idx + 1) as u8;
+            let count = perft_legal(&game, depth).expect("perft should run");
+            assert_eq!(count, *target, "mismatch at depth {depth}");
+        }
+    }
+
+    #[test]
+    fn perft_position_3_depth_1_to_5_full_counts() {
+        let game =
+            GameState::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1").expect("FEN should parse");
+        let results = [
+            PerftCounts {
+                nodes: 14,
+                captures: 1,
+                en_passant: 0,
+                castles: 0,
+                promotions: 0,
+                checks: 2,
+                discovery_checks: 0,
+                double_checks: 0,
+                checkmates: 0,
+            },
+            PerftCounts {
+                nodes: 191,
+                captures: 14,
+                en_passant: 0,
+                castles: 0,
+                promotions: 0,
+                checks: 10,
+                discovery_checks: 0,
+                double_checks: 0,
+                checkmates: 0,
+            },
+            PerftCounts {
+                nodes: 2812,
+                captures: 209,
+                en_passant: 2,
+                castles: 0,
+                promotions: 0,
+                checks: 267,
+                discovery_checks: 3,
+                double_checks: 0,
+                checkmates: 0,
+            },
+            PerftCounts {
+                nodes: 43238,
+                captures: 3348,
+                en_passant: 123,
+                castles: 0,
+                promotions: 0,
+                checks: 1680,
+                discovery_checks: 106,
+                double_checks: 0,
+                checkmates: 17,
+            },
+            PerftCounts {
+                nodes: 674624,
+                captures: 52051,
+                en_passant: 1165,
+                castles: 0,
+                promotions: 0,
+                checks: 52950,
+                discovery_checks: 1292,
+                double_checks: 3,
+                checkmates: 0,
+            },
+        ];
+
+        for (idx, target) in results.iter().enumerate() {
+            let depth = (idx + 1) as u8;
+            let count = perft_legal(&game, depth).expect("perft should run");
+            assert_eq!(count, *target, "mismatch at depth {depth}");
+        }
+    }
+
+    #[test]
+    fn perft_position_4_depth_1_to_4_full_counts() {
+        let game = GameState::from_fen("r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1")
+            .expect("FEN should parse");
+        let results = [
+            PerftCounts {
+                nodes: 6,
+                captures: 0,
+                en_passant: 0,
+                castles: 0,
+                promotions: 0,
+                checks: 0,
+                discovery_checks: 0,
+                double_checks: 0,
+                checkmates: 0,
+            },
+            PerftCounts {
+                nodes: 264,
+                captures: 87,
+                en_passant: 0,
+                castles: 6,
+                promotions: 48,
+                checks: 10,
+                discovery_checks: 0,
+                double_checks: 0,
+                checkmates: 0,
+            },
+            PerftCounts {
+                nodes: 9467,
+                captures: 1021,
+                en_passant: 4,
+                castles: 0,
+                promotions: 120,
+                checks: 38,
+                discovery_checks: 2,
+                double_checks: 0,
+                checkmates: 22,
+            },
+            PerftCounts {
+                nodes: 422333,
+                captures: 131393,
+                en_passant: 0,
+                castles: 7795,
+                promotions: 60032,
+                checks: 15492,
+                discovery_checks: 19,
+                double_checks: 0,
+                checkmates: 5,
+            },
+        ];
+
+        for (idx, target) in results.iter().enumerate() {
+            let depth = (idx + 1) as u8;
+            let count = perft_legal(&game, depth).expect("perft should run");
+            assert_eq!(count, *target, "mismatch at depth {depth}");
+        }
+    }
+
+    #[test]
+    fn perft_position_5_nodes_depth_1_to_4() {
+        let game = GameState::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8")
+            .expect("FEN should parse");
+        let results = [44usize, 1486, 62379, 2103487];
+
+        for (idx, target_nodes) in results.iter().enumerate() {
+            let depth = (idx + 1) as u8;
+            let count = perft_legal(&game, depth).expect("perft should run");
+            assert_eq!(
+                count.nodes, *target_nodes,
+                "node mismatch at depth {depth}"
+            );
+        }
+    }
+
+    #[test]
+    fn perft_position_6_nodes_depth_1_to_4() {
+        let game =
+            GameState::from_fen("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10")
+                .expect("FEN should parse");
+        let results = [46usize, 2079, 89890, 3894594];
+
+        for (idx, target_nodes) in results.iter().enumerate() {
+            let depth = (idx + 1) as u8;
+            let count = perft_legal(&game, depth).expect("perft should run");
+            assert_eq!(
+                count.nodes, *target_nodes,
+                "node mismatch at depth {depth}"
+            );
+        }
     }
 }

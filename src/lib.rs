@@ -15,10 +15,7 @@ pub mod moves{
     pub mod move_descriptions;
 }
 
-pub mod move_generation{
-    pub mod move_generator;
-    pub mod perft;
-}
+pub mod move_generation;
 
 pub mod utils {
     pub mod fen_generator;

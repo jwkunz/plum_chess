@@ -1,4 +1,7 @@
 use crate::game_state::chess_types::*;
+use crate::game_state::chess_rules::STARTING_POSITION_FEN;
+use crate::utils::fen_generator::generate_fen;
+use crate::utils::fen_parser::parse_fen;
 
 
 /// Incremental game state optimized for fast move making/unmaking.
@@ -62,5 +65,20 @@ impl GameState {
     #[inline]
     pub fn new_empty() -> Self {
         Self::default()
+    }
+
+    #[inline]
+    pub fn new_game() -> Self {
+        parse_fen(STARTING_POSITION_FEN).expect("starting FEN should always parse")
+    }
+
+    #[inline]
+    pub fn from_fen(fen: &str) -> Result<Self, String> {
+        parse_fen(fen)
+    }
+
+    #[inline]
+    pub fn get_fen(&self) -> String {
+        generate_fen(self)
     }
 }
