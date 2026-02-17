@@ -1,6 +1,7 @@
 use std::io::{self, BufRead, Write};
 
 use crate::engines::engine_greedy::GreedyEngine;
+use crate::engines::engine_iterative::IterativeEngine;
 use crate::engines::engine_random::RandomEngine;
 use crate::engines::engine_trait::{Engine, GoParams};
 use crate::game_state::game_state::GameState;
@@ -57,7 +58,7 @@ impl UciState {
                 writeln!(out, "id author {}", self.engine.author())?;
                 writeln!(
                     out,
-                    "option name Skill Level type spin default 1 min 1 max 2"
+                    "option name Skill Level type spin default 1 min 1 max 5"
                 )?;
                 writeln!(out, "uciok")?;
             }
@@ -123,7 +124,7 @@ impl UciState {
             let parsed = value
                 .parse::<u8>()
                 .map_err(|_| format!("invalid Skill Level value '{}'", value))?;
-            if !(1..=2).contains(&parsed) {
+            if !(1..=5).contains(&parsed) {
                 return Err(format!("Skill Level out of range: {}", parsed));
             }
             self.skill_level = parsed;
@@ -211,6 +212,9 @@ fn parse_go_params(line: &str) -> GoParams {
 
 fn build_engine(skill_level: u8) -> Box<dyn Engine> {
     match skill_level {
+        5 => Box::new(IterativeEngine::new(5)),
+        4 => Box::new(IterativeEngine::new(3)),
+        3 => Box::new(IterativeEngine::new(1)),
         2 => Box::new(GreedyEngine::new()),
         _ => Box::new(RandomEngine::new()),
     }
@@ -249,5 +253,10 @@ mod tests {
             .handle_setoption("setoption name Skill Level value 2")
             .expect("setoption should parse");
         assert_eq!(state.engine.name(), "PlumChess Greedy");
+
+        state
+            .handle_setoption("setoption name Skill Level value 3")
+            .expect("setoption should parse");
+        assert_eq!(state.engine.name(), "PlumChess Iterative");
     }
 }

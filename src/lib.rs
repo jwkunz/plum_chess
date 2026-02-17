@@ -39,6 +39,7 @@ pub mod uci {
 }
 pub mod engines {
     pub mod engine_greedy;
+    pub mod engine_iterative;
     pub mod engine_random;
     pub mod engine_trait;
 }
