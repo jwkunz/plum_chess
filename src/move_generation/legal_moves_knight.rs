@@ -1,5 +1,6 @@
 use crate::game_state::{chess_types::*, game_state::GameState};
 use crate::move_generation::legal_move_apply::build_move;
+use crate::move_generation::legal_move_shared::enemy_piece_on;
 use crate::moves::knight_moves::knight_attacks;
 use crate::moves::move_descriptions::FLAG_CAPTURE;
 
@@ -35,22 +36,4 @@ pub fn generate_knight_moves(game_state: &GameState, out: &mut Vec<u64>) {
 
         knights &= knights - 1;
     }
-}
-
-fn enemy_piece_on(game_state: &GameState, square: Square) -> Option<PieceKind> {
-    let enemy = game_state.side_to_move.opposite();
-    let mask = 1u64 << square;
-    for piece in [
-        PieceKind::Pawn,
-        PieceKind::Knight,
-        PieceKind::Bishop,
-        PieceKind::Rook,
-        PieceKind::Queen,
-        PieceKind::King,
-    ] {
-        if (game_state.pieces[enemy.index()][piece.index()] & mask) != 0 {
-            return Some(piece);
-        }
-    }
-    None
 }

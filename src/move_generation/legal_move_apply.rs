@@ -1,4 +1,5 @@
 use crate::game_state::{chess_types::*, game_state::GameState};
+use crate::move_generation::legal_move_shared::{piece_on_square_any, ALL_PIECE_KINDS};
 use crate::moves::move_descriptions::{
     move_from, move_promotion_piece_code, move_to, pack_move_description, piece_kind_from_code,
     FLAG_CAPTURE, FLAG_CASTLING, FLAG_DOUBLE_PAWN_PUSH, FLAG_EN_PASSANT,
@@ -13,7 +14,7 @@ pub fn apply_move(game_state: &GameState, move_description: u64) -> Result<GameS
     let moving_color = game_state.side_to_move;
     let enemy_color = moving_color.opposite();
 
-    let moved_piece = piece_on_square(game_state, from)
+    let moved_piece = piece_on_square_any(game_state, from)
         .ok_or_else(|| format!("No piece on from-square {from}"))?
         .1;
 
@@ -96,34 +97,8 @@ pub fn build_move(
     pack_move_description(from, to, moved_piece, captured_piece, promotion_piece, flags)
 }
 
-fn piece_on_square(game_state: &GameState, square: Square) -> Option<(Color, PieceKind)> {
-    let mask = 1u64 << square;
-    for color in [Color::Light, Color::Dark] {
-        for piece in [
-            PieceKind::Pawn,
-            PieceKind::Knight,
-            PieceKind::Bishop,
-            PieceKind::Rook,
-            PieceKind::Queen,
-            PieceKind::King,
-        ] {
-            if (game_state.pieces[color.index()][piece.index()] & mask) != 0 {
-                return Some((color, piece));
-            }
-        }
-    }
-    None
-}
-
 fn clear_enemy_piece_on_square(game_state: &mut GameState, enemy_color: Color, square_mask: u64) {
-    for piece in [
-        PieceKind::Pawn,
-        PieceKind::Knight,
-        PieceKind::Bishop,
-        PieceKind::Rook,
-        PieceKind::Queen,
-        PieceKind::King,
-    ] {
+    for piece in ALL_PIECE_KINDS {
         game_state.pieces[enemy_color.index()][piece.index()] &= !square_mask;
     }
 }

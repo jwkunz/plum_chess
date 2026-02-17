@@ -15,7 +15,20 @@ pub mod moves{
     pub mod move_descriptions;
 }
 
-pub mod move_generation;
+pub mod move_generation{
+    pub mod legal_move_apply;
+    pub mod legal_move_checks;
+    pub mod legal_move_generator;
+    pub mod legal_move_shared;
+    pub mod legal_moves_bishop;
+    pub mod legal_moves_king;
+    pub mod legal_moves_knight;
+    pub mod legal_moves_pawn;
+    pub mod legal_moves_queen;
+    pub mod legal_moves_rook;
+    pub mod move_generator;
+    pub mod perft;
+}
 
 pub mod utils {
     pub mod fen_generator;
