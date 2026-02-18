@@ -29,14 +29,6 @@ impl Default for RandomEngine {
 }
 
 impl Engine for RandomEngine {
-    fn name(&self) -> &str {
-        "PlumChess Random"
-    }
-
-    fn author(&self) -> &str {
-        "jwkunz+codex"
-    }
-
     fn choose_move(
         &mut self,
         game_state: &GameState,

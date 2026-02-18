@@ -15,6 +15,9 @@ use crate::utils::long_algebraic::{
     long_algebraic_to_move_description, move_description_to_long_algebraic,
 };
 
+const UCI_ENGINE_NAME: &str = "Plum Chess";
+const UCI_ENGINE_AUTHOR: &str = "jwkunz using Codex";
+
 pub fn run_stdio_loop() -> io::Result<()> {
     let stdin = io::stdin();
     let mut stdout = io::stdout();
@@ -70,8 +73,8 @@ impl UciState {
 
         match cmd {
             "uci" => {
-                writeln!(out, "id name {}", self.engine.name())?;
-                writeln!(out, "id author {}", self.engine.author())?;
+                writeln!(out, "id name {}", UCI_ENGINE_NAME)?;
+                writeln!(out, "id author {}", UCI_ENGINE_AUTHOR)?;
                 writeln!(
                     out,
                     "option name Skill Level type spin default 1 min 1 max 5"
@@ -318,17 +321,17 @@ mod tests {
     #[test]
     fn setoption_skill_level_switches_engine() {
         let mut state = UciState::new();
-        assert_eq!(state.engine.name(), "PlumChess Random");
+        assert_eq!(state.skill_level, 1);
 
         state
             .handle_setoption("setoption name Skill Level value 2")
             .expect("setoption should parse");
-        assert_eq!(state.engine.name(), "PlumChess Greedy");
+        assert_eq!(state.skill_level, 2);
 
         state
             .handle_setoption("setoption name Skill Level value 3")
             .expect("setoption should parse");
-        assert_eq!(state.engine.name(), "PlumChess Iterative");
+        assert_eq!(state.skill_level, 3);
     }
 
     #[test]

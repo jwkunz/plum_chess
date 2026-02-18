@@ -22,9 +22,6 @@ pub struct EngineOutput {
 }
 
 pub trait Engine: Send {
-    fn name(&self) -> &str;
-    fn author(&self) -> &str;
-
     fn new_game(&mut self) {}
     fn set_option(&mut self, _name: &str, _value: &str) -> Result<(), String> {
         Ok(())

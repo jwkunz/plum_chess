@@ -43,14 +43,6 @@ impl IterativeEngine {
 }
 
 impl Engine for IterativeEngine {
-    fn name(&self) -> &str {
-        "PlumChess Iterative"
-    }
-
-    fn author(&self) -> &str {
-        "jwkunz+codex"
-    }
-
     fn new_game(&mut self) {
         self.tt.clear();
     }

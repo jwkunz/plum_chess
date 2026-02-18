@@ -45,14 +45,6 @@ impl Default for GreedyEngine {
 }
 
 impl Engine for GreedyEngine {
-    fn name(&self) -> &str {
-        "PlumChess Greedy"
-    }
-
-    fn author(&self) -> &str {
-        "jwkunz+codex"
-    }
-
     fn choose_move(
         &mut self,
         game_state: &GameState,
