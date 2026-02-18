@@ -122,9 +122,6 @@ pub fn make_move_in_place(game_state: &mut GameState, move_description: u64) -> 
         mv: move_description as Move,
         moved_piece,
         captured_piece,
-        prev_pieces: game_state.pieces,
-        prev_occupancy_by_color: game_state.occupancy_by_color,
-        prev_occupancy_all: game_state.occupancy_all,
         prev_side_to_move: game_state.side_to_move,
         prev_castling_rights: game_state.castling_rights,
         prev_en_passant_square: game_state.en_passant_square,
@@ -211,10 +208,53 @@ pub fn unmake_move_in_place(game_state: &mut GameState) -> Result<(), String> {
         .pop()
         .ok_or("undo stack is empty; cannot unmake move")?;
 
-    game_state.pieces = undo.prev_pieces;
-    game_state.occupancy_by_color = undo.prev_occupancy_by_color;
-    game_state.occupancy_all = undo.prev_occupancy_all;
-    game_state.side_to_move = undo.prev_side_to_move;
+    let moving_color = undo.prev_side_to_move;
+    let enemy_color = moving_color.opposite();
+    let mv = undo.mv as u64;
+    let from = move_from(mv);
+    let to = move_to(mv);
+    let from_mask = 1u64 << from;
+    let to_mask = 1u64 << to;
+
+    // Restore side-to-move before piece restoration so any derived logic
+    // aligns with the pre-move perspective.
+    game_state.side_to_move = moving_color;
+
+    // Remove moved/promoted piece from destination and restore mover on origin.
+    let promotion_piece = piece_kind_from_code(move_promotion_piece_code(mv));
+    if let Some(promo) = promotion_piece {
+        game_state.pieces[moving_color.index()][promo.index()] &= !to_mask;
+    } else {
+        game_state.pieces[moving_color.index()][undo.moved_piece.index()] &= !to_mask;
+    }
+    game_state.pieces[moving_color.index()][undo.moved_piece.index()] |= from_mask;
+
+    // Undo castling rook move.
+    if (mv & FLAG_CASTLING) != 0 && undo.moved_piece == PieceKind::King {
+        match (moving_color, from, to) {
+            (Color::Light, 4, 6) => move_rook(game_state, moving_color, 5, 7),
+            (Color::Light, 4, 2) => move_rook(game_state, moving_color, 3, 0),
+            (Color::Dark, 60, 62) => move_rook(game_state, moving_color, 61, 63),
+            (Color::Dark, 60, 58) => move_rook(game_state, moving_color, 59, 56),
+            _ => {}
+        }
+    }
+
+    // Restore captured piece, if any.
+    if (mv & FLAG_EN_PASSANT) != 0 {
+        let capture_sq = if moving_color == Color::Light {
+            to.checked_sub(8)
+                .ok_or("Invalid en-passant capture square for light during unmake")?
+        } else {
+            to.checked_add(8)
+                .ok_or("Invalid en-passant capture square for dark during unmake")?
+        };
+        let capture_mask = 1u64 << capture_sq;
+        game_state.pieces[enemy_color.index()][PieceKind::Pawn.index()] |= capture_mask;
+    } else if let Some(captured_piece) = undo.captured_piece {
+        game_state.pieces[enemy_color.index()][captured_piece.index()] |= to_mask;
+    }
+
     game_state.castling_rights = undo.prev_castling_rights;
     game_state.en_passant_square = undo.prev_en_passant_square;
     game_state.halfmove_clock = undo.prev_halfmove_clock;
@@ -225,6 +265,7 @@ pub fn unmake_move_in_place(game_state: &mut GameState) -> Result<(), String> {
     game_state
         .repetition_history
         .truncate(undo.prev_repetition_len);
+    recalc_occupancy(game_state);
 
     Ok(())
 }
