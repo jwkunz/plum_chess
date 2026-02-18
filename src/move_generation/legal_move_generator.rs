@@ -22,10 +22,17 @@ use crate::moves::move_descriptions::{
 };
 
 pub struct LegalMoveGenerator;
+pub struct FastLegalMoveGenerator;
 
 impl MoveGenerator for LegalMoveGenerator {
     fn generate_legal_moves(&self, game_state: &GameState) -> MoveGenResult<Vec<GeneratedMove>> {
         self.generate_legal_moves_internal(game_state, true)
+    }
+}
+
+impl MoveGenerator for FastLegalMoveGenerator {
+    fn generate_legal_moves(&self, game_state: &GameState) -> MoveGenResult<Vec<GeneratedMove>> {
+        LegalMoveGenerator.generate_legal_moves_internal(game_state, false)
     }
 }
 
@@ -167,4 +174,24 @@ fn is_square_between(mid: u8, a: u8, b: u8) -> bool {
     }
 
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FastLegalMoveGenerator, LegalMoveGenerator};
+    use crate::game_state::game_state::GameState;
+    use crate::move_generation::move_generator::MoveGenerator;
+
+    #[test]
+    fn fast_generator_matches_legal_move_count_on_startpos() {
+        let game = GameState::new_game();
+        let annotated = LegalMoveGenerator
+            .generate_legal_moves(&game)
+            .expect("annotated move generation should succeed");
+        let fast = FastLegalMoveGenerator
+            .generate_legal_moves(&game)
+            .expect("fast move generation should succeed");
+        assert_eq!(annotated.len(), fast.len());
+        assert_eq!(fast.len(), 20);
+    }
 }

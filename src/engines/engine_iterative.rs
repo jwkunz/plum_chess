@@ -5,27 +5,38 @@
 
 use crate::engines::engine_trait::{Engine, EngineOutput, GoParams};
 use crate::game_state::game_state::GameState;
-use crate::move_generation::legal_move_generator::LegalMoveGenerator;
+use crate::move_generation::legal_move_generator::FastLegalMoveGenerator;
 use crate::move_generation::move_generator::MoveGenerator;
-use crate::search::board_scoring::MaterialScorer;
-use crate::search::iterative_deepening::{iterative_deepening_search, SearchConfig};
+use crate::search::board_scoring::StandardScorer;
+use crate::search::iterative_deepening::{
+    iterative_deepening_search_with_tt, principal_variation_from_tt, SearchConfig,
+};
+use crate::search::transposition_table::TranspositionTable;
 use crate::tables::opening_book::OpeningBook;
+use crate::utils::long_algebraic::move_description_to_long_algebraic;
 use rand::rng;
 
 pub struct IterativeEngine {
     default_depth: u8,
-    move_generator: LegalMoveGenerator,
-    scorer: MaterialScorer,
+    move_generator: FastLegalMoveGenerator,
+    scorer: StandardScorer,
     opening_book: OpeningBook,
+    use_own_book: bool,
+    tt: TranspositionTable,
+    hash_mb: usize,
 }
 
 impl IterativeEngine {
     pub fn new(default_depth: u8) -> Self {
+        let hash_mb = 64usize;
         Self {
             default_depth,
-            move_generator: LegalMoveGenerator,
-            scorer: MaterialScorer,
+            move_generator: FastLegalMoveGenerator,
+            scorer: StandardScorer,
             opening_book: OpeningBook::load_default(),
+            use_own_book: true,
+            tt: TranspositionTable::new_with_mb(hash_mb),
+            hash_mb,
         }
     }
 }
@@ -39,12 +50,34 @@ impl Engine for IterativeEngine {
         "jwkunz+codex"
     }
 
+    fn new_game(&mut self) {
+        self.tt.clear();
+    }
+
+    fn set_option(&mut self, name: &str, value: &str) -> Result<(), String> {
+        if name.eq_ignore_ascii_case("OwnBook") {
+            let v = value.trim().to_ascii_lowercase();
+            self.use_own_book = matches!(v.as_str(), "true" | "1" | "yes" | "on");
+            return Ok(());
+        }
+        if name.eq_ignore_ascii_case("Hash") {
+            let parsed = value
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| format!("invalid Hash value '{value}'"))?;
+            self.hash_mb = parsed.max(1);
+            self.tt = TranspositionTable::new_with_mb(self.hash_mb);
+            return Ok(());
+        }
+        Ok(())
+    }
+
     fn choose_move(
         &mut self,
         game_state: &GameState,
         params: &GoParams,
     ) -> Result<EngineOutput, String> {
-        if params.depth.is_none() && game_state.ply < 20 {
+        if self.use_own_book && params.depth.is_none() && game_state.ply < 20 {
             let mut rng = rng();
             if let Some(book_move) = self.opening_book.choose_weighted_move(game_state, &mut rng) {
                 let mut out = EngineOutput::default();
@@ -59,7 +92,7 @@ impl Engine for IterativeEngine {
         // configured difficulty depth for this engine instance.
         let depth = params.depth.unwrap_or(self.default_depth).max(1);
 
-        let result = iterative_deepening_search(
+        let result = iterative_deepening_search_with_tt(
             game_state,
             &self.move_generator,
             &self.scorer,
@@ -67,6 +100,7 @@ impl Engine for IterativeEngine {
                 max_depth: depth,
                 movetime_ms: params.movetime_ms,
             },
+            &mut self.tt,
         )
         .map_err(|e| e.to_string())?;
 
@@ -80,8 +114,8 @@ impl Engine for IterativeEngine {
             out.best_move = legal.first().map(|m| m.move_description);
         }
         out.info_lines.push(format!(
-            "info depth {} score cp {} nodes {}",
-            result.reached_depth, result.best_score, result.nodes
+            "info depth {} score cp {} nodes {} time {} nps {}",
+            result.reached_depth, result.best_score, result.nodes, result.elapsed_ms, result.nps
         ));
         out.info_lines.push(format!(
             "info string iterative_engine default_depth {}",
@@ -92,6 +126,34 @@ impl Engine for IterativeEngine {
         if let Some(ms) = params.movetime_ms {
             out.info_lines
                 .push(format!("info string iterative_engine movetime_ms {}", ms));
+        }
+        out.info_lines.push(format!(
+            "info string tt probes {} hits {} stores {} size_entries {}",
+            result.tt_stats.probes,
+            result.tt_stats.hits,
+            result.tt_stats.stores,
+            self.tt.len()
+        ));
+
+        let pv = principal_variation_from_tt(game_state, &mut self.tt, result.reached_depth);
+        if !pv.moves.is_empty() {
+            let mut pv_lan = Vec::with_capacity(pv.moves.len());
+            let mut state = game_state.clone();
+            for m in pv.moves {
+                if let Ok(lan) = move_description_to_long_algebraic(m, &state) {
+                    pv_lan.push(lan);
+                } else {
+                    break;
+                }
+                if let Ok(next) = crate::move_generation::legal_move_apply::apply_move(&state, m) {
+                    state = next;
+                } else {
+                    break;
+                }
+            }
+            if !pv_lan.is_empty() {
+                out.info_lines.push(format!("info pv {}", pv_lan.join(" ")));
+            }
         }
 
         Ok(out)

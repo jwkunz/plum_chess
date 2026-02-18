@@ -26,6 +26,9 @@ pub trait Engine: Send {
     fn author(&self) -> &str;
 
     fn new_game(&mut self) {}
+    fn set_option(&mut self, _name: &str, _value: &str) -> Result<(), String> {
+        Ok(())
+    }
 
     fn choose_move(
         &mut self,

@@ -37,16 +37,25 @@ struct UciState {
     engine: Box<dyn Engine>,
     skill_level: u8,
     fixed_depth_override: Option<u8>,
+    hash_mb: usize,
+    own_book: bool,
 }
 
 impl UciState {
     fn new() -> Self {
         let skill_level = 1;
+        let hash_mb = 64usize;
+        let own_book = true;
+        let mut engine = build_engine(skill_level);
+        let _ = engine.set_option("Hash", &hash_mb.to_string());
+        let _ = engine.set_option("OwnBook", if own_book { "true" } else { "false" });
         Self {
             game_state: GameState::new_game(),
-            engine: build_engine(skill_level),
+            engine,
             skill_level,
             fixed_depth_override: None,
+            hash_mb,
+            own_book,
         }
     }
 
@@ -71,6 +80,8 @@ impl UciState {
                     out,
                     "option name FixedDepth type spin default 0 min 0 max 64"
                 )?;
+                writeln!(out, "option name Hash type spin default 64 min 1 max 4096")?;
+                writeln!(out, "option name OwnBook type check default true")?;
                 writeln!(out, "uciok")?;
             }
             "isready" => {
@@ -140,12 +151,29 @@ impl UciState {
             }
             self.skill_level = parsed;
             self.engine = build_engine(self.skill_level);
+            let _ = self.engine.set_option("Hash", &self.hash_mb.to_string());
+            let _ = self
+                .engine
+                .set_option("OwnBook", if self.own_book { "true" } else { "false" });
             self.engine.new_game();
         } else if name.eq_ignore_ascii_case("FixedDepth") {
             let parsed = value
                 .parse::<u8>()
                 .map_err(|_| format!("invalid FixedDepth value '{}'", value))?;
             self.fixed_depth_override = if parsed == 0 { None } else { Some(parsed) };
+        } else if name.eq_ignore_ascii_case("Hash") {
+            let parsed = value
+                .parse::<usize>()
+                .map_err(|_| format!("invalid Hash value '{}'", value))?;
+            self.hash_mb = parsed.max(1);
+            self.engine.set_option("Hash", &self.hash_mb.to_string())?;
+        } else if name.eq_ignore_ascii_case("OwnBook") {
+            let lower = value.to_ascii_lowercase();
+            self.own_book = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
+            self.engine
+                .set_option("OwnBook", if self.own_book { "true" } else { "false" })?;
+        } else {
+            self.engine.set_option(&name, &value)?;
         }
 
         Ok(())
@@ -317,6 +345,20 @@ mod tests {
             .handle_setoption("setoption name FixedDepth value 0")
             .expect("setoption should parse");
         assert_eq!(state.fixed_depth_override, None);
+    }
+
+    #[test]
+    fn setoption_hash_and_ownbook_parse() {
+        let mut state = UciState::new();
+        state
+            .handle_setoption("setoption name Hash value 128")
+            .expect("hash should parse");
+        assert_eq!(state.hash_mb, 128);
+
+        state
+            .handle_setoption("setoption name OwnBook value false")
+            .expect("ownbook should parse");
+        assert!(!state.own_book);
     }
 
     #[test]

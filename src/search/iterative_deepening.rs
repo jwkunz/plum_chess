@@ -6,7 +6,13 @@
 use crate::game_state::game_state::GameState;
 use crate::move_generation::legal_move_checks::is_king_in_check;
 use crate::move_generation::move_generator::{MoveGenResult, MoveGenerator};
+use crate::moves::move_descriptions::{
+    move_captured_piece_code, move_promotion_piece_code, piece_kind_from_code, FLAG_CAPTURE,
+    FLAG_EN_PASSANT, NO_PIECE_CODE,
+};
 use crate::search::board_scoring::BoardScorer;
+use crate::search::transposition_table::{Bound, TTEntry, TTStats, TranspositionTable};
+use crate::utils::long_algebraic::move_description_to_long_algebraic;
 use std::time::{Duration, Instant};
 
 const MATE_SCORE: i32 = 30000;
@@ -32,6 +38,14 @@ pub struct SearchResult {
     pub best_score: i32,
     pub reached_depth: u8,
     pub nodes: u64,
+    pub elapsed_ms: u64,
+    pub nps: u64,
+    pub tt_stats: TTStats,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PrincipalVariation {
+    pub moves: Vec<u64>,
 }
 
 pub fn iterative_deepening_search<G: MoveGenerator, S: BoardScorer>(
@@ -40,17 +54,32 @@ pub fn iterative_deepening_search<G: MoveGenerator, S: BoardScorer>(
     scorer: &S,
     config: SearchConfig,
 ) -> MoveGenResult<SearchResult> {
+    let mut local_tt = TranspositionTable::new_with_mb(16);
+    iterative_deepening_search_with_tt(game_state, generator, scorer, config, &mut local_tt)
+}
+
+pub fn iterative_deepening_search_with_tt<G: MoveGenerator, S: BoardScorer>(
+    game_state: &GameState,
+    generator: &G,
+    scorer: &S,
+    config: SearchConfig,
+    tt: &mut TranspositionTable,
+) -> MoveGenResult<SearchResult> {
     let started_at = Instant::now();
     let deadline = config
         .movetime_ms
         .map(|ms| started_at + Duration::from_millis(ms.max(1)));
 
     if config.max_depth == 0 {
+        let elapsed_ms = started_at.elapsed().as_millis() as u64;
         return Ok(SearchResult {
             best_move: None,
             best_score: scorer.score(game_state),
             reached_depth: 0,
             nodes: 1,
+            elapsed_ms,
+            nps: 0,
+            tt_stats: tt.stats(),
         });
     }
 
@@ -64,8 +93,9 @@ pub fn iterative_deepening_search<G: MoveGenerator, S: BoardScorer>(
         }
 
         let mut nodes = 0u64;
-        let Some((best_move, best_score)) =
-            negamax_root(game_state, generator, scorer, depth, &mut nodes, deadline)?
+        let Some((best_move, best_score)) = negamax_root(
+            game_state, generator, scorer, depth, &mut nodes, deadline, tt,
+        )?
         else {
             break;
         };
@@ -75,6 +105,14 @@ pub fn iterative_deepening_search<G: MoveGenerator, S: BoardScorer>(
         result.reached_depth = depth;
         result.nodes = nodes;
     }
+
+    result.elapsed_ms = started_at.elapsed().as_millis() as u64;
+    result.nps = if result.elapsed_ms == 0 {
+        0
+    } else {
+        result.nodes.saturating_mul(1000) / result.elapsed_ms
+    };
+    result.tt_stats = tt.stats();
 
     Ok(result)
 }
@@ -86,13 +124,17 @@ fn negamax_root<G: MoveGenerator, S: BoardScorer>(
     depth: u8,
     nodes: &mut u64,
     deadline: Option<Instant>,
+    tt: &mut TranspositionTable,
 ) -> MoveGenResult<Option<(Option<u64>, i32)>> {
-    let moves = generator.generate_legal_moves(game_state)?;
+    let mut moves = generator.generate_legal_moves(game_state)?;
     if moves.is_empty() {
         let score = terminal_score(game_state, 0);
         *nodes += 1;
         return Ok(Some((None, score)));
     }
+
+    let tt_move = tt.probe(game_state.zobrist_key).and_then(|e| e.best_move);
+    order_moves(&mut moves, tt_move);
 
     let mut alpha = -MATE_SCORE;
     let beta = MATE_SCORE;
@@ -116,6 +158,7 @@ fn negamax_root<G: MoveGenerator, S: BoardScorer>(
             1,
             nodes,
             deadline,
+            tt,
         )?
         else {
             return Ok(None);
@@ -144,6 +187,7 @@ fn negamax<G: MoveGenerator, S: BoardScorer>(
     ply: u8,
     nodes: &mut u64,
     deadline: Option<Instant>,
+    tt: &mut TranspositionTable,
 ) -> MoveGenResult<Option<i32>> {
     if let Some(limit) = deadline {
         if Instant::now() >= limit {
@@ -151,24 +195,48 @@ fn negamax<G: MoveGenerator, S: BoardScorer>(
         }
     }
 
+    if is_draw_state(game_state) {
+        return Ok(Some(0));
+    }
+
+    let alpha_orig = alpha;
+
+    if let Some(entry) = tt.probe(game_state.zobrist_key) {
+        if entry.depth >= depth {
+            match entry.bound {
+                Bound::Exact => return Ok(Some(entry.score)),
+                Bound::Lower if entry.score >= beta => return Ok(Some(entry.score)),
+                Bound::Upper if entry.score <= alpha => return Ok(Some(entry.score)),
+                _ => {}
+            }
+        }
+    }
+
     *nodes += 1;
 
     if depth == 0 {
-        // Even at horizon, terminal positions must dominate material so the
-        // engine reliably chooses mating lines (for example, mate in 1).
-        let horizon_moves = generator.generate_legal_moves(game_state)?;
-        if horizon_moves.is_empty() {
-            return Ok(Some(terminal_score(game_state, ply)));
-        }
-        return Ok(Some(scorer.score(game_state)));
+        let q = quiescence(
+            game_state, generator, scorer, alpha, beta, nodes, deadline, tt,
+        )?;
+        return Ok(q);
     }
 
-    let moves = generator.generate_legal_moves(game_state)?;
+    let mut moves = generator.generate_legal_moves(game_state)?;
     if moves.is_empty() {
         return Ok(Some(terminal_score(game_state, ply)));
     }
 
+    let tt_move = tt.probe(game_state.zobrist_key).and_then(|entry| {
+        if entry.depth >= depth {
+            entry.best_move
+        } else {
+            None
+        }
+    });
+    order_moves(&mut moves, tt_move);
+
     let mut best = -MATE_SCORE;
+    let mut best_move = None;
 
     for mv in moves {
         if let Some(limit) = deadline {
@@ -187,6 +255,7 @@ fn negamax<G: MoveGenerator, S: BoardScorer>(
             ply.saturating_add(1),
             nodes,
             deadline,
+            tt,
         )?
         else {
             return Ok(None);
@@ -195,6 +264,7 @@ fn negamax<G: MoveGenerator, S: BoardScorer>(
 
         if score > best {
             best = score;
+            best_move = Some(mv.move_description);
         }
         if score > alpha {
             alpha = score;
@@ -203,6 +273,22 @@ fn negamax<G: MoveGenerator, S: BoardScorer>(
             break;
         }
     }
+
+    let bound = if best <= alpha_orig {
+        Bound::Upper
+    } else if best >= beta {
+        Bound::Lower
+    } else {
+        Bound::Exact
+    };
+
+    tt.store(TTEntry {
+        key: game_state.zobrist_key,
+        depth,
+        score: best,
+        bound,
+        best_move,
+    });
 
     Ok(Some(best))
 }
@@ -213,6 +299,205 @@ fn terminal_score(game_state: &GameState, ply: u8) -> i32 {
     } else {
         0
     }
+}
+
+fn quiescence<G: MoveGenerator, S: BoardScorer>(
+    game_state: &GameState,
+    generator: &G,
+    scorer: &S,
+    mut alpha: i32,
+    beta: i32,
+    nodes: &mut u64,
+    deadline: Option<Instant>,
+    _tt: &mut TranspositionTable,
+) -> MoveGenResult<Option<i32>> {
+    if let Some(limit) = deadline {
+        if Instant::now() >= limit {
+            return Ok(None);
+        }
+    }
+
+    if is_draw_state(game_state) {
+        return Ok(Some(0));
+    }
+
+    *nodes += 1;
+
+    // If side-to-move is in check, stand-pat is invalid. Search all legal
+    // evasions so check/mate semantics remain correct at the horizon.
+    if is_king_in_check(game_state, game_state.side_to_move) {
+        let moves = generator.generate_legal_moves(game_state)?;
+        if moves.is_empty() {
+            return Ok(Some(terminal_score(game_state, 0)));
+        }
+        let mut local_alpha = alpha;
+        let mut ordered = moves;
+        order_moves(&mut ordered, None);
+        for mv in ordered {
+            let Some(score) = quiescence(
+                &mv.game_after_move,
+                generator,
+                scorer,
+                -beta,
+                -local_alpha,
+                nodes,
+                deadline,
+                _tt,
+            )?
+            else {
+                return Ok(None);
+            };
+            let score = -score;
+            if score >= beta {
+                return Ok(Some(beta));
+            }
+            if score > local_alpha {
+                local_alpha = score;
+            }
+        }
+        return Ok(Some(local_alpha));
+    }
+
+    let stand_pat = scorer.score(game_state);
+    if stand_pat >= beta {
+        return Ok(Some(beta));
+    }
+    if stand_pat > alpha {
+        alpha = stand_pat;
+    }
+
+    let mut moves = generator.generate_legal_moves(game_state)?;
+    if moves.is_empty() {
+        return Ok(Some(terminal_score(game_state, 0)));
+    }
+
+    moves.retain(|m| is_tactical_move(m.move_description));
+    order_moves(&mut moves, None);
+
+    for mv in moves {
+        if let Some(limit) = deadline {
+            if Instant::now() >= limit {
+                return Ok(None);
+            }
+        }
+
+        let Some(score) = quiescence(
+            &mv.game_after_move,
+            generator,
+            scorer,
+            -beta,
+            -alpha,
+            nodes,
+            deadline,
+            _tt,
+        )?
+        else {
+            return Ok(None);
+        };
+        let score = -score;
+
+        if score >= beta {
+            return Ok(Some(beta));
+        }
+        if score > alpha {
+            alpha = score;
+        }
+    }
+
+    Ok(Some(alpha))
+}
+
+#[inline]
+fn is_draw_state(game_state: &GameState) -> bool {
+    if game_state.halfmove_clock >= 100 {
+        return true;
+    }
+    // Threefold repetition check.
+    let current = game_state.zobrist_key;
+    let count = game_state
+        .repetition_history
+        .iter()
+        .filter(|h| **h == current)
+        .count();
+    count >= 3
+}
+
+#[inline]
+fn is_tactical_move(move_description: u64) -> bool {
+    (move_description & (FLAG_CAPTURE | FLAG_EN_PASSANT)) != 0
+        || move_promotion_piece_code(move_description) != NO_PIECE_CODE
+}
+
+fn order_moves(
+    moves: &mut [crate::move_generation::move_generator::GeneratedMove],
+    tt_move: Option<u64>,
+) {
+    moves.sort_by_key(|m| -move_order_score(m.move_description, tt_move));
+}
+
+fn move_order_score(move_description: u64, tt_move: Option<u64>) -> i32 {
+    if Some(move_description) == tt_move {
+        return 1_000_000;
+    }
+    let mut score = 0i32;
+    if (move_description & (FLAG_CAPTURE | FLAG_EN_PASSANT)) != 0 {
+        let victim = piece_kind_from_code(move_captured_piece_code(move_description))
+            .map(piece_value)
+            .unwrap_or(100);
+        score += 100_000 + victim;
+    }
+    if move_promotion_piece_code(move_description) != NO_PIECE_CODE {
+        score += 90_000;
+    }
+    score
+}
+
+#[inline]
+fn piece_value(piece: crate::game_state::chess_types::PieceKind) -> i32 {
+    match piece {
+        crate::game_state::chess_types::PieceKind::Pawn => 100,
+        crate::game_state::chess_types::PieceKind::Knight => 320,
+        crate::game_state::chess_types::PieceKind::Bishop => 330,
+        crate::game_state::chess_types::PieceKind::Rook => 500,
+        crate::game_state::chess_types::PieceKind::Queen => 900,
+        crate::game_state::chess_types::PieceKind::King => 20_000,
+    }
+}
+
+pub fn principal_variation_from_tt(
+    game_state: &GameState,
+    tt: &mut TranspositionTable,
+    max_depth: u8,
+) -> PrincipalVariation {
+    let mut pv = PrincipalVariation::default();
+    let mut state = game_state.clone();
+
+    for _ in 0..max_depth {
+        let Some(entry) = tt.probe(state.zobrist_key) else {
+            break;
+        };
+        let Some(best_move) = entry.best_move else {
+            break;
+        };
+        let Ok(lan) = move_description_to_long_algebraic(best_move, &state) else {
+            break;
+        };
+        if long_algebraic_to_move_description_checked(&lan, &state).is_none() {
+            break;
+        }
+        pv.moves.push(best_move);
+        let Ok(next) = crate::move_generation::legal_move_apply::apply_move(&state, best_move)
+        else {
+            break;
+        };
+        state = next;
+    }
+
+    pv
+}
+
+fn long_algebraic_to_move_description_checked(lan: &str, game_state: &GameState) -> Option<u64> {
+    crate::utils::long_algebraic::long_algebraic_to_move_description(lan, game_state).ok()
 }
 
 #[cfg(test)]

@@ -39,6 +39,7 @@ pub mod move_generation {
 pub mod search {
     pub mod board_scoring;
     pub mod iterative_deepening;
+    pub mod transposition_table;
     pub mod zobrist;
 }
 pub mod tables {
