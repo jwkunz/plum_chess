@@ -4,6 +4,7 @@
 //! allowing alternate heuristics to be swapped without altering search code.
 
 use crate::game_state::{chess_types::*, game_state::GameState};
+use crate::move_generation::legal_move_generator::generate_legal_move_descriptions_in_place;
 use crate::moves::bishop_moves::bishop_attacks;
 use crate::moves::king_moves::king_attacks;
 use crate::moves::knight_moves::knight_attacks;
@@ -64,6 +65,70 @@ impl BoardScorer for MaterialScorer {
             Color::Light => white_minus_black,
             Color::Dark => -white_minus_black,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AlphaZeroMetric;
+
+impl AlphaZeroMetric {
+    #[inline]
+    pub const fn piece_value(piece: PieceKind) -> i32 {
+        match piece {
+            PieceKind::Pawn => 100,
+            PieceKind::Knight => 350,
+            PieceKind::Bishop => 325,
+            PieceKind::Rook => 500,
+            PieceKind::Queen => 975,
+            PieceKind::King => 0,
+        }
+    }
+
+    #[inline]
+    fn material_balance_white_minus_black(game_state: &GameState) -> i32 {
+        let mut score = 0i32;
+
+        for piece in [
+            PieceKind::Pawn,
+            PieceKind::Knight,
+            PieceKind::Bishop,
+            PieceKind::Rook,
+            PieceKind::Queen,
+            PieceKind::King,
+        ] {
+            let value = Self::piece_value(piece);
+            let white_count =
+                game_state.pieces[Color::Light.index()][piece.index()].count_ones() as i32;
+            let black_count =
+                game_state.pieces[Color::Dark.index()][piece.index()].count_ones() as i32;
+            score += (white_count - black_count) * value;
+        }
+
+        score
+    }
+}
+
+impl BoardScorer for AlphaZeroMetric {
+    fn score(&self, game_state: &GameState) -> i32 {
+        let white_minus_black = Self::material_balance_white_minus_black(game_state);
+        match game_state.side_to_move {
+            Color::Light => white_minus_black,
+            Color::Dark => -white_minus_black,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AlphaZeroPlusLegalMoves;
+
+impl BoardScorer for AlphaZeroPlusLegalMoves {
+    fn score(&self, game_state: &GameState) -> i32 {
+        let base = AlphaZeroMetric.score(game_state);
+        let mut probe = game_state.clone();
+        let legal_count = generate_legal_move_descriptions_in_place(&mut probe)
+            .map(|moves| moves.len() as i32)
+            .unwrap_or(0);
+        base + (legal_count * 5)
     }
 }
 
@@ -204,7 +269,9 @@ fn piece_square_bonus(piece: PieceKind, color: Color, sq: u8) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{BoardScorer, MaterialScorer, StandardScorer};
+    use super::{
+        AlphaZeroMetric, AlphaZeroPlusLegalMoves, BoardScorer, MaterialScorer, StandardScorer,
+    };
     use crate::game_state::game_state::GameState;
 
     #[test]
@@ -229,5 +296,26 @@ mod tests {
             scorer.score(&center) > scorer.score(&rim),
             "central knight should score better"
         );
+    }
+
+    #[test]
+    fn alphazero_metric_uses_requested_piece_weights() {
+        // White: queen + bishop, Black: rook + knight => 975 + 325 - 500 - 350 = 450
+        let white_to_move =
+            GameState::from_fen("4k3/8/8/8/8/8/6rn/4KBQ1 w - - 0 1").expect("FEN should parse");
+        let black_to_move =
+            GameState::from_fen("4k3/8/8/8/8/8/6rn/4KBQ1 b - - 0 1").expect("FEN should parse");
+
+        let scorer = AlphaZeroMetric;
+        assert_eq!(scorer.score(&white_to_move), 450);
+        assert_eq!(scorer.score(&black_to_move), -450);
+    }
+
+    #[test]
+    fn alphazero_plus_legal_moves_adds_five_per_legal_move() {
+        let game = GameState::new_game();
+        let scorer = AlphaZeroPlusLegalMoves;
+        // Start position has 20 legal moves and 0 AZ material balance.
+        assert_eq!(scorer.score(&game), 100);
     }
 }
