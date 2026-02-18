@@ -7,9 +7,7 @@
 use plum_chess::engines::engine_trait::{Engine, EngineOutput, GoParams};
 use plum_chess::game_state::game_state::GameState;
 use plum_chess::move_generation::legal_move_generator::FastLegalMoveGenerator;
-use plum_chess::search::board_scoring::{
-    AlphaZeroMetric, AlphaZeroPlusLegalMoves, BoardScorer,
-};
+use plum_chess::search::board_scoring::{AlphaZeroMetric, AlphaZeroPlusLegalMoves, BoardScorer};
 use plum_chess::search::iterative_deepening::{iterative_deepening_search, SearchConfig};
 use plum_chess::utils::engine_match_harness::{
     play_engine_match_series, MatchConfig, MatchSeriesConfig,

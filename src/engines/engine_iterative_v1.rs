@@ -2,6 +2,10 @@
 //!
 //! Wraps the core negamax alpha-beta search with fixed-depth configuration and
 //! material scoring for deterministic stronger difficulty levels.
+//!
+//! V1 marker:
+//! - Baseline iterative engine preserved for A/B comparisons.
+//! - No extra promotion preference heuristics beyond shared search logic.
 
 use crate::engines::engine_trait::{Engine, EngineOutput, GoParams};
 use crate::game_state::game_state::GameState;
