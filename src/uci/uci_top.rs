@@ -253,8 +253,8 @@ fn apply_basic_time_management(game_state: &GameState, params: &mut GoParams) {
     };
 
     if let Some(clock) = remaining_ms {
-        // Spend roughly one tenth of remaining clock to better sustain longer games.
-        params.movetime_ms = Some((clock / 10).max(1));
+        // Spend roughly one twentieth of remaining clock to better sustain longer games.
+        params.movetime_ms = Some((clock / 20).max(1));
     }
 }
 
@@ -377,7 +377,7 @@ mod tests {
     }
 
     #[test]
-    fn go_time_management_uses_tenth_of_remaining_time_for_side_to_move() {
+    fn go_time_management_uses_twentieth_of_remaining_time_for_side_to_move() {
         let game = GameState::new_game();
         assert_eq!(game.side_to_move, Color::Light);
         let mut params = GoParams {
@@ -386,7 +386,7 @@ mod tests {
             ..GoParams::default()
         };
         super::apply_basic_time_management(&game, &mut params);
-        assert_eq!(params.movetime_ms, Some(12_000));
+        assert_eq!(params.movetime_ms, Some(6_000));
 
         let game_dark =
             GameState::from_fen("8/8/8/8/8/8/8/4k2K b - - 0 1").expect("fen should parse");
@@ -396,7 +396,7 @@ mod tests {
             ..GoParams::default()
         };
         super::apply_basic_time_management(&game_dark, &mut params_dark);
-        assert_eq!(params_dark.movetime_ms, Some(6_000));
+        assert_eq!(params_dark.movetime_ms, Some(3_000));
     }
 
     #[test]
