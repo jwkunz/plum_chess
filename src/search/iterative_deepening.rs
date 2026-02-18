@@ -4,8 +4,10 @@
 //! output and supports configurable search depth limits.
 
 use crate::game_state::game_state::GameState;
+use crate::move_generation::legal_move_apply::{make_move_in_place, unmake_move_in_place};
 use crate::move_generation::legal_move_checks::is_king_in_check;
-use crate::move_generation::move_generator::{MoveGenResult, MoveGenerator};
+use crate::move_generation::legal_move_generator::generate_legal_move_descriptions_in_place;
+use crate::move_generation::move_generator::{MoveGenResult, MoveGenerationError, MoveGenerator};
 use crate::moves::move_descriptions::{
     move_captured_piece_code, move_promotion_piece_code, piece_kind_from_code, FLAG_CAPTURE,
     FLAG_EN_PASSANT, NO_PIECE_CODE,
@@ -60,7 +62,7 @@ pub fn iterative_deepening_search<G: MoveGenerator, S: BoardScorer>(
 
 pub fn iterative_deepening_search_with_tt<G: MoveGenerator, S: BoardScorer>(
     game_state: &GameState,
-    generator: &G,
+    _generator: &G,
     scorer: &S,
     config: SearchConfig,
     tt: &mut TranspositionTable,
@@ -93,9 +95,9 @@ pub fn iterative_deepening_search_with_tt<G: MoveGenerator, S: BoardScorer>(
         }
 
         let mut nodes = 0u64;
-        let Some((best_move, best_score)) = negamax_root(
-            game_state, generator, scorer, depth, &mut nodes, deadline, tt,
-        )?
+        let mut root_state = game_state.clone();
+        let Some((best_move, best_score)) =
+            negamax_root(&mut root_state, scorer, depth, &mut nodes, deadline, tt)?
         else {
             break;
         };
@@ -117,16 +119,15 @@ pub fn iterative_deepening_search_with_tt<G: MoveGenerator, S: BoardScorer>(
     Ok(result)
 }
 
-fn negamax_root<G: MoveGenerator, S: BoardScorer>(
-    game_state: &GameState,
-    generator: &G,
+fn negamax_root<S: BoardScorer>(
+    game_state: &mut GameState,
     scorer: &S,
     depth: u8,
     nodes: &mut u64,
     deadline: Option<Instant>,
     tt: &mut TranspositionTable,
 ) -> MoveGenResult<Option<(Option<u64>, i32)>> {
-    let mut moves = generator.generate_legal_moves(game_state)?;
+    let mut moves = generate_legal_move_descriptions_in_place(game_state)?;
     if moves.is_empty() {
         let score = terminal_score(game_state, 0);
         *nodes += 1;
@@ -148,9 +149,12 @@ fn negamax_root<G: MoveGenerator, S: BoardScorer>(
             }
         }
 
-        let Some(score) = negamax(
-            &mv.game_after_move,
-            generator,
+        make_move_in_place(game_state, mv).map_err(|x| {
+            MoveGenerationError::InvalidState(format!("make_move_in_place failed: {x}"))
+        })?;
+
+        let score_opt = negamax(
+            game_state,
             scorer,
             depth.saturating_sub(1),
             -beta,
@@ -159,15 +163,20 @@ fn negamax_root<G: MoveGenerator, S: BoardScorer>(
             nodes,
             deadline,
             tt,
-        )?
-        else {
+        )?;
+
+        unmake_move_in_place(game_state).map_err(|x| {
+            MoveGenerationError::InvalidState(format!("unmake_move_in_place failed: {x}"))
+        })?;
+
+        let Some(score) = score_opt else {
             return Ok(None);
         };
         let score = -score;
 
         if score > best_score {
             best_score = score;
-            best_move = Some(mv.move_description);
+            best_move = Some(mv);
         }
         if score > alpha {
             alpha = score;
@@ -177,9 +186,8 @@ fn negamax_root<G: MoveGenerator, S: BoardScorer>(
     Ok(Some((best_move, best_score)))
 }
 
-fn negamax<G: MoveGenerator, S: BoardScorer>(
-    game_state: &GameState,
-    generator: &G,
+fn negamax<S: BoardScorer>(
+    game_state: &mut GameState,
     scorer: &S,
     depth: u8,
     mut alpha: i32,
@@ -215,13 +223,10 @@ fn negamax<G: MoveGenerator, S: BoardScorer>(
     *nodes += 1;
 
     if depth == 0 {
-        let q = quiescence(
-            game_state, generator, scorer, alpha, beta, nodes, deadline, tt,
-        )?;
-        return Ok(q);
+        return quiescence(game_state, scorer, alpha, beta, nodes, deadline);
     }
 
-    let mut moves = generator.generate_legal_moves(game_state)?;
+    let mut moves = generate_legal_move_descriptions_in_place(game_state)?;
     if moves.is_empty() {
         return Ok(Some(terminal_score(game_state, ply)));
     }
@@ -236,7 +241,7 @@ fn negamax<G: MoveGenerator, S: BoardScorer>(
     order_moves(&mut moves, tt_move);
 
     let mut best = -MATE_SCORE;
-    let mut best_move = None;
+    let mut best_move: Option<u64> = None;
 
     for mv in moves {
         if let Some(limit) = deadline {
@@ -245,9 +250,12 @@ fn negamax<G: MoveGenerator, S: BoardScorer>(
             }
         }
 
-        let Some(score) = negamax(
-            &mv.game_after_move,
-            generator,
+        make_move_in_place(game_state, mv).map_err(|x| {
+            MoveGenerationError::InvalidState(format!("make_move_in_place failed: {x}"))
+        })?;
+
+        let score_opt = negamax(
+            game_state,
             scorer,
             depth.saturating_sub(1),
             -beta,
@@ -256,15 +264,20 @@ fn negamax<G: MoveGenerator, S: BoardScorer>(
             nodes,
             deadline,
             tt,
-        )?
-        else {
+        )?;
+
+        unmake_move_in_place(game_state).map_err(|x| {
+            MoveGenerationError::InvalidState(format!("unmake_move_in_place failed: {x}"))
+        })?;
+
+        let Some(score) = score_opt else {
             return Ok(None);
         };
         let score = -score;
 
         if score > best {
             best = score;
-            best_move = Some(mv.move_description);
+            best_move = Some(mv);
         }
         if score > alpha {
             alpha = score;
@@ -301,15 +314,13 @@ fn terminal_score(game_state: &GameState, ply: u8) -> i32 {
     }
 }
 
-fn quiescence<G: MoveGenerator, S: BoardScorer>(
-    game_state: &GameState,
-    generator: &G,
+fn quiescence<S: BoardScorer>(
+    game_state: &mut GameState,
     scorer: &S,
     mut alpha: i32,
     beta: i32,
     nodes: &mut u64,
     deadline: Option<Instant>,
-    _tt: &mut TranspositionTable,
 ) -> MoveGenResult<Option<i32>> {
     if let Some(limit) = deadline {
         if Instant::now() >= limit {
@@ -323,31 +334,31 @@ fn quiescence<G: MoveGenerator, S: BoardScorer>(
 
     *nodes += 1;
 
-    // If side-to-move is in check, stand-pat is invalid. Search all legal
-    // evasions so check/mate semantics remain correct at the horizon.
+    // If side-to-move is in check, stand-pat is invalid.
     if is_king_in_check(game_state, game_state.side_to_move) {
-        let moves = generator.generate_legal_moves(game_state)?;
+        let mut moves = generate_legal_move_descriptions_in_place(game_state)?;
         if moves.is_empty() {
             return Ok(Some(terminal_score(game_state, 0)));
         }
+        order_moves(&mut moves, None);
+
         let mut local_alpha = alpha;
-        let mut ordered = moves;
-        order_moves(&mut ordered, None);
-        for mv in ordered {
-            let Some(score) = quiescence(
-                &mv.game_after_move,
-                generator,
-                scorer,
-                -beta,
-                -local_alpha,
-                nodes,
-                deadline,
-                _tt,
-            )?
-            else {
+        for mv in moves {
+            make_move_in_place(game_state, mv).map_err(|x| {
+                MoveGenerationError::InvalidState(format!("make_move_in_place failed: {x}"))
+            })?;
+
+            let score_opt = quiescence(game_state, scorer, -beta, -local_alpha, nodes, deadline)?;
+
+            unmake_move_in_place(game_state).map_err(|x| {
+                MoveGenerationError::InvalidState(format!("unmake_move_in_place failed: {x}"))
+            })?;
+
+            let Some(score) = score_opt else {
                 return Ok(None);
             };
             let score = -score;
+
             if score >= beta {
                 return Ok(Some(beta));
             }
@@ -366,12 +377,12 @@ fn quiescence<G: MoveGenerator, S: BoardScorer>(
         alpha = stand_pat;
     }
 
-    let mut moves = generator.generate_legal_moves(game_state)?;
+    let mut moves = generate_legal_move_descriptions_in_place(game_state)?;
     if moves.is_empty() {
         return Ok(Some(terminal_score(game_state, 0)));
     }
 
-    moves.retain(|m| is_tactical_move(m.move_description));
+    moves.retain(|m| is_tactical_move(*m));
     order_moves(&mut moves, None);
 
     for mv in moves {
@@ -381,17 +392,17 @@ fn quiescence<G: MoveGenerator, S: BoardScorer>(
             }
         }
 
-        let Some(score) = quiescence(
-            &mv.game_after_move,
-            generator,
-            scorer,
-            -beta,
-            -alpha,
-            nodes,
-            deadline,
-            _tt,
-        )?
-        else {
+        make_move_in_place(game_state, mv).map_err(|x| {
+            MoveGenerationError::InvalidState(format!("make_move_in_place failed: {x}"))
+        })?;
+
+        let score_opt = quiescence(game_state, scorer, -beta, -alpha, nodes, deadline)?;
+
+        unmake_move_in_place(game_state).map_err(|x| {
+            MoveGenerationError::InvalidState(format!("unmake_move_in_place failed: {x}"))
+        })?;
+
+        let Some(score) = score_opt else {
             return Ok(None);
         };
         let score = -score;
@@ -412,7 +423,6 @@ fn is_draw_state(game_state: &GameState) -> bool {
     if game_state.halfmove_clock >= 100 {
         return true;
     }
-    // Threefold repetition check.
     let current = game_state.zobrist_key;
     let count = game_state
         .repetition_history
@@ -428,11 +438,8 @@ fn is_tactical_move(move_description: u64) -> bool {
         || move_promotion_piece_code(move_description) != NO_PIECE_CODE
 }
 
-fn order_moves(
-    moves: &mut [crate::move_generation::move_generator::GeneratedMove],
-    tt_move: Option<u64>,
-) {
-    moves.sort_by_key(|m| -move_order_score(m.move_description, tt_move));
+fn order_moves(moves: &mut [u64], tt_move: Option<u64>) {
+    moves.sort_by_key(|m| -move_order_score(*m, tt_move));
 }
 
 fn move_order_score(move_description: u64, tt_move: Option<u64>) -> i32 {
@@ -554,32 +561,6 @@ mod tests {
             .expect("LAN conversion should succeed");
 
         assert_eq!(lan, "f1e2");
-    }
-
-    #[test]
-    fn search_fails_gracefully_when_movegen_errors() {
-        use crate::move_generation::move_generator::{
-            MoveGenResult, MoveGenerationError, MoveGenerator, NullMoveGenerator,
-        };
-
-        fn run_with_null<G: MoveGenerator>(generator: &G) -> MoveGenResult<()> {
-            let game = GameState::new_game();
-            let scorer = MaterialScorer;
-            let _ = iterative_deepening_search(
-                &game,
-                generator,
-                &scorer,
-                SearchConfig {
-                    max_depth: 1,
-                    ..SearchConfig::default()
-                },
-            )?;
-            Ok(())
-        }
-
-        let null = NullMoveGenerator;
-        let err = run_with_null(&null).expect_err("null move generator should error");
-        assert!(matches!(err, MoveGenerationError::NotImplemented));
     }
 
     #[test]

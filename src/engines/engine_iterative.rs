@@ -5,8 +5,9 @@
 
 use crate::engines::engine_trait::{Engine, EngineOutput, GoParams};
 use crate::game_state::game_state::GameState;
-use crate::move_generation::legal_move_generator::FastLegalMoveGenerator;
-use crate::move_generation::move_generator::MoveGenerator;
+use crate::move_generation::legal_move_generator::{
+    generate_legal_move_descriptions_in_place, FastLegalMoveGenerator,
+};
 use crate::search::board_scoring::StandardScorer;
 use crate::search::iterative_deepening::{
     iterative_deepening_search_with_tt, principal_variation_from_tt, SearchConfig,
@@ -107,11 +108,10 @@ impl Engine for IterativeEngine {
         let mut out = EngineOutput::default();
         out.best_move = result.best_move;
         if out.best_move.is_none() {
-            let legal = self
-                .move_generator
-                .generate_legal_moves(game_state)
-                .map_err(|e| e.to_string())?;
-            out.best_move = legal.first().map(|m| m.move_description);
+            let mut probe = game_state.clone();
+            let legal =
+                generate_legal_move_descriptions_in_place(&mut probe).map_err(|e| e.to_string())?;
+            out.best_move = legal.first().copied();
         }
         out.info_lines.push(format!(
             "info depth {} score cp {} nodes {} time {} nps {}",

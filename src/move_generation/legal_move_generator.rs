@@ -4,7 +4,9 @@
 //! filters illegal self-check outcomes, and annotates checking move metadata.
 
 use crate::game_state::game_state::GameState;
-use crate::move_generation::legal_move_apply::apply_move;
+use crate::move_generation::legal_move_apply::{
+    apply_move, make_move_in_place, unmake_move_in_place,
+};
 use crate::move_generation::legal_move_checks::{
     attackers_to_square, is_king_in_check, king_square,
 };
@@ -23,6 +25,38 @@ use crate::moves::move_descriptions::{
 
 pub struct LegalMoveGenerator;
 pub struct FastLegalMoveGenerator;
+
+/// Generate legal move descriptions using in-place make/unmake.
+///
+/// This path avoids allocating future `GameState` snapshots per move and is
+/// intended for search hot paths.
+pub fn generate_legal_move_descriptions_in_place(
+    game_state: &mut GameState,
+) -> MoveGenResult<Vec<u64>> {
+    let mut pseudo = Vec::<u64>::with_capacity(128);
+    generate_pawn_moves(game_state, &mut pseudo);
+    generate_knight_moves(game_state, &mut pseudo);
+    generate_bishop_moves(game_state, &mut pseudo);
+    generate_rook_moves(game_state, &mut pseudo);
+    generate_queen_moves(game_state, &mut pseudo);
+    generate_king_moves(game_state, &mut pseudo);
+
+    let side_before = game_state.side_to_move;
+    let mut legal = Vec::<u64>::with_capacity(pseudo.len());
+    for mv in pseudo {
+        make_move_in_place(game_state, mv).map_err(|x| {
+            MoveGenerationError::InvalidState(format!("make_move_in_place failed: {x}"))
+        })?;
+        let illegal = is_king_in_check(game_state, side_before);
+        unmake_move_in_place(game_state).map_err(|x| {
+            MoveGenerationError::InvalidState(format!("unmake_move_in_place failed: {x}"))
+        })?;
+        if !illegal {
+            legal.push(mv);
+        }
+    }
+    Ok(legal)
+}
 
 impl MoveGenerator for LegalMoveGenerator {
     fn generate_legal_moves(&self, game_state: &GameState) -> MoveGenResult<Vec<GeneratedMove>> {
