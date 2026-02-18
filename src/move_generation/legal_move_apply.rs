@@ -4,92 +4,19 @@
 //! castling rights, en-passant state, clocks, side-to-move, and occupancies.
 
 use crate::game_state::{chess_types::*, game_state::GameState};
-use crate::move_generation::legal_move_shared::{piece_on_square_any, ALL_PIECE_KINDS};
+use crate::move_generation::legal_move_shared::piece_on_square_any;
 use crate::moves::move_descriptions::{
     move_from, move_promotion_piece_code, move_to, pack_move_description, piece_kind_from_code,
     FLAG_CAPTURE, FLAG_CASTLING, FLAG_DOUBLE_PAWN_PUSH, FLAG_EN_PASSANT,
 };
-use crate::search::zobrist::refresh_game_state_hashes;
+use crate::search::zobrist::{
+    castling_key, en_passant_file_key, piece_square_key, side_to_move_key,
+};
 
 pub fn apply_move(game_state: &GameState, move_description: u64) -> Result<GameState, String> {
-    let from = move_from(move_description);
-    let to = move_to(move_description);
-    let from_mask = 1u64 << from;
-    let to_mask = 1u64 << to;
-
-    let moving_color = game_state.side_to_move;
-    let enemy_color = moving_color.opposite();
-
-    let moved_piece = piece_on_square_any(game_state, from)
-        .ok_or_else(|| format!("No piece on from-square {from}"))?
-        .1;
-
     let mut next = game_state.clone();
-
-    // Remove moved piece from origin.
-    next.pieces[moving_color.index()][moved_piece.index()] &= !from_mask;
-
-    // Handle captures.
-    if (move_description & FLAG_EN_PASSANT) != 0 {
-        let capture_sq = if moving_color == Color::Light {
-            to.checked_sub(8)
-                .ok_or("Invalid en-passant capture square for light")?
-        } else {
-            to.checked_add(8)
-                .ok_or("Invalid en-passant capture square for dark")?
-        };
-        let capture_mask = 1u64 << capture_sq;
-        next.pieces[enemy_color.index()][PieceKind::Pawn.index()] &= !capture_mask;
-    } else if (move_description & FLAG_CAPTURE) != 0 {
-        clear_enemy_piece_on_square(&mut next, enemy_color, to_mask);
-    }
-
-    // Place moved/promoted piece on destination.
-    let promotion_piece = piece_kind_from_code(move_promotion_piece_code(move_description));
-    if let Some(promo) = promotion_piece {
-        next.pieces[moving_color.index()][promo.index()] |= to_mask;
-    } else {
-        next.pieces[moving_color.index()][moved_piece.index()] |= to_mask;
-    }
-
-    // Castling rook move.
-    if (move_description & FLAG_CASTLING) != 0 && moved_piece == PieceKind::King {
-        match (moving_color, from, to) {
-            (Color::Light, 4, 6) => move_rook(&mut next, moving_color, 7, 5),
-            (Color::Light, 4, 2) => move_rook(&mut next, moving_color, 0, 3),
-            (Color::Dark, 60, 62) => move_rook(&mut next, moving_color, 63, 61),
-            (Color::Dark, 60, 58) => move_rook(&mut next, moving_color, 56, 59),
-            _ => {}
-        }
-    }
-
-    // Update castling rights.
-    update_castling_rights(&mut next, moving_color, from, to, moved_piece);
-
-    // Update en-passant square.
-    next.en_passant_square = if (move_description & FLAG_DOUBLE_PAWN_PUSH) != 0 {
-        Some((from + to) / 2)
-    } else {
-        None
-    };
-
-    // Update clocks.
-    if moved_piece == PieceKind::Pawn || (move_description & FLAG_CAPTURE) != 0 {
-        next.halfmove_clock = 0;
-    } else {
-        next.halfmove_clock = next.halfmove_clock.saturating_add(1);
-    }
-    if moving_color == Color::Dark {
-        next.fullmove_number = next.fullmove_number.saturating_add(1);
-    }
-
-    next.side_to_move = enemy_color;
-    next.ply = next.ply.saturating_add(1);
-
-    recalc_occupancy(&mut next);
-    refresh_game_state_hashes(&mut next);
-    next.repetition_history.push(next.zobrist_key);
-
+    make_move_in_place(&mut next, move_description)?;
+    let _ = next.undo_stack.pop();
     Ok(next)
 }
 
@@ -100,11 +27,11 @@ pub fn apply_move(game_state: &GameState, move_description: u64) -> Result<GameS
 pub fn make_move_in_place(game_state: &mut GameState, move_description: u64) -> Result<(), String> {
     let from = move_from(move_description);
     let to = move_to(move_description);
-    let from_mask = 1u64 << from;
-    let to_mask = 1u64 << to;
 
     let moving_color = game_state.side_to_move;
     let enemy_color = moving_color.opposite();
+    let prev_castling = game_state.castling_rights;
+    let prev_en_passant = game_state.en_passant_square;
 
     let moved_piece = piece_on_square_any(game_state, from)
         .ok_or_else(|| format!("No piece on from-square {from}"))?
@@ -135,7 +62,7 @@ pub fn make_move_in_place(game_state: &mut GameState, move_description: u64) -> 
     game_state.undo_stack.push(undo);
 
     // Remove moved piece from origin.
-    game_state.pieces[moving_color.index()][moved_piece.index()] &= !from_mask;
+    remove_piece(game_state, moving_color, moved_piece, from);
 
     // Handle captures.
     if (move_description & FLAG_EN_PASSANT) != 0 {
@@ -146,40 +73,51 @@ pub fn make_move_in_place(game_state: &mut GameState, move_description: u64) -> 
             to.checked_add(8)
                 .ok_or("Invalid en-passant capture square for dark")?
         };
-        let capture_mask = 1u64 << capture_sq;
-        game_state.pieces[enemy_color.index()][PieceKind::Pawn.index()] &= !capture_mask;
+        remove_piece(game_state, enemy_color, PieceKind::Pawn, capture_sq);
     } else if (move_description & FLAG_CAPTURE) != 0 {
-        clear_enemy_piece_on_square(game_state, enemy_color, to_mask);
+        if let Some(captured) = captured_piece {
+            remove_piece(game_state, enemy_color, captured, to);
+        }
     }
 
     // Place moved/promoted piece on destination.
     let promotion_piece = piece_kind_from_code(move_promotion_piece_code(move_description));
     if let Some(promo) = promotion_piece {
-        game_state.pieces[moving_color.index()][promo.index()] |= to_mask;
+        add_piece(game_state, moving_color, promo, to);
     } else {
-        game_state.pieces[moving_color.index()][moved_piece.index()] |= to_mask;
+        add_piece(game_state, moving_color, moved_piece, to);
     }
 
     // Castling rook move.
     if (move_description & FLAG_CASTLING) != 0 && moved_piece == PieceKind::King {
         match (moving_color, from, to) {
-            (Color::Light, 4, 6) => move_rook(game_state, moving_color, 7, 5),
-            (Color::Light, 4, 2) => move_rook(game_state, moving_color, 0, 3),
-            (Color::Dark, 60, 62) => move_rook(game_state, moving_color, 63, 61),
-            (Color::Dark, 60, 58) => move_rook(game_state, moving_color, 56, 59),
+            (Color::Light, 4, 6) => move_rook(game_state, moving_color, 7, 5)?,
+            (Color::Light, 4, 2) => move_rook(game_state, moving_color, 0, 3)?,
+            (Color::Dark, 60, 62) => move_rook(game_state, moving_color, 63, 61)?,
+            (Color::Dark, 60, 58) => move_rook(game_state, moving_color, 56, 59)?,
             _ => {}
         }
     }
 
     // Update castling rights.
     update_castling_rights(game_state, moving_color, from, to, moved_piece);
+    if prev_castling != game_state.castling_rights {
+        game_state.zobrist_key ^= castling_key(prev_castling);
+        game_state.zobrist_key ^= castling_key(game_state.castling_rights);
+    }
 
     // Update en-passant square.
+    if let Some(prev_ep) = prev_en_passant {
+        game_state.zobrist_key ^= en_passant_file_key(prev_ep % 8);
+    }
     game_state.en_passant_square = if (move_description & FLAG_DOUBLE_PAWN_PUSH) != 0 {
         Some((from + to) / 2)
     } else {
         None
     };
+    if let Some(new_ep) = game_state.en_passant_square {
+        game_state.zobrist_key ^= en_passant_file_key(new_ep % 8);
+    }
 
     // Update clocks.
     if moved_piece == PieceKind::Pawn || (move_description & FLAG_CAPTURE) != 0 {
@@ -191,12 +129,22 @@ pub fn make_move_in_place(game_state: &mut GameState, move_description: u64) -> 
         game_state.fullmove_number = game_state.fullmove_number.saturating_add(1);
     }
 
+    game_state.zobrist_key ^= side_to_move_key();
     game_state.side_to_move = enemy_color;
     game_state.ply = game_state.ply.saturating_add(1);
 
-    recalc_occupancy(game_state);
-    refresh_game_state_hashes(game_state);
+    game_state.occupancy_all = game_state.occupancy_by_color[Color::Light.index()]
+        | game_state.occupancy_by_color[Color::Dark.index()];
     game_state.repetition_history.push(game_state.zobrist_key);
+
+    debug_assert_eq!(
+        game_state.zobrist_key,
+        crate::search::zobrist::compute_zobrist_key(game_state)
+    );
+    debug_assert_eq!(
+        game_state.pawn_zobrist_key,
+        crate::search::zobrist::compute_pawn_zobrist_key(game_state)
+    );
 
     Ok(())
 }
@@ -213,8 +161,6 @@ pub fn unmake_move_in_place(game_state: &mut GameState) -> Result<(), String> {
     let mv = undo.mv as u64;
     let from = move_from(mv);
     let to = move_to(mv);
-    let from_mask = 1u64 << from;
-    let to_mask = 1u64 << to;
 
     // Restore side-to-move before piece restoration so any derived logic
     // aligns with the pre-move perspective.
@@ -223,19 +169,19 @@ pub fn unmake_move_in_place(game_state: &mut GameState) -> Result<(), String> {
     // Remove moved/promoted piece from destination and restore mover on origin.
     let promotion_piece = piece_kind_from_code(move_promotion_piece_code(mv));
     if let Some(promo) = promotion_piece {
-        game_state.pieces[moving_color.index()][promo.index()] &= !to_mask;
+        remove_piece(game_state, moving_color, promo, to);
     } else {
-        game_state.pieces[moving_color.index()][undo.moved_piece.index()] &= !to_mask;
+        remove_piece(game_state, moving_color, undo.moved_piece, to);
     }
-    game_state.pieces[moving_color.index()][undo.moved_piece.index()] |= from_mask;
+    add_piece(game_state, moving_color, undo.moved_piece, from);
 
     // Undo castling rook move.
     if (mv & FLAG_CASTLING) != 0 && undo.moved_piece == PieceKind::King {
         match (moving_color, from, to) {
-            (Color::Light, 4, 6) => move_rook(game_state, moving_color, 5, 7),
-            (Color::Light, 4, 2) => move_rook(game_state, moving_color, 3, 0),
-            (Color::Dark, 60, 62) => move_rook(game_state, moving_color, 61, 63),
-            (Color::Dark, 60, 58) => move_rook(game_state, moving_color, 59, 56),
+            (Color::Light, 4, 6) => move_rook(game_state, moving_color, 5, 7)?,
+            (Color::Light, 4, 2) => move_rook(game_state, moving_color, 3, 0)?,
+            (Color::Dark, 60, 62) => move_rook(game_state, moving_color, 61, 63)?,
+            (Color::Dark, 60, 58) => move_rook(game_state, moving_color, 59, 56)?,
             _ => {}
         }
     }
@@ -249,10 +195,9 @@ pub fn unmake_move_in_place(game_state: &mut GameState) -> Result<(), String> {
             to.checked_add(8)
                 .ok_or("Invalid en-passant capture square for dark during unmake")?
         };
-        let capture_mask = 1u64 << capture_sq;
-        game_state.pieces[enemy_color.index()][PieceKind::Pawn.index()] |= capture_mask;
+        add_piece(game_state, enemy_color, PieceKind::Pawn, capture_sq);
     } else if let Some(captured_piece) = undo.captured_piece {
-        game_state.pieces[enemy_color.index()][captured_piece.index()] |= to_mask;
+        add_piece(game_state, enemy_color, captured_piece, to);
     }
 
     game_state.castling_rights = undo.prev_castling_rights;
@@ -265,7 +210,17 @@ pub fn unmake_move_in_place(game_state: &mut GameState) -> Result<(), String> {
     game_state
         .repetition_history
         .truncate(undo.prev_repetition_len);
-    recalc_occupancy(game_state);
+    game_state.occupancy_all = game_state.occupancy_by_color[Color::Light.index()]
+        | game_state.occupancy_by_color[Color::Dark.index()];
+
+    debug_assert_eq!(
+        game_state.zobrist_key,
+        crate::search::zobrist::compute_zobrist_key(game_state)
+    );
+    debug_assert_eq!(
+        game_state.pawn_zobrist_key,
+        crate::search::zobrist::compute_pawn_zobrist_key(game_state)
+    );
 
     Ok(())
 }
@@ -289,17 +244,37 @@ pub fn build_move(
     )
 }
 
-fn clear_enemy_piece_on_square(game_state: &mut GameState, enemy_color: Color, square_mask: u64) {
-    for piece in ALL_PIECE_KINDS {
-        game_state.pieces[enemy_color.index()][piece.index()] &= !square_mask;
+#[inline]
+fn remove_piece(game_state: &mut GameState, color: Color, piece: PieceKind, square: Square) {
+    let mask = 1u64 << square;
+    game_state.pieces[color.index()][piece.index()] &= !mask;
+    game_state.occupancy_by_color[color.index()] &= !mask;
+    game_state.zobrist_key ^= piece_square_key(color, piece, square);
+    if matches!(piece, PieceKind::Pawn | PieceKind::King) {
+        game_state.pawn_zobrist_key ^= piece_square_key(color, piece, square);
     }
 }
 
-fn move_rook(game_state: &mut GameState, color: Color, from: Square, to: Square) {
-    let from_mask = 1u64 << from;
-    let to_mask = 1u64 << to;
-    game_state.pieces[color.index()][PieceKind::Rook.index()] &= !from_mask;
-    game_state.pieces[color.index()][PieceKind::Rook.index()] |= to_mask;
+#[inline]
+fn add_piece(game_state: &mut GameState, color: Color, piece: PieceKind, square: Square) {
+    let mask = 1u64 << square;
+    game_state.pieces[color.index()][piece.index()] |= mask;
+    game_state.occupancy_by_color[color.index()] |= mask;
+    game_state.zobrist_key ^= piece_square_key(color, piece, square);
+    if matches!(piece, PieceKind::Pawn | PieceKind::King) {
+        game_state.pawn_zobrist_key ^= piece_square_key(color, piece, square);
+    }
+}
+
+fn move_rook(
+    game_state: &mut GameState,
+    color: Color,
+    from: Square,
+    to: Square,
+) -> Result<(), String> {
+    remove_piece(game_state, color, PieceKind::Rook, from);
+    add_piece(game_state, color, PieceKind::Rook, to);
+    Ok(())
 }
 
 fn update_castling_rights(
@@ -337,23 +312,11 @@ fn update_castling_rights(
     }
 }
 
-fn recalc_occupancy(game_state: &mut GameState) {
-    game_state.occupancy_by_color[Color::Light.index()] = game_state.pieces[Color::Light.index()]
-        .iter()
-        .copied()
-        .fold(0u64, |acc, bb| acc | bb);
-    game_state.occupancy_by_color[Color::Dark.index()] = game_state.pieces[Color::Dark.index()]
-        .iter()
-        .copied()
-        .fold(0u64, |acc, bb| acc | bb);
-    game_state.occupancy_all = game_state.occupancy_by_color[Color::Light.index()]
-        | game_state.occupancy_by_color[Color::Dark.index()];
-}
-
 #[cfg(test)]
 mod tests {
     use super::{make_move_in_place, unmake_move_in_place};
     use crate::game_state::game_state::GameState;
+    use crate::search::zobrist::{compute_pawn_zobrist_key, compute_zobrist_key};
     use crate::utils::long_algebraic::long_algebraic_to_move_description;
 
     #[test]
@@ -367,5 +330,14 @@ mod tests {
         assert_eq!(state.get_fen(), original.get_fen());
         assert_eq!(state.zobrist_key, original.zobrist_key);
         assert_eq!(state.pawn_zobrist_key, original.pawn_zobrist_key);
+    }
+
+    #[test]
+    fn make_move_incremental_hash_matches_recompute() {
+        let mut state = GameState::new_game();
+        let mv = long_algebraic_to_move_description("e2e4", &state).expect("move parse");
+        make_move_in_place(&mut state, mv).expect("make move");
+        assert_eq!(state.zobrist_key, compute_zobrist_key(&state));
+        assert_eq!(state.pawn_zobrist_key, compute_pawn_zobrist_key(&state));
     }
 }
