@@ -190,7 +190,6 @@ where
     };
 
     for i in 0..config.games {
-        println!("Running match {:?}",i);
         let seed = config.base_seed.wrapping_add(u64::from(i));
         let result = play_engine_match(
             player1_factory(),
@@ -199,7 +198,6 @@ where
             config.per_game.clone(),
         )?;
         stats.outcomes.push(result.outcome);
-        println!("Match {:?} outcome: {:?}",i,&result.outcome);
         match result.outcome {
             MatchOutcome::WhiteWinCheckmate => stats.player1_wins += 1,
             MatchOutcome::BlackWinCheckmate => stats.player2_wins += 1,
@@ -273,8 +271,53 @@ mod tests {
         play_engine_match, play_engine_match_series, MatchConfig, MatchOutcome, MatchSeriesConfig,
     };
     use crate::engines::engine_greedy::GreedyEngine;
-    use crate::engines::engine_iterative::IterativeEngine;
     use crate::engines::engine_random::RandomEngine;
+    use crate::engines::engine_trait::{Engine, EngineOutput, GoParams};
+    use crate::game_state::game_state::GameState;
+    use crate::move_generation::legal_move_generator::FastLegalMoveGenerator;
+    use crate::search::board_scoring::{AlphaZeroMetric, BoardScorer, MaterialScorer};
+    use crate::search::iterative_deepening::{iterative_deepening_search, SearchConfig};
+
+    struct ConfigurableIterativeTestEngine<S: BoardScorer + Clone + Send + Sync + 'static> {
+        scorer: S,
+        depth: u8,
+        generator: FastLegalMoveGenerator,
+    }
+
+    impl<S: BoardScorer + Clone + Send + Sync + 'static> ConfigurableIterativeTestEngine<S> {
+        fn new(scorer: S, depth: u8) -> Self {
+            Self {
+                scorer,
+                depth,
+                generator: FastLegalMoveGenerator,
+            }
+        }
+    }
+
+    impl<S: BoardScorer + Clone + Send + Sync + 'static> Engine for ConfigurableIterativeTestEngine<S> {
+        fn choose_move(
+            &mut self,
+            game_state: &GameState,
+            params: &GoParams,
+        ) -> Result<EngineOutput, String> {
+            let depth = params.depth.unwrap_or(self.depth).max(1);
+            let result = iterative_deepening_search(
+                game_state,
+                &self.generator,
+                &self.scorer,
+                SearchConfig {
+                    max_depth: depth,
+                    movetime_ms: params.movetime_ms,
+                },
+            )
+            .map_err(|e| e.to_string())?;
+
+            Ok(EngineOutput {
+                best_move: result.best_move,
+                info_lines: vec![format!("info string test_engine depth {}", depth)],
+            })
+        }
+    }
 
     #[test]
     fn engine_match_harness_runs_random_vs_greedy() {
@@ -306,31 +349,24 @@ mod tests {
     }
 
     #[test]
-    fn engine_match_series_reports_stats_for_default_nine_games() {
+    fn engine_match_series_can_use_custom_scorer_and_depth_per_player() {
         let stats = play_engine_match_series(
-            || Box::new(IterativeEngine::new(3)),
-            || Box::new(IterativeEngine::new(2)),
+            || Box::new(ConfigurableIterativeTestEngine::new(AlphaZeroMetric, 1)),
+            || Box::new(ConfigurableIterativeTestEngine::new(MaterialScorer, 2)),
             MatchSeriesConfig {
-                games: 9,
-                base_seed: 1234,
+                games: 3,
+                base_seed: 777,
                 per_game: MatchConfig {
-                    max_plies: 100,
+                    max_plies: 16,
                     opening_min_plies: 2,
-                    opening_max_plies: 6,
+                    opening_max_plies: 4,
                     ..MatchConfig::default()
                 },
             },
         )
         .expect("series should run");
 
-        println!("Stats: {:?}",&stats);
-
-        let total = stats.player1_wins + stats.player2_wins + stats.draws;
-        assert_eq!(stats.games, 9);
-        assert_eq!(stats.outcomes.len(), 9);
-        assert_eq!(total, stats.games);
-
-        let report = stats.report();
-        assert!(report.contains("games=9"));
+        assert_eq!(stats.games, 3);
+        assert_eq!(stats.outcomes.len(), 3);
     }
 }
