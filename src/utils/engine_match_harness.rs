@@ -1,0 +1,336 @@
+//! Minimal head-to-head engine match harness for local testing.
+//!
+//! This module runs two `Engine` implementations against each other without
+//! UCI I/O, with an optional seeded random opening prefix.
+
+use rand::{rngs::StdRng, Rng, SeedableRng};
+
+use crate::engines::engine_trait::{Engine, GoParams};
+use crate::game_state::chess_types::Color;
+use crate::game_state::game_state::GameState;
+use crate::move_generation::legal_move_apply::apply_move;
+use crate::move_generation::legal_move_checks::is_king_in_check;
+use crate::move_generation::legal_move_generator::generate_legal_move_descriptions_in_place;
+use crate::tables::opening_book::OpeningBook;
+use crate::utils::long_algebraic::move_description_to_long_algebraic;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatchOutcome {
+    WhiteWinCheckmate,
+    BlackWinCheckmate,
+    DrawStalemate,
+    DrawRepetition,
+    DrawFiftyMoveRule,
+    DrawMaxPlies,
+}
+
+#[derive(Debug, Clone)]
+pub struct MatchConfig {
+    pub max_plies: u16,
+    pub opening_min_plies: u8,
+    pub opening_max_plies: u8,
+    pub go_params: GoParams,
+}
+
+impl Default for MatchConfig {
+    fn default() -> Self {
+        Self {
+            max_plies: 300,
+            opening_min_plies: 2,
+            opening_max_plies: 8,
+            go_params: GoParams::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MatchResult {
+    pub outcome: MatchOutcome,
+    pub final_state: GameState,
+    pub opening_moves_lan: Vec<String>,
+    pub played_moves_lan: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MatchSeriesConfig {
+    pub games: u16,
+    pub base_seed: u64,
+    pub per_game: MatchConfig,
+}
+
+impl Default for MatchSeriesConfig {
+    fn default() -> Self {
+        Self {
+            games: 9,
+            base_seed: 0,
+            per_game: MatchConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MatchSeriesStats {
+    pub games: u16,
+    pub player1_wins: u16,
+    pub player2_wins: u16,
+    pub draws: u16,
+    pub outcomes: Vec<MatchOutcome>,
+}
+
+impl MatchSeriesStats {
+    pub fn report(&self) -> String {
+        format!(
+            "games={} player1_wins={} player2_wins={} draws={}",
+            self.games, self.player1_wins, self.player2_wins, self.draws
+        )
+    }
+}
+
+/// Play a single seeded engine-vs-engine match.
+///
+/// `engine_white` is player 1 (White), `engine_black` is player 2 (Black).
+pub fn play_engine_match(
+    mut engine_white: Box<dyn Engine>,
+    mut engine_black: Box<dyn Engine>,
+    seed: u64,
+    config: MatchConfig,
+) -> Result<MatchResult, String> {
+    let mut state = GameState::new_game();
+    engine_white.new_game();
+    engine_black.new_game();
+
+    let (state_after_opening, opening_moves_lan) = apply_seeded_random_opening(
+        &state,
+        seed,
+        config.opening_min_plies,
+        config.opening_max_plies,
+    )?;
+    state = state_after_opening;
+
+    let mut played_moves_lan = Vec::<String>::new();
+
+    for _ in 0..config.max_plies {
+        if state.halfmove_clock >= 100 {
+            return Ok(MatchResult {
+                outcome: MatchOutcome::DrawFiftyMoveRule,
+                final_state: state,
+                opening_moves_lan,
+                played_moves_lan,
+            });
+        }
+
+        if repetition_count(&state) >= 3 {
+            return Ok(MatchResult {
+                outcome: MatchOutcome::DrawRepetition,
+                final_state: state,
+                opening_moves_lan,
+                played_moves_lan,
+            });
+        }
+
+        let mut probe = state.clone();
+        let legal_moves = generate_legal_move_descriptions_in_place(&mut probe)
+            .map_err(|e| format!("failed to generate legal moves: {e}"))?;
+        if legal_moves.is_empty() {
+            let outcome = if is_king_in_check(&state, state.side_to_move) {
+                match state.side_to_move {
+                    Color::Light => MatchOutcome::BlackWinCheckmate,
+                    Color::Dark => MatchOutcome::WhiteWinCheckmate,
+                }
+            } else {
+                MatchOutcome::DrawStalemate
+            };
+            return Ok(MatchResult {
+                outcome,
+                final_state: state,
+                opening_moves_lan,
+                played_moves_lan,
+            });
+        }
+
+        let engine = match state.side_to_move {
+            Color::Light => &mut engine_white,
+            Color::Dark => &mut engine_black,
+        };
+        let out = engine.choose_move(&state, &config.go_params)?;
+
+        let chosen = out.best_move.unwrap_or(legal_moves[0]);
+        if !legal_moves.contains(&chosen) {
+            return Err("engine returned illegal move".to_owned());
+        }
+
+        let lan = move_description_to_long_algebraic(chosen, &state)?;
+        played_moves_lan.push(lan);
+        state = apply_move(&state, chosen)?;
+    }
+
+    Ok(MatchResult {
+        outcome: MatchOutcome::DrawMaxPlies,
+        final_state: state,
+        opening_moves_lan,
+        played_moves_lan,
+    })
+}
+
+/// Play a series of matches and aggregate win/loss/draw statistics.
+///
+/// Player 1 is always White and Player 2 is always Black in this harness.
+pub fn play_engine_match_series<F1, F2>(
+    player1_factory: F1,
+    player2_factory: F2,
+    config: MatchSeriesConfig,
+) -> Result<MatchSeriesStats, String>
+where
+    F1: Fn() -> Box<dyn Engine>,
+    F2: Fn() -> Box<dyn Engine>,
+{
+    let mut stats = MatchSeriesStats {
+        games: config.games,
+        ..MatchSeriesStats::default()
+    };
+
+    for i in 0..config.games {
+        println!("Running match {:?}",i);
+        let seed = config.base_seed.wrapping_add(u64::from(i));
+        let result = play_engine_match(
+            player1_factory(),
+            player2_factory(),
+            seed,
+            config.per_game.clone(),
+        )?;
+        stats.outcomes.push(result.outcome);
+        println!("Match {:?} outcome: {:?}",i,&result.outcome);
+        match result.outcome {
+            MatchOutcome::WhiteWinCheckmate => stats.player1_wins += 1,
+            MatchOutcome::BlackWinCheckmate => stats.player2_wins += 1,
+            MatchOutcome::DrawStalemate
+            | MatchOutcome::DrawRepetition
+            | MatchOutcome::DrawFiftyMoveRule
+            | MatchOutcome::DrawMaxPlies => stats.draws += 1,
+        }
+    }
+
+    Ok(stats)
+}
+
+fn apply_seeded_random_opening(
+    initial: &GameState,
+    seed: u64,
+    min_plies: u8,
+    max_plies: u8,
+) -> Result<(GameState, Vec<String>), String> {
+    let mut rng = StdRng::seed_from_u64(seed);
+    let mut state = initial.clone();
+    let mut opening_moves_lan = Vec::<String>::new();
+    let book = OpeningBook::load_default();
+
+    let low = min_plies.min(max_plies);
+    let high = max_plies.max(min_plies);
+    let target_plies = if low == high {
+        low
+    } else {
+        rng.random_range(low..=high)
+    };
+
+    for _ in 0..target_plies {
+        let mut probe = state.clone();
+        let legal_moves = generate_legal_move_descriptions_in_place(&mut probe)
+            .map_err(|e| format!("failed to generate legal opening moves: {e}"))?;
+        if legal_moves.is_empty() {
+            break;
+        }
+
+        let mut chosen = book
+            .choose_weighted_move(&state, &mut rng)
+            .filter(|m| legal_moves.contains(m));
+        if chosen.is_none() {
+            let idx = rng.random_range(0..legal_moves.len());
+            chosen = Some(legal_moves[idx]);
+        }
+        let chosen = chosen.expect("chosen move should exist");
+
+        let lan = move_description_to_long_algebraic(chosen, &state)?;
+        opening_moves_lan.push(lan);
+        state = apply_move(&state, chosen)?;
+    }
+
+    Ok((state, opening_moves_lan))
+}
+
+#[inline]
+fn repetition_count(state: &GameState) -> usize {
+    let current = state.zobrist_key;
+    state
+        .repetition_history
+        .iter()
+        .filter(|h| **h == current)
+        .count()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        play_engine_match, play_engine_match_series, MatchConfig, MatchOutcome, MatchSeriesConfig,
+    };
+    use crate::engines::engine_greedy::GreedyEngine;
+    use crate::engines::engine_iterative::IterativeEngine;
+    use crate::engines::engine_random::RandomEngine;
+
+    #[test]
+    fn engine_match_harness_runs_random_vs_greedy() {
+        let white = Box::new(RandomEngine::new());
+        let black = Box::new(GreedyEngine::new());
+        let result = play_engine_match(
+            white,
+            black,
+            42,
+            MatchConfig {
+                max_plies: 40,
+                opening_min_plies: 2,
+                opening_max_plies: 6,
+                ..MatchConfig::default()
+            },
+        )
+        .expect("match should run");
+
+        assert!(!result.opening_moves_lan.is_empty());
+        assert!(matches!(
+            result.outcome,
+            MatchOutcome::WhiteWinCheckmate
+                | MatchOutcome::BlackWinCheckmate
+                | MatchOutcome::DrawStalemate
+                | MatchOutcome::DrawRepetition
+                | MatchOutcome::DrawFiftyMoveRule
+                | MatchOutcome::DrawMaxPlies
+        ));
+    }
+
+    #[test]
+    fn engine_match_series_reports_stats_for_default_nine_games() {
+        let stats = play_engine_match_series(
+            || Box::new(IterativeEngine::new(3)),
+            || Box::new(IterativeEngine::new(2)),
+            MatchSeriesConfig {
+                games: 9,
+                base_seed: 1234,
+                per_game: MatchConfig {
+                    max_plies: 100,
+                    opening_min_plies: 2,
+                    opening_max_plies: 6,
+                    ..MatchConfig::default()
+                },
+            },
+        )
+        .expect("series should run");
+
+        println!("Stats: {:?}",&stats);
+
+        let total = stats.player1_wins + stats.player2_wins + stats.draws;
+        assert_eq!(stats.games, 9);
+        assert_eq!(stats.outcomes.len(), 9);
+        assert_eq!(total, stats.games);
+
+        let report = stats.report();
+        assert!(report.contains("games=9"));
+    }
+}

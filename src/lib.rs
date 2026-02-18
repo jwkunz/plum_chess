@@ -57,6 +57,7 @@ pub mod engines {
 
 pub mod utils {
     pub mod algebraic;
+    pub mod engine_match_harness;
     pub mod fen_generator;
     pub mod fen_parser;
     pub mod long_algebraic;
