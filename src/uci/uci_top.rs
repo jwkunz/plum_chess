@@ -77,7 +77,7 @@ impl UciState {
                 writeln!(out, "id author {}", UCI_ENGINE_AUTHOR)?;
                 writeln!(
                     out,
-                    "option name Skill Level type spin default 1 min 1 max 5"
+                    "option name Skill Level type spin default 1 min 1 max 10"
                 )?;
                 writeln!(
                     out,
@@ -149,9 +149,6 @@ impl UciState {
             let parsed = value
                 .parse::<u8>()
                 .map_err(|_| format!("invalid Skill Level value '{}'", value))?;
-            if !(1..=5).contains(&parsed) {
-                return Err(format!("Skill Level out of range: {}", parsed));
-            }
             self.skill_level = parsed;
             self.engine = build_engine(self.skill_level);
             let _ = self.engine.set_option("Hash", &self.hash_mb.to_string());
@@ -280,11 +277,17 @@ fn parse_go_params(line: &str) -> GoParams {
 
 fn build_engine(skill_level: u8) -> Box<dyn Engine> {
     match skill_level {
-        5 => Box::new(IterativeEngine::new(5)),
-        4 => Box::new(IterativeEngine::new(3)),
-        3 => Box::new(IterativeEngine::new(1)),
+        1 => Box::new(RandomEngine::new()),
         2 => Box::new(GreedyEngine::new()),
-        _ => Box::new(RandomEngine::new()),
+        3 => Box::new(IterativeEngine::new_standard(2)),
+        4 => Box::new(IterativeEngine::new_alpha_zero(2)),
+        5 => Box::new(IterativeEngine::new_standard(3)),
+        6 => Box::new(IterativeEngine::new_alpha_zero(3)),
+        7 => Box::new(IterativeEngine::new_standard(4)),
+        8 => Box::new(IterativeEngine::new_alpha_zero(4)),
+        9 => Box::new(IterativeEngine::new_standard(5)),
+        10 => Box::new(IterativeEngine::new_alpha_zero(5)),
+        _ => Box::new(IterativeEngine::new_alpha_zero(6)),
     }
 }
 
@@ -332,6 +335,15 @@ mod tests {
             .handle_setoption("setoption name Skill Level value 3")
             .expect("setoption should parse");
         assert_eq!(state.skill_level, 3);
+    }
+
+    #[test]
+    fn setoption_skill_level_allows_out_of_range_and_uses_fallback_engine_mapping() {
+        let mut state = UciState::new();
+        state
+            .handle_setoption("setoption name Skill Level value 42")
+            .expect("setoption should parse");
+        assert_eq!(state.skill_level, 42);
     }
 
     #[test]

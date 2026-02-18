@@ -2,12 +2,13 @@
 //!
 //! Run with:
 //! `cargo run --release --bin engine_match_series`
+//! `cargo run --release --bin engine_match_series -- --verbose`
 
 use plum_chess::engines::engine_trait::{Engine, EngineOutput, GoParams};
 use plum_chess::game_state::game_state::GameState;
 use plum_chess::move_generation::legal_move_generator::FastLegalMoveGenerator;
 use plum_chess::search::board_scoring::{
-    AlphaZeroMetric, AlphaZeroPlusLegalMoves, BoardScorer, MaterialScorer,
+    AlphaZeroMetric, AlphaZeroPlusLegalMoves, BoardScorer,
 };
 use plum_chess::search::iterative_deepening::{iterative_deepening_search, SearchConfig};
 use plum_chess::utils::engine_match_harness::{
@@ -55,31 +56,30 @@ impl<S: BoardScorer + Send + Sync + 'static> Engine for ConfigurableIterativeEng
     }
 }
 
-// Use 'cargo run --bin engine_match_series' to run this
+// Use 'cargo run --release --bin engine_match_series -- --verbose' to run this
 fn main() -> Result<(), String> {
+    let verbose = std::env::args().any(|a| a == "--verbose" || a == "-v");
+
     // Customize these two lines to experiment with different engines/scorers/depths.
     let player1 =
-        || Box::new(ConfigurableIterativeEngine::new(MaterialScorer, 1)) as Box<dyn Engine>;
+        || Box::new(ConfigurableIterativeEngine::new(AlphaZeroMetric, 3)) as Box<dyn Engine>;
     let player2 = || {
-        Box::new(ConfigurableIterativeEngine::new(AlphaZeroPlusLegalMoves, 2)) as Box<dyn Engine>
+        Box::new(ConfigurableIterativeEngine::new(AlphaZeroPlusLegalMoves, 3)) as Box<dyn Engine>
     };
-
-    // Keep this around so you can quickly switch scorer experiments in code.
-    let _alternate =
-        || Box::new(ConfigurableIterativeEngine::new(AlphaZeroMetric, 2)) as Box<dyn Engine>;
 
     let stats = play_engine_match_series(
         player1,
         player2,
         MatchSeriesConfig {
-            games: 9,
+            games: 100,
             base_seed: 1234,
             per_game: MatchConfig {
-                max_plies: 60,
+                max_plies: 120,
                 opening_min_plies: 2,
                 opening_max_plies: 6,
                 ..MatchConfig::default()
             },
+            verbose,
         },
     )?;
 
@@ -87,3 +87,22 @@ fn main() -> Result<(), String> {
     println!("outcomes: {:?}", stats.outcomes);
     Ok(())
 }
+
+/*
+Notes:
+
+In a 100 game series of 120 plies:
+ConfigurableIterativeEngine::new(AlphaZeroPlusLegalMoves, 3) = 20 wins @ 18.1 ms per move
+vs
+ConfigurableIterativeEngine::new(MaterialScorer, 3) = 9 wins @ 6.3 ms per move
+Conclusion:  Alpha Zero weightings are superior in short decisions games
+
+---
+
+In a 100 game series of 120 plies:
+ConfigurableIterativeEngine::new(AlphaZeroPlusLegalMoves, 3) = 22 wins @ 5.938 ms per move
+vs
+ConfigurableIterativeEngine::new(AlphaZeroMetric, 3) = 23 wins @ 18.710 ms per move
+Conclusion:  Adding legal moves to Alpha Zero weightings onyl wastes time
+
+*/
