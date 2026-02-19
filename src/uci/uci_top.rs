@@ -6,7 +6,7 @@
 use std::io::{self, BufRead, Write};
 
 use crate::engines::engine_greedy::GreedyEngine;
-use crate::engines::engine_iterative_v3::IterativeEngine;
+use crate::engines::engine_iterative_v4::IterativeEngine;
 use crate::engines::engine_random::RandomEngine;
 use crate::engines::engine_trait::{Engine, GoParams};
 use crate::game_state::game_state::GameState;
