@@ -21,6 +21,7 @@
 //! - Stronger SEE thresholds for tactical pruning/order quality.
 //! - Mate-distance consistency audit for TT store/probe normalization.
 //! - Mate-score shaping via fail-soft cutoff propagation.
+//! - Selective endgame extensions (checking, advanced passers, king-pawn races).
 
 use crate::game_state::game_state::GameState;
 use crate::move_generation::legal_move_apply::{make_move_in_place, unmake_move_in_place};
@@ -28,7 +29,7 @@ use crate::move_generation::legal_move_checks::is_king_in_check;
 use crate::move_generation::legal_move_generator::generate_legal_move_descriptions_in_place;
 use crate::move_generation::move_generator::{MoveGenResult, MoveGenerationError, MoveGenerator};
 use crate::moves::move_descriptions::{
-    move_captured_piece_code, move_moved_piece_code, move_promotion_piece_code,
+    move_captured_piece_code, move_moved_piece_code, move_promotion_piece_code, move_to,
     piece_kind_from_code, FLAG_CAPTURE, FLAG_EN_PASSANT, NO_PIECE_CODE,
 };
 use crate::search::board_scoring::BoardScorer;
@@ -498,9 +499,9 @@ fn negamax<S: BoardScorer>(
             MoveGenerationError::InvalidState(format!("make_move_in_place failed: {x}"))
         })?;
 
-        let child = child_depth(depth, game_state, allow_check_extension);
+        let child = child_depth(depth, game_state, allow_check_extension, mv);
         let child_allow_check_ext =
-            child_allows_check_extension(depth, game_state, allow_check_extension);
+            child_allows_check_extension(depth, game_state, allow_check_extension, mv);
         let is_quiet = is_quiet_move(mv);
         if should_lmp_prune(depth, move_index, is_quiet, in_check, alpha, best) {
             unmake_move_in_place(game_state).map_err(|x| {
@@ -944,9 +945,14 @@ fn repetition_draw_score(static_eval_side_to_move: i32) -> i32 {
 }
 
 #[inline]
-fn child_depth(depth: u8, game_state: &GameState, allow_check_extension: bool) -> u8 {
+fn child_depth(
+    depth: u8,
+    game_state: &GameState,
+    allow_check_extension: bool,
+    last_move: u64,
+) -> u8 {
     let base = depth.saturating_sub(1);
-    if should_extend_check(base, game_state, allow_check_extension) {
+    if should_extend_endgame_move(base, game_state, allow_check_extension, last_move) {
         base.saturating_add(1)
     } else {
         base
@@ -958,16 +964,23 @@ fn child_allows_check_extension(
     depth: u8,
     game_state: &GameState,
     allow_check_extension: bool,
+    last_move: u64,
 ) -> bool {
     allow_check_extension
-        && !should_extend_check(depth.saturating_sub(1), game_state, allow_check_extension)
+        && !should_extend_endgame_move(
+            depth.saturating_sub(1),
+            game_state,
+            allow_check_extension,
+            last_move,
+        )
 }
 
 #[inline]
-fn should_extend_check(
+fn should_extend_endgame_move(
     base_child_depth: u8,
     game_state: &GameState,
     allow_check_extension: bool,
+    last_move: u64,
 ) -> bool {
     if !allow_check_extension {
         return false;
@@ -980,7 +993,33 @@ fn should_extend_check(
     }
     // After make_move_in_place(), side_to_move has flipped. If that side is in check,
     // the move that was just made is checking.
-    is_king_in_check(game_state, game_state.side_to_move)
+    if is_king_in_check(game_state, game_state.side_to_move) {
+        return true;
+    }
+
+    let moved_piece = piece_kind_from_code(move_moved_piece_code(last_move));
+    let moved_color = game_state.side_to_move.opposite();
+    let to_sq = move_to(last_move);
+
+    if moved_piece == Some(crate::game_state::chess_types::PieceKind::Pawn)
+        && is_advanced_pawn_square(moved_color, to_sq)
+        && is_passed_pawn_on_square(game_state, moved_color, to_sq)
+    {
+        return true;
+    }
+
+    if is_king_pawn_only_endgame(game_state)
+        && matches!(
+            moved_piece,
+            Some(crate::game_state::chess_types::PieceKind::King)
+                | Some(crate::game_state::chess_types::PieceKind::Pawn)
+        )
+        && king_pawn_race_like_position(game_state, moved_color, to_sq)
+    {
+        return true;
+    }
+
+    false
 }
 
 #[inline]
@@ -1014,6 +1053,105 @@ fn is_late_endgame(game_state: &GameState) -> bool {
 
     // Maximum phase here is 24. Treat <= 8 as late endgame.
     phase <= 8
+}
+
+#[inline]
+fn is_advanced_pawn_square(color: crate::game_state::chess_types::Color, sq: u8) -> bool {
+    let rank = sq / 8;
+    match color {
+        crate::game_state::chess_types::Color::Light => rank >= 5,
+        crate::game_state::chess_types::Color::Dark => rank <= 2,
+    }
+}
+
+fn is_passed_pawn_on_square(
+    game_state: &GameState,
+    color: crate::game_state::chess_types::Color,
+    sq: u8,
+) -> bool {
+    let enemy_pawns = game_state.pieces[color.opposite().index()]
+        [crate::game_state::chess_types::PieceKind::Pawn.index()];
+    let file = (sq % 8) as i8;
+    let rank = (sq / 8) as i8;
+
+    for f in [file - 1, file, file + 1] {
+        if !(0..=7).contains(&f) {
+            continue;
+        }
+        match color {
+            crate::game_state::chess_types::Color::Light => {
+                let mut r = rank + 1;
+                while r <= 7 {
+                    let target = (r as u8) * 8 + (f as u8);
+                    if (enemy_pawns & (1u64 << target)) != 0 {
+                        return false;
+                    }
+                    r += 1;
+                }
+            }
+            crate::game_state::chess_types::Color::Dark => {
+                let mut r = rank - 1;
+                while r >= 0 {
+                    let target = (r as u8) * 8 + (f as u8);
+                    if (enemy_pawns & (1u64 << target)) != 0 {
+                        return false;
+                    }
+                    r -= 1;
+                }
+            }
+        }
+    }
+    true
+}
+
+#[inline]
+fn is_king_pawn_only_endgame(game_state: &GameState) -> bool {
+    for color in [
+        crate::game_state::chess_types::Color::Light,
+        crate::game_state::chess_types::Color::Dark,
+    ] {
+        let idx = color.index();
+        if game_state.pieces[idx][crate::game_state::chess_types::PieceKind::Queen.index()] != 0
+            || game_state.pieces[idx][crate::game_state::chess_types::PieceKind::Rook.index()] != 0
+            || game_state.pieces[idx][crate::game_state::chess_types::PieceKind::Bishop.index()]
+                != 0
+            || game_state.pieces[idx][crate::game_state::chess_types::PieceKind::Knight.index()]
+                != 0
+        {
+            return false;
+        }
+    }
+    true
+}
+
+fn king_pawn_race_like_position(
+    game_state: &GameState,
+    moved_color: crate::game_state::chess_types::Color,
+    moved_to_sq: u8,
+) -> bool {
+    let opp = moved_color.opposite();
+    let own_king_bb = game_state.pieces[moved_color.index()]
+        [crate::game_state::chess_types::PieceKind::King.index()];
+    let opp_king_bb =
+        game_state.pieces[opp.index()][crate::game_state::chess_types::PieceKind::King.index()];
+    if own_king_bb == 0 || opp_king_bb == 0 {
+        return false;
+    }
+    let own_king_sq = own_king_bb.trailing_zeros() as u8;
+    let opp_king_sq = opp_king_bb.trailing_zeros() as u8;
+
+    let kings_close = chebyshev_distance(own_king_sq, opp_king_sq) <= 2;
+    let move_near_promo = is_advanced_pawn_square(moved_color, moved_to_sq);
+    kings_close || move_near_promo
+}
+
+#[inline]
+fn chebyshev_distance(a: u8, b: u8) -> i32 {
+    let af = i32::from(a % 8);
+    let ar = i32::from(a / 8);
+    let bf = i32::from(b % 8);
+    let br = i32::from(b / 8);
+    (af - bf).abs().max((ar - br).abs())
 }
 
 #[inline]
