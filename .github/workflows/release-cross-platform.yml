@@ -1,0 +1,70 @@
+name: Build And Release Binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release --bin plum_chess
+
+      - name: Create versioned asset name from Cargo.toml
+        id: asset
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PKG_NAME="$(sed -nE 's/^name\\s*=\\s*\"([^\"]+)\"/\\1/p' Cargo.toml | head -n1)"
+          PKG_VERSION="$(sed -nE 's/^version\\s*=\\s*\"([^\"]+)\"/\\1/p' Cargo.toml | head -n1)"
+          HOST_TRIPLE="$(rustc -vV | awk '/^host:/ {print $2}')"
+          ARCH="$(echo "$HOST_TRIPLE" | cut -d- -f1)"
+          OS_TAG="$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')"
+
+          EXT=""
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            EXT=".exe"
+          fi
+
+          BIN_PATH="target/release/${PKG_NAME}${EXT}"
+          ASSET_NAME="${PKG_NAME}-v${PKG_VERSION}-${OS_TAG}-${ARCH}${EXT}"
+
+          cp "$BIN_PATH" "$ASSET_NAME"
+
+          echo "asset_name=$ASSET_NAME" >> "$GITHUB_OUTPUT"
+          echo "Created asset: $ASSET_NAME"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.asset.outputs.asset_name }}
+          path: ${{ steps.asset.outputs.asset_name }}
+          if-no-files-found: error
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.asset.outputs.asset_name }}
