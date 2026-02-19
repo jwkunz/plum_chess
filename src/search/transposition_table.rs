@@ -1,6 +1,7 @@
 //! Fixed-size transposition table keyed by Zobrist hash.
 //!
-//! This table uses direct indexing with depth-preferred replacement.
+//! This table uses direct indexing with depth-preferred replacement and
+//! generation aging to evict stale entries.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Bound {
@@ -28,23 +29,38 @@ pub struct TTStats {
 #[derive(Debug, Clone)]
 pub struct TranspositionTable {
     entries: Vec<Option<TTEntry>>,
+    generations: Vec<u8>,
+    current_generation: u8,
     stats: TTStats,
 }
 
 impl TranspositionTable {
+    const AGE_REPLACE_THRESHOLD: u8 = 4;
+    const DEPTH_REPLACE_MARGIN: u8 = 2;
+
     pub fn new_with_mb(size_mb: usize) -> Self {
         let bytes = size_mb.max(1) * 1024 * 1024;
         let entry_size = std::mem::size_of::<Option<TTEntry>>().max(1);
         let count = (bytes / entry_size).max(1);
         Self {
             entries: vec![None; count],
+            generations: vec![0; count],
+            current_generation: 0,
             stats: TTStats::default(),
         }
+    }
+
+    /// Advance TT generation (typically once per iterative-deepening iteration).
+    #[inline]
+    pub fn new_generation(&mut self) {
+        self.current_generation = self.current_generation.wrapping_add(1);
     }
 
     #[inline]
     pub fn clear(&mut self) {
         self.entries.fill(None);
+        self.generations.fill(0);
+        self.current_generation = 0;
         self.stats = TTStats::default();
     }
 
@@ -69,6 +85,7 @@ impl TranspositionTable {
         let hit = self.entries[idx].filter(|e| e.key == key);
         if hit.is_some() {
             self.stats.hits += 1;
+            self.generations[idx] = self.current_generation;
         }
         hit
     }
@@ -77,10 +94,25 @@ impl TranspositionTable {
         self.stats.stores += 1;
         let idx = self.idx(entry.key);
         match self.entries[idx] {
-            None => self.entries[idx] = Some(entry),
+            None => {
+                self.entries[idx] = Some(entry);
+                self.generations[idx] = self.current_generation;
+            }
             Some(existing) => {
-                if existing.key != entry.key || entry.depth >= existing.depth {
+                let same_key = existing.key == entry.key;
+                let age = self.current_generation.wrapping_sub(self.generations[idx]);
+                let stale = age >= Self::AGE_REPLACE_THRESHOLD;
+
+                let replace = if same_key {
+                    entry.depth >= existing.depth
+                } else {
+                    stale
+                        || entry.depth.saturating_add(Self::DEPTH_REPLACE_MARGIN) >= existing.depth
+                };
+
+                if replace {
                     self.entries[idx] = Some(entry);
+                    self.generations[idx] = self.current_generation;
                 }
             }
         }
