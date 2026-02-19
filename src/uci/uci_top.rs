@@ -45,6 +45,7 @@ struct UciState {
     own_book: bool,
     ponder: bool,
     analyse_mode: bool,
+    chess960: bool,
     debug_mode: bool,
 }
 
@@ -68,6 +69,7 @@ impl UciState {
             own_book,
             ponder: false,
             analyse_mode: false,
+            chess960: false,
             debug_mode: false,
         }
     }
@@ -97,6 +99,7 @@ impl UciState {
                 writeln!(out, "option name Threads type spin default 1 min 1 max 128")?;
                 writeln!(out, "option name Ponder type check default false")?;
                 writeln!(out, "option name UCI_AnalyseMode type check default false")?;
+                writeln!(out, "option name UCI_Chess960 type check default false")?;
                 writeln!(out, "option name OwnBook type check default true")?;
                 writeln!(
                     out,
@@ -189,6 +192,9 @@ impl UciState {
             );
             let _ = self
                 .engine
+                .set_option("UCI_Chess960", if self.chess960 { "true" } else { "false" });
+            let _ = self
+                .engine
                 .set_option("OwnBook", if self.own_book { "true" } else { "false" });
             self.engine.new_game();
         } else if name.eq_ignore_ascii_case("FixedDepth") {
@@ -221,6 +227,11 @@ impl UciState {
                 "UCI_AnalyseMode",
                 if self.analyse_mode { "true" } else { "false" },
             )?;
+        } else if name.eq_ignore_ascii_case("UCI_Chess960") {
+            let lower = value.to_ascii_lowercase();
+            self.chess960 = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
+            self.engine
+                .set_option("UCI_Chess960", if self.chess960 { "true" } else { "false" })?;
         } else if name.eq_ignore_ascii_case("OwnBook") {
             let lower = value.to_ascii_lowercase();
             self.own_book = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
@@ -285,7 +296,18 @@ impl UciState {
 
         if let Some(best_move) = result.best_move {
             let lan = move_description_to_long_algebraic(best_move, &self.game_state)?;
-            writeln!(out, "bestmove {}", lan).map_err(|e| e.to_string())?;
+            if let Some(ponder_move) = result.ponder_move {
+                let next_state = apply_move(&self.game_state, best_move)?;
+                if let Ok(ponder_lan) = move_description_to_long_algebraic(ponder_move, &next_state)
+                {
+                    writeln!(out, "bestmove {} ponder {}", lan, ponder_lan)
+                        .map_err(|e| e.to_string())?;
+                } else {
+                    writeln!(out, "bestmove {}", lan).map_err(|e| e.to_string())?;
+                }
+            } else {
+                writeln!(out, "bestmove {}", lan).map_err(|e| e.to_string())?;
+            }
         } else {
             writeln!(out, "bestmove 0000").map_err(|e| e.to_string())?;
         }
@@ -474,6 +496,16 @@ mod tests {
             .handle_setoption("setoption name OwnBook value false")
             .expect("ownbook should parse");
         assert!(!state.own_book);
+    }
+
+    #[test]
+    fn setoption_chess960_parse() {
+        let mut state = UciState::new();
+        assert!(!state.chess960);
+        state
+            .handle_setoption("setoption name UCI_Chess960 value true")
+            .expect("chess960 should parse");
+        assert!(state.chess960);
     }
 
     #[test]

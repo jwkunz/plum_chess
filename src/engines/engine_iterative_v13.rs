@@ -276,6 +276,9 @@ impl Engine for IterativeEngine {
         ));
 
         let pv = principal_variation_from_tt(game_state, &mut self.tt, result.reached_depth);
+        if pv.moves.len() >= 2 {
+            out.ponder_move = Some(pv.moves[1]);
+        }
         if !pv.moves.is_empty() {
             let mut pv_lan = Vec::with_capacity(pv.moves.len());
             let mut state = game_state.clone();

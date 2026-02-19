@@ -24,6 +24,7 @@ pub struct GoParams {
 #[derive(Debug, Clone, Default)]
 pub struct EngineOutput {
     pub best_move: Option<u64>,
+    pub ponder_move: Option<u64>,
     pub info_lines: Vec<String>,
 }
 

@@ -510,6 +510,7 @@ mod tests {
 
             Ok(EngineOutput {
                 best_move: result.best_move,
+                ponder_move: None,
                 info_lines: vec![format!("info string test_engine depth {}", depth)],
             })
         }
