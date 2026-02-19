@@ -222,7 +222,12 @@ impl BoardScorer for EndgameTaperedScorerV14 {
         let eg_term = endgame_king_activity_white_minus_black(game_state)
             + endgame_passed_pawn_white_minus_black(game_state)
             + endgame_king_activity_v14_white_minus_black(game_state)
-            + endgame_passed_pawn_v14_white_minus_black(game_state);
+            + endgame_passed_pawn_v14_white_minus_black(game_state)
+            + endgame_rook_file_control_white_minus_black(game_state)
+            + endgame_rook_behind_passed_pawn_white_minus_black(game_state)
+            + endgame_opposition_white_minus_black(game_state)
+            + endgame_outside_passed_pawn_white_minus_black(game_state)
+            + endgame_bishop_pair_simplified_white_minus_black(game_state);
         let white_minus_black = base + ((eg_term as f64) * eg_weight) as i32;
 
         match game_state.side_to_move {
@@ -515,6 +520,151 @@ fn endgame_passed_pawn_v14_white_minus_black(game_state: &GameState) -> i32 {
     score
 }
 
+fn endgame_rook_file_control_white_minus_black(game_state: &GameState) -> i32 {
+    const OPEN_FILE_BONUS: i32 = 16;
+    const SEMI_OPEN_FILE_BONUS: i32 = 8;
+    let white_rooks = game_state.pieces[Color::Light.index()][PieceKind::Rook.index()];
+    let black_rooks = game_state.pieces[Color::Dark.index()][PieceKind::Rook.index()];
+    let white_pawns = game_state.pieces[Color::Light.index()][PieceKind::Pawn.index()];
+    let black_pawns = game_state.pieces[Color::Dark.index()][PieceKind::Pawn.index()];
+    let all_pawns = white_pawns | black_pawns;
+
+    let mut score = 0i32;
+    let mut wr = white_rooks;
+    while wr != 0 {
+        let sq = wr.trailing_zeros() as u8;
+        let file_mask = 0x0101_0101_0101_0101u64 << (sq % 8);
+        if (all_pawns & file_mask) == 0 {
+            score += OPEN_FILE_BONUS;
+        } else if (white_pawns & file_mask) == 0 {
+            score += SEMI_OPEN_FILE_BONUS;
+        }
+        wr &= wr - 1;
+    }
+
+    let mut br = black_rooks;
+    while br != 0 {
+        let sq = br.trailing_zeros() as u8;
+        let file_mask = 0x0101_0101_0101_0101u64 << (sq % 8);
+        if (all_pawns & file_mask) == 0 {
+            score -= OPEN_FILE_BONUS;
+        } else if (black_pawns & file_mask) == 0 {
+            score -= SEMI_OPEN_FILE_BONUS;
+        }
+        br &= br - 1;
+    }
+
+    score
+}
+
+fn endgame_rook_behind_passed_pawn_white_minus_black(game_state: &GameState) -> i32 {
+    const BEHIND_PASSER_BONUS: i32 = 20;
+    let white_pawns = game_state.pieces[Color::Light.index()][PieceKind::Pawn.index()];
+    let black_pawns = game_state.pieces[Color::Dark.index()][PieceKind::Pawn.index()];
+    let white_rooks = game_state.pieces[Color::Light.index()][PieceKind::Rook.index()];
+    let black_rooks = game_state.pieces[Color::Dark.index()][PieceKind::Rook.index()];
+
+    let mut score = 0i32;
+    let mut wp = white_pawns;
+    while wp != 0 {
+        let sq = wp.trailing_zeros() as u8;
+        if is_passed_pawn(Color::Light, sq, black_pawns)
+            && has_rook_behind_pawn(Color::Light, sq, white_rooks)
+        {
+            score += BEHIND_PASSER_BONUS;
+        }
+        wp &= wp - 1;
+    }
+
+    let mut bp = black_pawns;
+    while bp != 0 {
+        let sq = bp.trailing_zeros() as u8;
+        if is_passed_pawn(Color::Dark, sq, white_pawns)
+            && has_rook_behind_pawn(Color::Dark, sq, black_rooks)
+        {
+            score -= BEHIND_PASSER_BONUS;
+        }
+        bp &= bp - 1;
+    }
+    score
+}
+
+fn endgame_opposition_white_minus_black(game_state: &GameState) -> i32 {
+    const OPPOSITION_BONUS: i32 = 18;
+    let white_king = game_state.pieces[Color::Light.index()][PieceKind::King.index()];
+    let black_king = game_state.pieces[Color::Dark.index()][PieceKind::King.index()];
+    if white_king == 0 || black_king == 0 {
+        return 0;
+    }
+
+    let wk = white_king.trailing_zeros() as u8;
+    let bk = black_king.trailing_zeros() as u8;
+    let w_file = i32::from(wk % 8);
+    let w_rank = i32::from(wk / 8);
+    let b_file = i32::from(bk % 8);
+    let b_rank = i32::from(bk / 8);
+    let file_dist = (w_file - b_file).abs();
+    let rank_dist = (w_rank - b_rank).abs();
+
+    let has_direct_opposition =
+        (file_dist == 0 && rank_dist == 2) || (rank_dist == 0 && file_dist == 2);
+    if !has_direct_opposition {
+        return 0;
+    }
+
+    // In direct opposition positions, the side not-to-move has the opposition.
+    if game_state.side_to_move == Color::Light {
+        -OPPOSITION_BONUS
+    } else {
+        OPPOSITION_BONUS
+    }
+}
+
+fn endgame_outside_passed_pawn_white_minus_black(game_state: &GameState) -> i32 {
+    const OUTSIDE_PASSER_BONUS: i32 = 22;
+    let white_pawns = game_state.pieces[Color::Light.index()][PieceKind::Pawn.index()];
+    let black_pawns = game_state.pieces[Color::Dark.index()][PieceKind::Pawn.index()];
+    let white_outside = has_outside_passed_pawn(Color::Light, white_pawns, black_pawns);
+    let black_outside = has_outside_passed_pawn(Color::Dark, black_pawns, white_pawns);
+
+    let mut score = 0i32;
+    if white_outside {
+        score += OUTSIDE_PASSER_BONUS;
+    }
+    if black_outside {
+        score -= OUTSIDE_PASSER_BONUS;
+    }
+    score
+}
+
+fn endgame_bishop_pair_simplified_white_minus_black(game_state: &GameState) -> i32 {
+    const BISHOP_PAIR_BONUS: i32 = 28;
+    let white_bishops =
+        game_state.pieces[Color::Light.index()][PieceKind::Bishop.index()].count_ones() as i32;
+    let black_bishops =
+        game_state.pieces[Color::Dark.index()][PieceKind::Bishop.index()].count_ones() as i32;
+
+    let mut npm = 0i32;
+    for color in [Color::Light, Color::Dark] {
+        npm += game_state.pieces[color.index()][PieceKind::Queen.index()].count_ones() as i32 * 9;
+        npm += game_state.pieces[color.index()][PieceKind::Rook.index()].count_ones() as i32 * 5;
+        npm += game_state.pieces[color.index()][PieceKind::Knight.index()].count_ones() as i32 * 3;
+        npm += game_state.pieces[color.index()][PieceKind::Bishop.index()].count_ones() as i32 * 3;
+    }
+    // Clamp to [0, 1] where 1 means highly simplified.
+    let simplification = (24 - npm).clamp(0, 24);
+    let simplified_scale = simplification as f64 / 24.0;
+
+    let mut score = 0i32;
+    if white_bishops >= 2 {
+        score += BISHOP_PAIR_BONUS;
+    }
+    if black_bishops >= 2 {
+        score -= BISHOP_PAIR_BONUS;
+    }
+    ((score as f64) * simplified_scale) as i32
+}
+
 #[inline]
 fn manhattan(a: u8, b: u8) -> i32 {
     let af = i32::from(a % 8);
@@ -536,6 +686,78 @@ fn nearest_distance_to_pawns(from_sq: u8, pawns: u64) -> i32 {
         bb &= bb - 1;
     }
     best
+}
+
+fn has_rook_behind_pawn(color: Color, pawn_sq: u8, rooks: u64) -> bool {
+    let file = pawn_sq % 8;
+    let rank = pawn_sq / 8;
+    let mut rr = rooks;
+    while rr != 0 {
+        let rook_sq = rr.trailing_zeros() as u8;
+        if (rook_sq % 8) == file {
+            let rook_rank = rook_sq / 8;
+            match color {
+                Color::Light => {
+                    if rook_rank < rank {
+                        return true;
+                    }
+                }
+                Color::Dark => {
+                    if rook_rank > rank {
+                        return true;
+                    }
+                }
+            }
+        }
+        rr &= rr - 1;
+    }
+    false
+}
+
+fn has_outside_passed_pawn(color: Color, own_pawns: u64, enemy_pawns: u64) -> bool {
+    if own_pawns == 0 || enemy_pawns == 0 {
+        return false;
+    }
+
+    let mut enemy_files_mask = 0u8;
+    let mut ep = enemy_pawns;
+    while ep != 0 {
+        let sq = ep.trailing_zeros() as u8;
+        enemy_files_mask |= 1u8 << (sq % 8);
+        ep &= ep - 1;
+    }
+
+    let mut op = own_pawns;
+    while op != 0 {
+        let sq = op.trailing_zeros() as u8;
+        if is_passed_pawn(color, sq, enemy_pawns) {
+            let file = sq % 8;
+            // Outside passed pawn: on a wing file and separated from enemy pawn mass.
+            if file <= 1 || file >= 6 {
+                let nearest_enemy_file_distance =
+                    nearest_file_distance_to_mask(file, enemy_files_mask);
+                if nearest_enemy_file_distance >= 2 {
+                    return true;
+                }
+            }
+        }
+        op &= op - 1;
+    }
+    false
+}
+
+fn nearest_file_distance_to_mask(file: u8, files_mask: u8) -> i32 {
+    let mut best = i32::MAX;
+    for f in 0..8u8 {
+        if (files_mask & (1u8 << f)) != 0 {
+            best = best.min((i32::from(file) - i32::from(f)).abs());
+        }
+    }
+    if best == i32::MAX {
+        7
+    } else {
+        best
+    }
 }
 
 fn is_passed_pawn(color: Color, sq: u8, enemy_pawns: u64) -> bool {
@@ -641,5 +863,13 @@ mod tests {
             GameState::from_fen("4k3/8/8/4K3/4P3/8/8/8 w - - 0 1").expect("FEN parse");
         let scorer = EndgameTaperedScorerV14::standard();
         assert!(scorer.score(&advanced) > scorer.score(&less_advanced));
+    }
+
+    #[test]
+    fn endgame_tapered_scorer_v14_rewards_bishop_pair_in_simplified_position() {
+        let pair = GameState::from_fen("4k3/8/8/8/8/8/8/3BK1B1 w - - 0 1").expect("FEN parse");
+        let single = GameState::from_fen("4k3/8/8/8/8/8/8/3BK3 w - - 0 1").expect("FEN parse");
+        let scorer = EndgameTaperedScorerV14::standard();
+        assert!(scorer.score(&pair) > scorer.score(&single));
     }
 }
