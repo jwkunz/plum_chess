@@ -204,6 +204,7 @@ impl UciState {
     }
 
     fn handle_setoption(&mut self, line: &str) -> Result<(), String> {
+        let _ = self.stop_async_search_and_collect();
         let mut tokens = line.split_whitespace();
         let _ = tokens.next(); // setoption
 
@@ -790,5 +791,42 @@ mod tests {
         assert!(state.async_info_tx.is_some());
         state.set_async_info_sender(None);
         assert!(state.async_info_tx.is_none());
+    }
+
+    #[test]
+    fn go_infinite_stop_is_stable_over_multiple_cycles() {
+        let mut state = UciState::new();
+        for _ in 0..5 {
+            let mut out = Vec::<u8>::new();
+            state
+                .handle_command("go infinite", &mut out)
+                .expect("go infinite should succeed");
+            let start_text = String::from_utf8(out).expect("valid utf8");
+            assert!(start_text.contains("async search started"));
+
+            let mut stop_out = Vec::<u8>::new();
+            state
+                .handle_command("stop", &mut stop_out)
+                .expect("stop should succeed");
+            let stop_text = String::from_utf8(stop_out).expect("valid utf8");
+            assert!(stop_text.contains("bestmove"));
+            assert!(state.async_search.is_none());
+        }
+    }
+
+    #[test]
+    fn setoption_stops_active_async_search() {
+        let mut state = UciState::new();
+        let mut out = Vec::<u8>::new();
+        state
+            .handle_command("go infinite", &mut out)
+            .expect("go infinite should succeed");
+        assert!(state.async_search.is_some());
+
+        let mut set_out = Vec::<u8>::new();
+        state
+            .handle_command("setoption name Hash value 128", &mut set_out)
+            .expect("setoption should succeed");
+        assert!(state.async_search.is_none());
     }
 }
