@@ -20,6 +20,7 @@
 //! - Deeper quiescence with selective quiet-check expansion.
 //! - Stronger SEE thresholds for tactical pruning/order quality.
 //! - Mate-distance consistency audit for TT store/probe normalization.
+//! - Mate-score shaping via fail-soft cutoff propagation.
 
 use crate::game_state::game_state::GameState;
 use crate::move_generation::legal_move_apply::{make_move_in_place, unmake_move_in_place};
@@ -455,10 +456,10 @@ fn negamax<S: BoardScorer>(
                     return Ok(None);
                 };
                 if verify_score >= beta {
-                    return Ok(Some(beta));
+                    return Ok(Some(verify_score));
                 }
             } else {
-                return Ok(Some(beta));
+                return Ok(Some(score));
             }
         }
     }
@@ -817,7 +818,7 @@ fn quiescence<S: BoardScorer>(
             let score = -score;
 
             if score >= beta {
-                return Ok(Some(beta));
+                return Ok(Some(score));
             }
             if score > local_alpha {
                 local_alpha = score;
@@ -828,7 +829,7 @@ fn quiescence<S: BoardScorer>(
 
     let stand_pat = scorer.score(game_state);
     if stand_pat >= beta {
-        return Ok(Some(beta));
+        return Ok(Some(stand_pat));
     }
     if stand_pat > alpha {
         alpha = stand_pat;
@@ -880,7 +881,7 @@ fn quiescence<S: BoardScorer>(
         let score = -score;
 
         if score >= beta {
-            return Ok(Some(beta));
+            return Ok(Some(score));
         }
         if score > alpha {
             alpha = score;

@@ -247,11 +247,16 @@ impl Engine for IterativeEngine {
             .filter(|mv| root_legal.contains(mv))
             .or_else(|| root_legal.first().copied());
 
-        if mate_mode.is_some() {
-            if let Some(mate_one) = find_mate_in_one(game_state, &root_legal) {
-                chosen = Some(mate_one);
+        if let Some(mate_one) = find_mate_in_one(game_state, &root_legal) {
+            chosen = Some(mate_one);
+            if mate_mode.is_some() {
                 out.info_lines.push(
                     "info string iterative_engine_v15 mate_mode immediate_mate_selected".to_owned(),
+                );
+            } else {
+                out.info_lines.push(
+                    "info string iterative_engine_v15 mate_score_shaping immediate_mate_selected"
+                        .to_owned(),
                 );
             }
         }
