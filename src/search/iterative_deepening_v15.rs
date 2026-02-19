@@ -503,7 +503,9 @@ fn negamax<S: BoardScorer>(
         let child_allow_check_ext =
             child_allows_check_extension(depth, game_state, allow_check_extension, mv);
         let is_quiet = is_quiet_move(mv);
-        if should_lmp_prune(depth, move_index, is_quiet, in_check, alpha, best) {
+        if should_lmp_prune(
+            depth, move_index, is_quiet, in_check, alpha, best, game_state,
+        ) {
             unmake_move_in_place(game_state).map_err(|x| {
                 MoveGenerationError::InvalidState(format!("unmake_move_in_place failed: {x}"))
             })?;
@@ -845,7 +847,7 @@ fn quiescence<S: BoardScorer>(
     }
 
     moves.retain(|m| is_tactical_move(*m));
-    moves.retain(|m| passes_quiescence_pruning(*m, stand_pat, alpha, qply));
+    moves.retain(|m| passes_quiescence_pruning(*m, stand_pat, alpha, qply, game_state));
     if qply > 0 && qply < QUIESCENCE_CHECK_PLY {
         append_quiescence_check_moves(game_state, &mut moves)?;
     }
@@ -1224,19 +1226,25 @@ fn move_order_score_basic(move_description: u64, tt_move: Option<u64>) -> i32 {
 }
 
 #[inline]
-fn passes_quiescence_pruning(move_description: u64, stand_pat: i32, alpha: i32, qply: u8) -> bool {
+fn passes_quiescence_pruning(
+    move_description: u64,
+    stand_pat: i32,
+    alpha: i32,
+    qply: u8,
+    game_state: &GameState,
+) -> bool {
     if move_promotion_piece_code(move_description) != NO_PIECE_CODE {
         return true;
     }
 
-    let margin = QUIESCENCE_DELTA_MARGIN.saturating_sub(i32::from(qply) * 10);
+    let margin = quiescence_delta_margin(qply, game_state);
     let max_gain = capture_value(move_description) + promotion_gain(move_description);
     if stand_pat + max_gain + margin < alpha {
         return false;
     }
 
     if (move_description & (FLAG_CAPTURE | FLAG_EN_PASSANT)) != 0
-        && static_exchange_estimate(move_description) < see_bad_capture_threshold(qply)
+        && static_exchange_estimate(move_description) < see_bad_capture_threshold(qply, game_state)
     {
         return false;
     }
@@ -1245,8 +1253,27 @@ fn passes_quiescence_pruning(move_description: u64, stand_pat: i32, alpha: i32, 
 }
 
 #[inline]
-fn see_bad_capture_threshold(qply: u8) -> i32 {
-    SEE_BAD_CAPTURE_THRESHOLD + (i32::from(qply) * 20)
+fn see_bad_capture_threshold(qply: u8, game_state: &GameState) -> i32 {
+    let mut threshold = SEE_BAD_CAPTURE_THRESHOLD + (i32::from(qply) * 20);
+    if is_critical_endgame(game_state) {
+        // Endgames are tactical and tempo-sensitive: allow more speculative captures.
+        threshold -= 90;
+    } else if is_late_endgame(game_state) {
+        threshold -= 40;
+    }
+    threshold
+}
+
+#[inline]
+fn quiescence_delta_margin(qply: u8, game_state: &GameState) -> i32 {
+    let mut margin = QUIESCENCE_DELTA_MARGIN.saturating_sub(i32::from(qply) * 10);
+    if is_critical_endgame(game_state) {
+        // Increase margin to reduce over-pruning in king/pawn races.
+        margin += 100;
+    } else if is_late_endgame(game_state) {
+        margin += 50;
+    }
+    margin
 }
 
 fn append_quiescence_check_moves(
@@ -1325,8 +1352,13 @@ fn should_lmp_prune(
     in_check: bool,
     alpha: i32,
     best: i32,
+    game_state: &GameState,
 ) -> bool {
     if !is_quiet || in_check {
+        return false;
+    }
+    if is_critical_endgame(game_state) {
+        // Avoid pruning quiet king/pawn moves in critical endgames.
         return false;
     }
     if depth > 3 {
@@ -1345,6 +1377,11 @@ fn should_lmp_prune(
     };
 
     move_index >= threshold
+}
+
+#[inline]
+fn is_critical_endgame(game_state: &GameState) -> bool {
+    is_king_pawn_only_endgame(game_state) || is_late_endgame(game_state)
 }
 
 #[derive(Debug, Clone, Copy)]
