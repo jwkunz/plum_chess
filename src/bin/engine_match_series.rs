@@ -15,11 +15,11 @@ fn main() -> Result<(), String> {
 
     // Customize these two lines to experiment with different engines/scorers/depths.
     let player1 = || {
-        Box::new(plum_chess::engines::engine_iterative_v6::IterativeEngine::new_alpha_zero(5))
+        Box::new(plum_chess::engines::engine_iterative_v7::IterativeEngine::new_alpha_zero(5))
             as Box<dyn Engine>
     };
     let player2 = || {
-        Box::new(plum_chess::engines::engine_iterative_v7::IterativeEngine::new_alpha_zero(5))
+        Box::new(plum_chess::engines::engine_iterative_v8::IterativeEngine::new_alpha_zero(5))
             as Box<dyn Engine>
     };
 
@@ -106,5 +106,13 @@ plum_chess::engines::engine_iterative_v6::IterativeEngine::new_alpha_zero(5) = 1
 vs
 plum_chess::engines::engine_iterative_v7::IterativeEngine::new_alpha_zero(5) = 3 wins @ 12.534 ms per move
 Conclusion:  Adding countermove + continuation-history move ordering made slight stronger with a bit of a slow down
+
+---
+
+In a 10 game series of 200 plies:
+plum_chess::engines::engine_iterative_v6::IterativeEngine::new_alpha_zero(5) = 3 wins @ 17.672 ms per move
+vs
+plum_chess::engines::engine_iterative_v7::IterativeEngine::new_alpha_zero(5) = 2 wins @ 14.290 ms per move
+Conclusion:  Adding fast SEE-style estimate from moved/captured/promotion piece values seemed to speed things up
 
 */
