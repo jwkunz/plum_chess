@@ -19,7 +19,7 @@ fn main() -> Result<(), String> {
             as Box<dyn Engine>
     };
     let player2 = || {
-        Box::new(plum_chess::engines::engine_iterative_v11::IterativeEngine::new_alpha_zero(6))
+        Box::new(plum_chess::engines::engine_iterative_v12::IterativeEngine::new_alpha_zero(6))
             as Box<dyn Engine>
     };
 
@@ -131,5 +131,12 @@ vs
 plum_chess::engines::engine_iterative_v10::IterativeEngine::new_alpha_zero(6) = 2 wins @ 21.574 ms per move
 Conclusion:  Null move verification search is faster, but still weaker
 
+---
+
+In a 10 game series of 200 plies:
+plum_chess::engines::engine_iterative_v8::IterativeEngine::new_alpha_zero(6) = 7 wins @ 42.836 ms per move
+vs
+plum_chess::engines::engine_iterative_v11::IterativeEngine::new_alpha_zero(6) = 0 wins @ 19.491 ms per move
+Conclusion:  Null move verification search is faster, but still weaker
 
 */
