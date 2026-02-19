@@ -139,7 +139,11 @@ impl Engine for IterativeEngine {
 
         // Honor explicit UCI depth limits first; otherwise fall back to the
         // configured difficulty depth for this engine instance.
-        let depth = effective_params.depth.unwrap_or(self.default_depth).max(1);
+        let depth = effective_params
+            .depth
+            .or_else(|| params.mate.map(|m| m.saturating_mul(2).max(1)))
+            .unwrap_or(self.default_depth)
+            .max(1);
 
         let result = match self.scorer_kind {
             IterativeScorerKind::Standard => iterative_deepening_search_with_tt(
@@ -229,6 +233,28 @@ impl Engine for IterativeEngine {
             "info string iterative_engine_v13 go_raw movetime={:?} wtime={:?} btime={:?} winc={:?} binc={:?}",
             params.movetime_ms, params.wtime_ms, params.btime_ms, params.winc_ms, params.binc_ms
         ));
+        out.info_lines.push(format!(
+            "info string iterative_engine_v13 go_modes nodes={:?} mate={:?} ponder={} infinite={}",
+            params.nodes, params.mate, params.ponder, params.infinite
+        ));
+        if params.nodes.is_some() {
+            out.info_lines.push(
+                "info string iterative_engine_v13 note nodes limit parsed but hard node-cap is not implemented yet"
+                    .to_owned(),
+            );
+        }
+        if params.ponder {
+            out.info_lines.push(
+                "info string iterative_engine_v13 note ponder mode parsed; search remains synchronous"
+                    .to_owned(),
+            );
+        }
+        if params.infinite {
+            out.info_lines.push(
+                "info string iterative_engine_v13 note infinite parsed; bounded iterative search is used in synchronous mode"
+                    .to_owned(),
+            );
+        }
         out.info_lines.push(format!(
             "info string iterative_engine_v13 go_resolved movetime={:?}",
             effective_params.movetime_ms

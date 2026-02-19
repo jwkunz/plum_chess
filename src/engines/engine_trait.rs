@@ -9,6 +9,10 @@ use crate::game_state::game_state::GameState;
 pub struct GoParams {
     pub depth: Option<u8>,
     pub movetime_ms: Option<u64>,
+    pub nodes: Option<u64>,
+    pub mate: Option<u8>,
+    pub ponder: bool,
+    pub infinite: bool,
     pub wtime_ms: Option<u64>,
     pub btime_ms: Option<u64>,
     pub winc_ms: Option<u64>,

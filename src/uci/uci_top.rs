@@ -304,9 +304,23 @@ fn parse_go_params(line: &str, game_state: &GameState) -> Result<GoParams, Strin
                 i += 1;
                 params.depth = tokens.get(i).and_then(|x| x.parse::<u8>().ok());
             }
+            "nodes" => {
+                i += 1;
+                params.nodes = tokens.get(i).and_then(|x| x.parse::<u64>().ok());
+            }
+            "mate" => {
+                i += 1;
+                params.mate = tokens.get(i).and_then(|x| x.parse::<u8>().ok());
+            }
             "movetime" => {
                 i += 1;
                 params.movetime_ms = tokens.get(i).and_then(|x| x.parse::<u64>().ok());
+            }
+            "ponder" => {
+                params.ponder = true;
+            }
+            "infinite" => {
+                params.infinite = true;
             }
             "wtime" => {
                 i += 1;
@@ -487,5 +501,16 @@ mod tests {
         assert_eq!(params.depth, Some(6));
         let moves = params.searchmoves.expect("searchmoves should parse");
         assert_eq!(moves.len(), 2);
+    }
+
+    #[test]
+    fn parse_go_params_parses_nodes_mate_and_modes() {
+        let game_state = crate::game_state::game_state::GameState::new_game();
+        let params = super::parse_go_params("go nodes 50000 mate 3 ponder infinite", &game_state)
+            .expect("go params should parse");
+        assert_eq!(params.nodes, Some(50_000));
+        assert_eq!(params.mate, Some(3));
+        assert!(params.ponder);
+        assert!(params.infinite);
     }
 }
