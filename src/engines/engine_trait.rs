@@ -5,7 +5,7 @@
 
 use crate::game_state::game_state::GameState;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct GoParams {
     pub depth: Option<u8>,
     pub movetime_ms: Option<u64>,
@@ -13,6 +13,8 @@ pub struct GoParams {
     pub btime_ms: Option<u64>,
     pub winc_ms: Option<u64>,
     pub binc_ms: Option<u64>,
+    pub movestogo: Option<u16>,
+    pub searchmoves: Option<Vec<u64>>,
 }
 
 #[derive(Debug, Clone, Default)]

@@ -112,14 +112,28 @@ impl Engine for IterativeEngine {
         params: &GoParams,
     ) -> Result<EngineOutput, String> {
         let effective_params = resolve_go_params(game_state, params, self.time_strategy);
+        let requested_searchmoves = params.searchmoves.as_deref();
         if self.use_own_book && effective_params.depth.is_none() && game_state.ply < 20 {
             let mut rng = rng();
             if let Some(book_move) = self.opening_book.choose_weighted_move(game_state, &mut rng) {
-                let mut out = EngineOutput::default();
-                out.best_move = Some(book_move);
-                out.info_lines
-                    .push("info string opening book move".to_owned());
-                return Ok(out);
+                if let Some(allowed) = requested_searchmoves {
+                    if !allowed.contains(&book_move) {
+                        // Continue into full search if the book move is outside
+                        // the restricted root set from `go searchmoves`.
+                    } else {
+                        let mut out = EngineOutput::default();
+                        out.best_move = Some(book_move);
+                        out.info_lines
+                            .push("info string opening book move".to_owned());
+                        return Ok(out);
+                    }
+                } else {
+                    let mut out = EngineOutput::default();
+                    out.best_move = Some(book_move);
+                    out.info_lines
+                        .push("info string opening book move".to_owned());
+                    return Ok(out);
+                }
             }
         }
 
@@ -155,10 +169,29 @@ impl Engine for IterativeEngine {
         let mut probe = game_state.clone();
         let legal =
             generate_legal_move_descriptions_in_place(&mut probe).map_err(|e| e.to_string())?;
+        let root_legal: Vec<u64> = if let Some(allowed) = requested_searchmoves {
+            legal
+                .iter()
+                .copied()
+                .filter(|mv| allowed.contains(mv))
+                .collect()
+        } else {
+            legal.clone()
+        };
+        if root_legal.is_empty() {
+            out.info_lines.push(
+                "info string iterative_engine_v13 no legal root move in requested searchmoves"
+                    .to_owned(),
+            );
+            return Ok(out);
+        }
 
-        let mut chosen = result.best_move.or_else(|| legal.first().copied());
+        let mut chosen = result
+            .best_move
+            .filter(|mv| root_legal.contains(mv))
+            .or_else(|| root_legal.first().copied());
         if let Some(best) = chosen {
-            let preferred = prefer_queen_promotion(best, &legal);
+            let preferred = prefer_queen_promotion(best, &root_legal);
             if preferred != best {
                 out.info_lines
                     .push("info string iterative_engine_v13 queen_promotion_preferred".to_owned());

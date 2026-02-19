@@ -41,16 +41,22 @@ struct UciState {
     skill_level: u8,
     fixed_depth_override: Option<u8>,
     hash_mb: usize,
+    threads: usize,
     own_book: bool,
+    ponder: bool,
+    analyse_mode: bool,
+    debug_mode: bool,
 }
 
 impl UciState {
     fn new() -> Self {
         let skill_level = 1;
         let hash_mb = 64usize;
+        let threads = 1usize;
         let own_book = true;
         let mut engine = build_engine(skill_level);
         let _ = engine.set_option("Hash", &hash_mb.to_string());
+        let _ = engine.set_option("Threads", &threads.to_string());
         let _ = engine.set_option("OwnBook", if own_book { "true" } else { "false" });
         Self {
             game_state: GameState::new_game(),
@@ -58,7 +64,11 @@ impl UciState {
             skill_level,
             fixed_depth_override: None,
             hash_mb,
+            threads,
             own_book,
+            ponder: false,
+            analyse_mode: false,
+            debug_mode: false,
         }
     }
 
@@ -84,6 +94,9 @@ impl UciState {
                     "option name FixedDepth type spin default 0 min 0 max 64"
                 )?;
                 writeln!(out, "option name Hash type spin default 64 min 1 max 4096")?;
+                writeln!(out, "option name Threads type spin default 1 min 1 max 128")?;
+                writeln!(out, "option name Ponder type check default false")?;
+                writeln!(out, "option name UCI_AnalyseMode type check default false")?;
                 writeln!(out, "option name OwnBook type check default true")?;
                 writeln!(
                     out,
@@ -116,6 +129,16 @@ impl UciState {
             }
             "stop" => {
                 // Search is currently synchronous; no-op for now.
+            }
+            "ponderhit" => {
+                // Search is synchronous; no ponder thread to wake up.
+            }
+            "debug" => {
+                let mode = parts.next().unwrap_or_default();
+                self.debug_mode = mode.eq_ignore_ascii_case("on");
+            }
+            "register" => {
+                // Registration is not required by this engine.
             }
             "quit" => {
                 return Ok(true);
@@ -156,6 +179,14 @@ impl UciState {
             self.skill_level = parsed;
             self.engine = build_engine(self.skill_level);
             let _ = self.engine.set_option("Hash", &self.hash_mb.to_string());
+            let _ = self.engine.set_option("Threads", &self.threads.to_string());
+            let _ = self
+                .engine
+                .set_option("Ponder", if self.ponder { "true" } else { "false" });
+            let _ = self.engine.set_option(
+                "UCI_AnalyseMode",
+                if self.analyse_mode { "true" } else { "false" },
+            );
             let _ = self
                 .engine
                 .set_option("OwnBook", if self.own_book { "true" } else { "false" });
@@ -171,6 +202,25 @@ impl UciState {
                 .map_err(|_| format!("invalid Hash value '{}'", value))?;
             self.hash_mb = parsed.max(1);
             self.engine.set_option("Hash", &self.hash_mb.to_string())?;
+        } else if name.eq_ignore_ascii_case("Threads") {
+            let parsed = value
+                .parse::<usize>()
+                .map_err(|_| format!("invalid Threads value '{}'", value))?;
+            self.threads = parsed.max(1);
+            self.engine
+                .set_option("Threads", &self.threads.to_string())?;
+        } else if name.eq_ignore_ascii_case("Ponder") {
+            let lower = value.to_ascii_lowercase();
+            self.ponder = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
+            self.engine
+                .set_option("Ponder", if self.ponder { "true" } else { "false" })?;
+        } else if name.eq_ignore_ascii_case("UCI_AnalyseMode") {
+            let lower = value.to_ascii_lowercase();
+            self.analyse_mode = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
+            self.engine.set_option(
+                "UCI_AnalyseMode",
+                if self.analyse_mode { "true" } else { "false" },
+            )?;
         } else if name.eq_ignore_ascii_case("OwnBook") {
             let lower = value.to_ascii_lowercase();
             self.own_book = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
@@ -223,7 +273,7 @@ impl UciState {
     }
 
     fn handle_go(&mut self, line: &str, out: &mut impl Write) -> Result<(), String> {
-        let mut params = parse_go_params(line);
+        let mut params = parse_go_params(line, &self.game_state)?;
         if params.depth.is_none() {
             params.depth = self.fixed_depth_override;
         }
@@ -244,21 +294,74 @@ impl UciState {
     }
 }
 
-fn parse_go_params(line: &str) -> GoParams {
+fn parse_go_params(line: &str, game_state: &GameState) -> Result<GoParams, String> {
     let mut params = GoParams::default();
-    let mut tokens = line.split_whitespace().peekable();
-    while let Some(tok) = tokens.next() {
-        match tok {
-            "depth" => params.depth = tokens.next().and_then(|x| x.parse::<u8>().ok()),
-            "movetime" => params.movetime_ms = tokens.next().and_then(|x| x.parse::<u64>().ok()),
-            "wtime" => params.wtime_ms = tokens.next().and_then(|x| x.parse::<u64>().ok()),
-            "btime" => params.btime_ms = tokens.next().and_then(|x| x.parse::<u64>().ok()),
-            "winc" => params.winc_ms = tokens.next().and_then(|x| x.parse::<u64>().ok()),
-            "binc" => params.binc_ms = tokens.next().and_then(|x| x.parse::<u64>().ok()),
+    let tokens = line.split_whitespace().collect::<Vec<_>>();
+    let mut i = 0usize;
+    while i < tokens.len() {
+        match tokens[i] {
+            "depth" => {
+                i += 1;
+                params.depth = tokens.get(i).and_then(|x| x.parse::<u8>().ok());
+            }
+            "movetime" => {
+                i += 1;
+                params.movetime_ms = tokens.get(i).and_then(|x| x.parse::<u64>().ok());
+            }
+            "wtime" => {
+                i += 1;
+                params.wtime_ms = tokens.get(i).and_then(|x| x.parse::<u64>().ok());
+            }
+            "btime" => {
+                i += 1;
+                params.btime_ms = tokens.get(i).and_then(|x| x.parse::<u64>().ok());
+            }
+            "winc" => {
+                i += 1;
+                params.winc_ms = tokens.get(i).and_then(|x| x.parse::<u64>().ok());
+            }
+            "binc" => {
+                i += 1;
+                params.binc_ms = tokens.get(i).and_then(|x| x.parse::<u64>().ok());
+            }
+            "movestogo" => {
+                i += 1;
+                params.movestogo = tokens.get(i).and_then(|x| x.parse::<u16>().ok());
+            }
+            "searchmoves" => {
+                i += 1;
+                let mut moves = Vec::<u64>::new();
+                while i < tokens.len() && !is_go_keyword(tokens[i]) {
+                    let mv = long_algebraic_to_move_description(tokens[i], game_state)?;
+                    moves.push(mv);
+                    i += 1;
+                }
+                i = i.saturating_sub(1);
+                params.searchmoves = Some(moves);
+            }
             _ => {}
         }
+        i += 1;
     }
-    params
+    Ok(params)
+}
+
+fn is_go_keyword(token: &str) -> bool {
+    matches!(
+        token,
+        "go" | "depth"
+            | "movetime"
+            | "wtime"
+            | "btime"
+            | "winc"
+            | "binc"
+            | "movestogo"
+            | "searchmoves"
+            | "nodes"
+            | "mate"
+            | "ponder"
+            | "infinite"
+    )
 }
 
 fn build_engine(skill_level: u8) -> Box<dyn Engine> {
@@ -361,11 +464,28 @@ mod tests {
 
     #[test]
     fn parse_go_params_keeps_clock_fields_without_forcing_movetime() {
-        let params = super::parse_go_params("go wtime 120000 btime 60000 winc 1000 binc 1000");
+        let game_state = crate::game_state::game_state::GameState::new_game();
+        let params = super::parse_go_params(
+            "go wtime 120000 btime 60000 winc 1000 binc 1000",
+            &game_state,
+        )
+        .expect("go params should parse");
         assert_eq!(params.movetime_ms, None);
         assert_eq!(params.wtime_ms, Some(120_000));
         assert_eq!(params.btime_ms, Some(60_000));
         assert_eq!(params.winc_ms, Some(1_000));
         assert_eq!(params.binc_ms, Some(1_000));
+    }
+
+    #[test]
+    fn parse_go_params_parses_movestogo_and_searchmoves() {
+        let game_state = crate::game_state::game_state::GameState::new_game();
+        let params =
+            super::parse_go_params("go movestogo 24 searchmoves e2e4 d2d4 depth 6", &game_state)
+                .expect("go params should parse");
+        assert_eq!(params.movestogo, Some(24));
+        assert_eq!(params.depth, Some(6));
+        let moves = params.searchmoves.expect("searchmoves should parse");
+        assert_eq!(moves.len(), 2);
     }
 }
