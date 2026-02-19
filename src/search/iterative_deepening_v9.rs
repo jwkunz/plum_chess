@@ -14,6 +14,7 @@
 //! - Countermove and continuation-history move ordering.
 //! - SEE-style tactical pruning and ordering in quiescence/captures.
 //! - Transposition-table generation aging (depth+age replacement policy).
+//! - Late Move Pruning (LMP) for low-depth late quiet moves.
 
 use crate::game_state::game_state::GameState;
 use crate::move_generation::legal_move_apply::{make_move_in_place, unmake_move_in_place};
@@ -415,6 +416,12 @@ fn negamax<S: BoardScorer>(
         let child_allow_check_ext =
             child_allows_check_extension(depth, game_state, allow_check_extension);
         let is_quiet = is_quiet_move(mv);
+        if should_lmp_prune(depth, move_index, is_quiet, in_check, alpha, best) {
+            unmake_move_in_place(game_state).map_err(|x| {
+                MoveGenerationError::InvalidState(format!("unmake_move_in_place failed: {x}"))
+            })?;
+            continue;
+        }
         let lmr_reduction = lmr_reduction(depth, move_index, is_quiet, in_check);
         let use_pvs = should_use_pvs(depth, move_index, alpha, in_check);
         let score_opt = if !use_pvs {
@@ -965,6 +972,36 @@ fn lmr_reduction(depth: u8, move_index: usize, is_quiet: bool, in_check: bool) -
     } else {
         1
     }
+}
+
+#[inline]
+fn should_lmp_prune(
+    depth: u8,
+    move_index: usize,
+    is_quiet: bool,
+    in_check: bool,
+    alpha: i32,
+    best: i32,
+) -> bool {
+    if !is_quiet || in_check {
+        return false;
+    }
+    if depth > 3 {
+        return false;
+    }
+    // Only prune once we have some evidence a good move already exists.
+    if best <= -MATE_SCORE + 2000 || alpha <= -MATE_SCORE + 2000 {
+        return false;
+    }
+
+    let threshold = match depth {
+        0 | 1 => 4,
+        2 => 8,
+        3 => 12,
+        _ => usize::MAX,
+    };
+
+    move_index >= threshold
 }
 
 #[derive(Debug, Clone, Copy)]
