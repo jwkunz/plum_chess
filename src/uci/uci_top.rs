@@ -11,7 +11,7 @@ use std::sync::{
 use std::thread::{self, JoinHandle};
 
 use crate::engines::engine_greedy::GreedyEngine;
-use crate::engines::engine_iterative_v13::IterativeEngine;
+use crate::engines::engine_iterative_v15::IterativeEngine;
 use crate::engines::engine_random::RandomEngine;
 use crate::engines::engine_trait::{Engine, GoParams};
 use crate::game_state::game_state::GameState;
@@ -27,9 +27,11 @@ const UCI_ENGINE_AUTHOR: &str = "jwkunz using Codex";
 pub fn run_stdio_loop() -> io::Result<()> {
     let (output_tx, output_rx) = mpsc::channel::<String>();
     let output_thread = thread::spawn(move || -> io::Result<()> {
-        let stdout = io::stdout();
-        let mut lock = stdout.lock();
         for line in output_rx {
+            // Acquire and release stdout lock per line so the main UCI command
+            // loop can also write synchronously without deadlocking.
+            let stdout = io::stdout();
+            let mut lock = stdout.lock();
             writeln!(lock, "{}", line)?;
             lock.flush()?;
         }

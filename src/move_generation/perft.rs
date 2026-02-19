@@ -306,7 +306,7 @@ mod tests {
         }
     }
 
-    // #[test]
+    #[test]
     fn perft_depth_zero_counts_single_node() {
         let generator = MockMoveGenerator;
         let game = GameState::new_empty();
@@ -321,7 +321,7 @@ mod tests {
         );
     }
 
-    // #[test]
+    #[test]
     fn perft_depth_two_aggregates_leaf_metrics() {
         let generator = MockMoveGenerator;
         let game = GameState::new_empty();
@@ -344,7 +344,7 @@ mod tests {
         );
     }
 
-    // #[test]
+    #[test]
     fn perft_start_position_nodes_depth_1_to_3() {
         let game = GameState::new_game();
         let expected = [20usize, 400, 8902];
@@ -359,7 +359,7 @@ mod tests {
         }
     }
 
-    // #[test]
+    #[test]
     fn perft_position_1_depth_1_to_4_full_counts() {
         let game = GameState::new_game();
         let results = [
@@ -416,7 +416,7 @@ mod tests {
         }
     }
 
-    // #[test]
+    #[test]
     fn perft_position_2_depth_1_to_3_full_counts() {
         let game = GameState::from_fen(
             "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 0",
@@ -465,7 +465,7 @@ mod tests {
         }
     }
 
-    // #[test]
+    #[test]
     fn perft_position_3_depth_1_to_5_full_counts() {
         let game = GameState::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1")
             .expect("FEN should parse");
@@ -534,7 +534,7 @@ mod tests {
         }
     }
 
-    // #[test]
+    #[test]
     fn perft_position_4_depth_1_to_4_full_counts() {
         let game =
             GameState::from_fen("r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1")
@@ -593,7 +593,7 @@ mod tests {
         }
     }
 
-    // #[test]
+    #[test]
     fn perft_position_5_nodes_depth_1_to_4() {
         let game = GameState::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8")
             .expect("FEN should parse");
@@ -606,7 +606,7 @@ mod tests {
         }
     }
 
-    // #[test]
+    #[test]
     fn perft_position_6_nodes_depth_1_to_4() {
         let game = GameState::from_fen(
             "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10",
