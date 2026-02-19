@@ -19,7 +19,7 @@ fn main() -> Result<(), String> {
             as Box<dyn Engine>
     };
     let player2 = || {
-        Box::new(plum_chess::engines::engine_iterative_v14::IterativeEngine::new_alpha_zero(6))
+        Box::new(plum_chess::engines::engine_iterative_v15::IterativeEngine::new_alpha_zero(6))
             as Box<dyn Engine>
     };
 
@@ -146,5 +146,13 @@ plum_chess::engines::engine_iterative_v8::IterativeEngine::new_alpha_zero(6) = 2
 vs
 plum_chess::engines::engine_iterative_v12::IterativeEngine::new_alpha_zero(6) = 4 wins @ 18.219 ms per move
 Conclusion:  Added SEE based tactical filtering improved the skill and the speed.  Great!
+
+---
+
+In a 10 game series of 200 plies:
+plum_chess::engines::engine_iterative_v12::IterativeEngine::new_alpha_zero(6) = 4 wins @ 69.123 ms per move
+vs
+plum_chess::engines::engine_iterative_v14::IterativeEngine::new_alpha_zero(6) = 4 wins @ 76.535 ms per move
+Conclusion:  Adding end-game logic leads to less draws and longer games
 
 */
