@@ -42,6 +42,7 @@ pub mod search {
     pub mod iterative_deepening_v10;
     pub mod iterative_deepening_v11;
     pub mod iterative_deepening_v12;
+    pub mod iterative_deepening_v14;
     pub mod iterative_deepening_v3;
     pub mod iterative_deepening_v4;
     pub mod iterative_deepening_v5;
@@ -66,6 +67,7 @@ pub mod engines {
     pub mod engine_iterative_v11;
     pub mod engine_iterative_v12;
     pub mod engine_iterative_v13;
+    pub mod engine_iterative_v14;
     pub mod engine_iterative_v2;
     pub mod engine_iterative_v3;
     pub mod engine_iterative_v4;

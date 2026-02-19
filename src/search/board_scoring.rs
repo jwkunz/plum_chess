@@ -184,6 +184,54 @@ impl BoardScorer for EndgameTaperedScorerV3 {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct EndgameTaperedScorerV14 {
+    pub material_kind: V3MaterialKind,
+}
+
+impl EndgameTaperedScorerV14 {
+    pub const fn standard() -> Self {
+        Self {
+            material_kind: V3MaterialKind::Standard,
+        }
+    }
+
+    pub const fn alpha_zero() -> Self {
+        Self {
+            material_kind: V3MaterialKind::AlphaZero,
+        }
+    }
+
+    #[inline]
+    fn base_material_white_minus_black(&self, game_state: &GameState) -> i32 {
+        match self.material_kind {
+            V3MaterialKind::Standard => {
+                MaterialScorer::material_balance_white_minus_black(game_state)
+            }
+            V3MaterialKind::AlphaZero => {
+                AlphaZeroMetric::material_balance_white_minus_black(game_state)
+            }
+        }
+    }
+}
+
+impl BoardScorer for EndgameTaperedScorerV14 {
+    fn score(&self, game_state: &GameState) -> i32 {
+        let base = self.base_material_white_minus_black(game_state);
+        let eg_weight = endgame_weight(game_state);
+        let eg_term = endgame_king_activity_white_minus_black(game_state)
+            + endgame_passed_pawn_white_minus_black(game_state)
+            + endgame_king_activity_v14_white_minus_black(game_state)
+            + endgame_passed_pawn_v14_white_minus_black(game_state);
+        let white_minus_black = base + ((eg_term as f64) * eg_weight) as i32;
+
+        match game_state.side_to_move {
+            Color::Light => white_minus_black,
+            Color::Dark => -white_minus_black,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StandardScorer;
 
@@ -379,6 +427,117 @@ fn endgame_passed_pawn_white_minus_black(game_state: &GameState) -> i32 {
     score
 }
 
+fn endgame_king_activity_v14_white_minus_black(game_state: &GameState) -> i32 {
+    let white_king = game_state.pieces[Color::Light.index()][PieceKind::King.index()];
+    let black_king = game_state.pieces[Color::Dark.index()][PieceKind::King.index()];
+    if white_king == 0 || black_king == 0 {
+        return 0;
+    }
+
+    let w_sq = white_king.trailing_zeros() as u8;
+    let b_sq = black_king.trailing_zeros() as u8;
+    let w_file = i32::from(w_sq % 8);
+    let w_rank = i32::from(w_sq / 8);
+    let b_file = i32::from(b_sq % 8);
+    let b_rank = i32::from(b_sq / 8);
+
+    // Stronger centralization signal for king activity during endgame.
+    let white_center = 7 - ((w_file - 3).abs() + (w_rank - 3).abs());
+    let black_center = 7 - ((b_file - 3).abs() + (b_rank - 3).abs());
+    let mut score = (white_center - black_center) * 8;
+
+    // Encourage king approach to enemy pawns and discourage being far from own passers.
+    let white_target_dist = nearest_distance_to_pawns(
+        w_sq,
+        game_state.pieces[Color::Dark.index()][PieceKind::Pawn.index()],
+    );
+    let black_target_dist = nearest_distance_to_pawns(
+        b_sq,
+        game_state.pieces[Color::Light.index()][PieceKind::Pawn.index()],
+    );
+    score += (black_target_dist - white_target_dist) * 5;
+
+    score
+}
+
+fn endgame_passed_pawn_v14_white_minus_black(game_state: &GameState) -> i32 {
+    let white_pawns = game_state.pieces[Color::Light.index()][PieceKind::Pawn.index()];
+    let black_pawns = game_state.pieces[Color::Dark.index()][PieceKind::Pawn.index()];
+    let white_king = game_state.pieces[Color::Light.index()][PieceKind::King.index()];
+    let black_king = game_state.pieces[Color::Dark.index()][PieceKind::King.index()];
+
+    let w_king_sq = if white_king != 0 {
+        Some(white_king.trailing_zeros() as u8)
+    } else {
+        None
+    };
+    let b_king_sq = if black_king != 0 {
+        Some(black_king.trailing_zeros() as u8)
+    } else {
+        None
+    };
+
+    let mut score = 0i32;
+
+    let mut wp = white_pawns;
+    while wp != 0 {
+        let sq = wp.trailing_zeros() as u8;
+        if is_passed_pawn(Color::Light, sq, black_pawns) {
+            let rank = i32::from(sq / 8);
+            // Quadratic growth to strongly prefer converting advanced passers.
+            score += (rank + 1) * (rank + 1) * 4;
+            let promo_sq = 56u8 + (sq % 8);
+            if let (Some(wk), Some(bk)) = (w_king_sq, b_king_sq) {
+                let support = manhattan(wk, promo_sq);
+                let block = manhattan(bk, promo_sq);
+                score += (block - support) * 4;
+            }
+        }
+        wp &= wp - 1;
+    }
+
+    let mut bp = black_pawns;
+    while bp != 0 {
+        let sq = bp.trailing_zeros() as u8;
+        if is_passed_pawn(Color::Dark, sq, white_pawns) {
+            let rank_from_black = i32::from(7 - (sq / 8));
+            score -= (rank_from_black + 1) * (rank_from_black + 1) * 4;
+            let promo_sq = sq % 8;
+            if let (Some(wk), Some(bk)) = (w_king_sq, b_king_sq) {
+                let support = manhattan(bk, promo_sq);
+                let block = manhattan(wk, promo_sq);
+                score -= (block - support) * 4;
+            }
+        }
+        bp &= bp - 1;
+    }
+
+    score
+}
+
+#[inline]
+fn manhattan(a: u8, b: u8) -> i32 {
+    let af = i32::from(a % 8);
+    let ar = i32::from(a / 8);
+    let bf = i32::from(b % 8);
+    let br = i32::from(b / 8);
+    (af - bf).abs() + (ar - br).abs()
+}
+
+fn nearest_distance_to_pawns(from_sq: u8, pawns: u64) -> i32 {
+    if pawns == 0 {
+        return 7;
+    }
+    let mut bb = pawns;
+    let mut best = i32::MAX;
+    while bb != 0 {
+        let sq = bb.trailing_zeros() as u8;
+        best = best.min(manhattan(from_sq, sq));
+        bb &= bb - 1;
+    }
+    best
+}
+
 fn is_passed_pawn(color: Color, sq: u8, enemy_pawns: u64) -> bool {
     let file = (sq % 8) as i8;
     let rank = (sq / 8) as i8;
@@ -417,8 +576,8 @@ fn is_passed_pawn(color: Color, sq: u8, enemy_pawns: u64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        AlphaZeroMetric, AlphaZeroPlusLegalMoves, BoardScorer, EndgameTaperedScorerV3,
-        MaterialScorer, StandardScorer,
+        AlphaZeroMetric, AlphaZeroPlusLegalMoves, BoardScorer, EndgameTaperedScorerV14,
+        EndgameTaperedScorerV3, MaterialScorer, StandardScorer,
     };
     use crate::game_state::game_state::GameState;
 
@@ -473,5 +632,14 @@ mod tests {
         let passive = GameState::from_fen("k7/8/8/8/8/4P3/8/4K3 w - - 0 1").expect("FEN parse");
         let scorer = EndgameTaperedScorerV3::standard();
         assert!(scorer.score(&active) > scorer.score(&passive));
+    }
+
+    #[test]
+    fn endgame_tapered_scorer_v14_further_rewards_advanced_passed_pawn_support() {
+        let advanced = GameState::from_fen("4k3/8/4P3/4K3/8/8/8/8 w - - 0 1").expect("FEN parse");
+        let less_advanced =
+            GameState::from_fen("4k3/8/8/4K3/4P3/8/8/8 w - - 0 1").expect("FEN parse");
+        let scorer = EndgameTaperedScorerV14::standard();
+        assert!(scorer.score(&advanced) > scorer.score(&less_advanced));
     }
 }
