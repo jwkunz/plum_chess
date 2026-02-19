@@ -6,7 +6,7 @@
 use std::io::{self, BufRead, Write};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
+    mpsc, Arc, Mutex,
 };
 use std::thread::{self, JoinHandle};
 
@@ -24,18 +24,37 @@ const UCI_ENGINE_NAME: &str = "Plum Chess";
 const UCI_ENGINE_AUTHOR: &str = "jwkunz using Codex";
 
 pub fn run_stdio_loop() -> io::Result<()> {
+    let (output_tx, output_rx) = mpsc::channel::<String>();
+    let output_thread = thread::spawn(move || -> io::Result<()> {
+        let stdout = io::stdout();
+        let mut lock = stdout.lock();
+        for line in output_rx {
+            writeln!(lock, "{}", line)?;
+            lock.flush()?;
+        }
+        Ok(())
+    });
+
     let stdin = io::stdin();
-    let mut stdout = io::stdout();
     let mut uci = UciState::new();
+    uci.set_async_info_sender(Some(output_tx.clone()));
 
     for line in stdin.lock().lines() {
         let line = line?;
+        let mut stdout = io::stdout();
         let should_quit = uci.handle_command(&line, &mut stdout)?;
         stdout.flush()?;
         if should_quit {
             break;
         }
     }
+
+    uci.set_async_info_sender(None);
+    drop(uci);
+    drop(output_tx);
+    output_thread
+        .join()
+        .map_err(|_| io::Error::other("output thread panicked"))??;
 
     Ok(())
 }
@@ -54,6 +73,7 @@ struct UciState {
     debug_mode: bool,
     time_strategy: String,
     async_search: Option<AsyncSearchHandle>,
+    async_info_tx: Option<mpsc::Sender<String>>,
 }
 
 struct AsyncSearchHandle {
@@ -87,7 +107,12 @@ impl UciState {
             debug_mode: false,
             time_strategy: "adaptive".to_owned(),
             async_search: None,
+            async_info_tx: None,
         }
+    }
+
+    fn set_async_info_sender(&mut self, sender: Option<mpsc::Sender<String>>) {
+        self.async_info_tx = sender;
     }
 
     fn handle_command(&mut self, line: &str, out: &mut impl Write) -> io::Result<bool> {
@@ -409,6 +434,7 @@ impl UciState {
         let analyse_mode = self.analyse_mode;
         let chess960 = self.chess960;
         let time_strategy = self.time_strategy.clone();
+        let info_tx = self.async_info_tx.clone();
         let depth_override = self.fixed_depth_override;
 
         let stop = Arc::new(AtomicBool::new(false));
@@ -455,6 +481,11 @@ impl UciState {
 
                 match worker_engine.choose_move(&game_state, &iter_params) {
                     Ok(out) => {
+                        if let Some(tx) = &info_tx {
+                            for line in &out.info_lines {
+                                let _ = tx.send(line.clone());
+                            }
+                        }
                         if let Ok(mut guard) = latest_ref.lock() {
                             *guard = Some(out);
                         }
@@ -749,5 +780,15 @@ mod tests {
             .expect("stop should parse");
         let text = String::from_utf8(out).expect("valid utf8");
         assert!(text.contains("bestmove"));
+    }
+
+    #[test]
+    fn uci_state_accepts_async_info_sender() {
+        let (tx, _rx) = std::sync::mpsc::channel::<String>();
+        let mut state = UciState::new();
+        state.set_async_info_sender(Some(tx));
+        assert!(state.async_info_tx.is_some());
+        state.set_async_info_sender(None);
+        assert!(state.async_info_tx.is_none());
     }
 }
