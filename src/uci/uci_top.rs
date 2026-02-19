@@ -4,6 +4,11 @@
 //! to the selected engine implementation, and emits protocol-compliant output.
 
 use std::io::{self, BufRead, Write};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
+use std::thread::{self, JoinHandle};
 
 use crate::engines::engine_greedy::GreedyEngine;
 use crate::engines::engine_iterative_v13::IterativeEngine;
@@ -47,7 +52,15 @@ struct UciState {
     analyse_mode: bool,
     chess960: bool,
     debug_mode: bool,
-    pending_go: Option<GoParams>,
+    time_strategy: String,
+    async_search: Option<AsyncSearchHandle>,
+}
+
+struct AsyncSearchHandle {
+    stop: Arc<AtomicBool>,
+    latest: Arc<Mutex<Option<crate::engines::engine_trait::EngineOutput>>>,
+    error: Arc<Mutex<Option<String>>>,
+    handle: JoinHandle<()>,
 }
 
 impl UciState {
@@ -72,7 +85,8 @@ impl UciState {
             analyse_mode: false,
             chess960: false,
             debug_mode: false,
-            pending_go: None,
+            time_strategy: "adaptive".to_owned(),
+            async_search: None,
         }
     }
 
@@ -118,8 +132,8 @@ impl UciState {
                 }
             }
             "ucinewgame" => {
+                let _ = self.stop_async_search_and_collect();
                 self.game_state = GameState::new_game();
-                self.pending_go = None;
                 self.engine.new_game();
             }
             "position" => {
@@ -153,6 +167,7 @@ impl UciState {
                 // Registration is not required by this engine.
             }
             "quit" => {
+                let _ = self.stop_async_search_and_collect();
                 return Ok(true);
             }
             _ => {
@@ -190,21 +205,7 @@ impl UciState {
                 .map_err(|_| format!("invalid Skill Level value '{}'", value))?;
             self.skill_level = parsed;
             self.engine = build_engine(self.skill_level);
-            let _ = self.engine.set_option("Hash", &self.hash_mb.to_string());
-            let _ = self.engine.set_option("Threads", &self.threads.to_string());
-            let _ = self
-                .engine
-                .set_option("Ponder", if self.ponder { "true" } else { "false" });
-            let _ = self.engine.set_option(
-                "UCI_AnalyseMode",
-                if self.analyse_mode { "true" } else { "false" },
-            );
-            let _ = self
-                .engine
-                .set_option("UCI_Chess960", if self.chess960 { "true" } else { "false" });
-            let _ = self
-                .engine
-                .set_option("OwnBook", if self.own_book { "true" } else { "false" });
+            self.apply_engine_options()?;
             self.engine.new_game();
         } else if name.eq_ignore_ascii_case("FixedDepth") {
             let parsed = value
@@ -241,6 +242,10 @@ impl UciState {
             self.chess960 = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
             self.engine
                 .set_option("UCI_Chess960", if self.chess960 { "true" } else { "false" })?;
+        } else if name.eq_ignore_ascii_case("TimeStrategy") {
+            let normalized = value.trim().to_ascii_lowercase();
+            self.time_strategy = normalized.clone();
+            self.engine.set_option("TimeStrategy", &normalized)?;
         } else if name.eq_ignore_ascii_case("OwnBook") {
             let lower = value.to_ascii_lowercase();
             self.own_book = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
@@ -254,6 +259,7 @@ impl UciState {
     }
 
     fn handle_position(&mut self, line: &str) -> Result<(), String> {
+        let _ = self.stop_async_search_and_collect();
         let mut tokens = line.split_whitespace().peekable();
         let _ = tokens.next(); // "position"
 
@@ -289,49 +295,57 @@ impl UciState {
         }
 
         self.game_state = base_state;
-        self.pending_go = None;
         Ok(())
     }
 
     fn handle_go(&mut self, line: &str, out: &mut impl Write) -> Result<(), String> {
+        let _ = self.stop_async_search_and_collect();
         let mut params = parse_go_params(line, &self.game_state)?;
         if params.depth.is_none() {
             params.depth = self.fixed_depth_override;
         }
         if params.infinite || params.ponder {
-            self.pending_go = Some(params);
+            self.start_async_search(params)?;
             writeln!(
                 out,
-                "info string deferred search armed; waiting for stop/ponderhit"
+                "info string async search started; waiting for stop/ponderhit"
             )
             .map_err(|e| e.to_string())?;
             return Ok(());
         }
-        self.pending_go = None;
         let result = self.engine.choose_move(&self.game_state, &params)?;
         self.emit_engine_output(&result, out)
     }
 
     fn handle_stop(&mut self, out: &mut impl Write) -> Result<(), String> {
-        if let Some(mut pending) = self.pending_go.clone() {
-            pending.infinite = false;
-            pending.ponder = false;
-            if pending.movetime_ms.is_none() {
-                pending.movetime_ms = Some(100);
-            }
-            let result = self.engine.choose_move(&self.game_state, &pending)?;
-            self.pending_go = None;
+        let had_async = self.async_search.is_some();
+        if let Some(result) = self.stop_async_search_and_collect()? {
+            return self.emit_engine_output(&result, out);
+        }
+        if had_async {
+            let fallback = GoParams {
+                depth: self.fixed_depth_override.or(Some(2)),
+                movetime_ms: Some(100),
+                ..GoParams::default()
+            };
+            let result = self.engine.choose_move(&self.game_state, &fallback)?;
             return self.emit_engine_output(&result, out);
         }
         Ok(())
     }
 
     fn handle_ponderhit(&mut self, out: &mut impl Write) -> Result<(), String> {
-        if let Some(mut pending) = self.pending_go.clone() {
-            pending.ponder = false;
-            pending.infinite = false;
-            let result = self.engine.choose_move(&self.game_state, &pending)?;
-            self.pending_go = None;
+        let had_async = self.async_search.is_some();
+        if let Some(result) = self.stop_async_search_and_collect()? {
+            return self.emit_engine_output(&result, out);
+        }
+        if had_async {
+            let fallback = GoParams {
+                depth: self.fixed_depth_override.or(Some(2)),
+                movetime_ms: Some(100),
+                ..GoParams::default()
+            };
+            let result = self.engine.choose_move(&self.game_state, &fallback)?;
             return self.emit_engine_output(&result, out);
         }
         Ok(())
@@ -342,7 +356,6 @@ impl UciState {
         result: &crate::engines::engine_trait::EngineOutput,
         out: &mut impl Write,
     ) -> Result<(), String> {
-        self.pending_go = None;
         for info in &result.info_lines {
             writeln!(out, "{}", info).map_err(|e| e.to_string())?;
         }
@@ -365,6 +378,126 @@ impl UciState {
             writeln!(out, "bestmove 0000").map_err(|e| e.to_string())?;
         }
         Ok(())
+    }
+
+    fn apply_engine_options(&mut self) -> Result<(), String> {
+        self.engine.set_option("Hash", &self.hash_mb.to_string())?;
+        self.engine
+            .set_option("Threads", &self.threads.to_string())?;
+        self.engine
+            .set_option("Ponder", if self.ponder { "true" } else { "false" })?;
+        self.engine.set_option(
+            "UCI_AnalyseMode",
+            if self.analyse_mode { "true" } else { "false" },
+        )?;
+        self.engine
+            .set_option("UCI_Chess960", if self.chess960 { "true" } else { "false" })?;
+        self.engine
+            .set_option("OwnBook", if self.own_book { "true" } else { "false" })?;
+        self.engine
+            .set_option("TimeStrategy", &self.time_strategy)?;
+        Ok(())
+    }
+
+    fn start_async_search(&mut self, params: GoParams) -> Result<(), String> {
+        let game_state = self.game_state.clone();
+        let skill_level = self.skill_level;
+        let hash_mb = self.hash_mb;
+        let threads = self.threads;
+        let own_book = self.own_book;
+        let ponder = self.ponder;
+        let analyse_mode = self.analyse_mode;
+        let chess960 = self.chess960;
+        let time_strategy = self.time_strategy.clone();
+        let depth_override = self.fixed_depth_override;
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let latest = Arc::new(Mutex::new(None));
+        let error = Arc::new(Mutex::new(None));
+        let stop_flag = Arc::clone(&stop);
+        let latest_ref = Arc::clone(&latest);
+        let error_ref = Arc::clone(&error);
+
+        let handle = thread::spawn(move || {
+            let mut worker_engine = build_engine(skill_level);
+            let _ = worker_engine.set_option("Hash", &hash_mb.to_string());
+            let _ = worker_engine.set_option("Threads", &threads.to_string());
+            let _ = worker_engine.set_option("OwnBook", if own_book { "true" } else { "false" });
+            let _ = worker_engine.set_option("Ponder", if ponder { "true" } else { "false" });
+            let _ = worker_engine.set_option(
+                "UCI_AnalyseMode",
+                if analyse_mode { "true" } else { "false" },
+            );
+            let _ =
+                worker_engine.set_option("UCI_Chess960", if chess960 { "true" } else { "false" });
+            let _ = worker_engine.set_option("TimeStrategy", &time_strategy);
+            worker_engine.new_game();
+
+            let mut iter_depth = 1u8;
+            loop {
+                if stop_flag.load(Ordering::Relaxed) {
+                    break;
+                }
+                let mut iter_params = params.clone();
+                iter_params.ponder = false;
+                iter_params.infinite = false;
+                if iter_params.movetime_ms.is_none() {
+                    iter_params.movetime_ms = Some(75);
+                }
+
+                if iter_params.depth.is_none() {
+                    iter_params.depth = depth_override.or(Some(iter_depth));
+                    if depth_override.is_none() {
+                        iter_depth = iter_depth.saturating_add(1).min(32);
+                    }
+                }
+
+                match worker_engine.choose_move(&game_state, &iter_params) {
+                    Ok(out) => {
+                        if let Ok(mut guard) = latest_ref.lock() {
+                            *guard = Some(out);
+                        }
+                    }
+                    Err(e) => {
+                        if let Ok(mut guard) = error_ref.lock() {
+                            *guard = Some(e);
+                        }
+                        break;
+                    }
+                }
+            }
+        });
+
+        self.async_search = Some(AsyncSearchHandle {
+            stop,
+            latest,
+            error,
+            handle,
+        });
+        Ok(())
+    }
+
+    fn stop_async_search_and_collect(
+        &mut self,
+    ) -> Result<Option<crate::engines::engine_trait::EngineOutput>, String> {
+        let Some(async_handle) = self.async_search.take() else {
+            return Ok(None);
+        };
+        async_handle.stop.store(true, Ordering::Relaxed);
+        async_handle
+            .handle
+            .join()
+            .map_err(|_| "async search thread panicked".to_owned())?;
+
+        if let Ok(mut err_guard) = async_handle.error.lock() {
+            if let Some(err) = err_guard.take() {
+                return Err(err);
+            }
+        }
+        if let Ok(mut latest_guard) = async_handle.latest.lock() {
+            return Ok(latest_guard.take());
+        }
+        Err("failed to read async search result".to_owned())
     }
 }
 
@@ -606,7 +739,7 @@ mod tests {
             .handle_command("go infinite", &mut out)
             .expect("go infinite should parse");
         let text = String::from_utf8(out.clone()).expect("valid utf8");
-        assert!(text.contains("deferred search armed"));
+        assert!(text.contains("async search started"));
         assert!(!text.contains("bestmove"));
 
         out.clear();
