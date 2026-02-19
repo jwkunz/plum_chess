@@ -11,6 +11,13 @@ on:
 permissions:
   contents: write
 
+env:
+  BIN_NAME: plum_chess
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   cleanup-release-assets:
     name: Cleanup Existing Release Assets
@@ -64,17 +71,48 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Show build environment
+        run: |
+          set -euxo pipefail
+          rustc -Vv
+          cargo -V
+          echo "runner.os=${{ runner.os }}"
+          echo "runner.arch=${{ runner.arch }}"
+          uname -a || true
+
       - name: Build release binary
-        run: cargo build --release --bin plum_chess
+        run: |
+          set -euxo pipefail
+          cargo build --release --locked --bin "${BIN_NAME}"
 
       - name: Create versioned asset name from Cargo.toml
         id: asset
-        shell: bash
         run: |
-          set -euo pipefail
+          set -euxo pipefail
 
-          PKG_NAME="$(sed -nE 's/^name\\s*=\\s*\"([^\"]+)\"/\\1/p' Cargo.toml | head -n1)"
-          PKG_VERSION="$(sed -nE 's/^version\\s*=\\s*\"([^\"]+)\"/\\1/p' Cargo.toml | head -n1)"
+          # Parse [package] name/version in a portable way (GNU/BSD sed differ on \s).
+          PKG_NAME="$(awk '
+            /^\[package\]/ { in_pkg=1; next }
+            /^\[/ && in_pkg { in_pkg=0 }
+            in_pkg && $1 == "name" {
+              gsub(/"/, "", $3); print $3; exit
+            }
+          ' Cargo.toml | tr -d '\r' | xargs)"
+          PKG_VERSION="$(awk '
+            /^\[package\]/ { in_pkg=1; next }
+            /^\[/ && in_pkg { in_pkg=0 }
+            in_pkg && $1 == "version" {
+              gsub(/"/, "", $3); print $3; exit
+            }
+          ' Cargo.toml | tr -d '\r' | xargs)"
+
+          if [[ -z "${PKG_NAME}" || -z "${PKG_VERSION}" ]]; then
+            echo "Failed to parse package name/version from Cargo.toml"
+            exit 1
+          fi
           HOST_TRIPLE="$(rustc -vV | awk '/^host:/ {print $2}')"
           ARCH="$(echo "$HOST_TRIPLE" | cut -d- -f1)"
           OS_TAG="$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')"
@@ -84,11 +122,23 @@ jobs:
             EXT=".exe"
           fi
 
-          BIN_PATH="target/release/${PKG_NAME}${EXT}"
+          BIN_PATH="target/release/${BIN_NAME}${EXT}"
           ASSET_NAME="${PKG_NAME}-v${PKG_VERSION}-${OS_TAG}-${ARCH}${EXT}"
 
+          if [[ ! -d "target/release" ]]; then
+            echo "target/release directory does not exist"
+            exit 1
+          fi
+
+          if [[ ! -f "$BIN_PATH" ]]; then
+            echo "Expected binary not found at: $BIN_PATH"
+            echo "Contents of target/release:"
+            ls -la target/release || true
+            exit 1
+          fi
+
+          rm -rf releases
           mkdir -p releases
-          rm -f releases/*
           cp "$BIN_PATH" "releases/$ASSET_NAME"
 
           echo "asset_name=$ASSET_NAME" >> "$GITHUB_OUTPUT"
