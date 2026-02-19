@@ -193,6 +193,22 @@ impl Engine for IterativeEngine {
             self.time_strategy
         ));
         out.info_lines.push(format!(
+            "info string iterative_engine_v13 go_raw movetime={:?} wtime={:?} btime={:?} winc={:?} binc={:?}",
+            params.movetime_ms, params.wtime_ms, params.btime_ms, params.winc_ms, params.binc_ms
+        ));
+        out.info_lines.push(format!(
+            "info string iterative_engine_v13 go_resolved movetime={:?}",
+            effective_params.movetime_ms
+        ));
+        out.info_lines.push(format!(
+            "info string iterative_engine_v13 movetime_source {}",
+            if params.movetime_ms.is_some() {
+                "explicit"
+            } else {
+                "strategy"
+            }
+        ));
+        out.info_lines.push(format!(
             "info string tt probes {} hits {} stores {} size_entries {}",
             result.tt_stats.probes,
             result.tt_stats.hits,
