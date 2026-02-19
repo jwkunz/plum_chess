@@ -1,9 +1,9 @@
-//! Iterative deepening search with negamax alpha-beta pruning (V10).
+//! Iterative deepening search with negamax alpha-beta pruning (V11).
 //!
 //! Implements depth-progressive search that repeatedly refines best-move
 //! output and supports configurable search depth limits.
 //!
-//! V10 heuristics:
+//! V11 heuristics:
 //! - Repetition-while-winning draw penalty.
 //! - Late-endgame check extension.
 //! - Killer/history move ordering.
@@ -16,6 +16,7 @@
 //! - Transposition-table generation aging (depth+age replacement policy).
 //! - Late Move Pruning (LMP) for low-depth late quiet moves.
 //! - Null-move verification search to reduce tactical over-pruning.
+//! - 4-way bucketed TT with depth/bound/age replacement policy.
 
 use crate::game_state::game_state::GameState;
 use crate::move_generation::legal_move_apply::{make_move_in_place, unmake_move_in_place};
@@ -27,7 +28,7 @@ use crate::moves::move_descriptions::{
     piece_kind_from_code, FLAG_CAPTURE, FLAG_EN_PASSANT, NO_PIECE_CODE,
 };
 use crate::search::board_scoring::BoardScorer;
-use crate::search::transposition_table::{Bound, TTEntry, TTStats, TranspositionTable};
+use crate::search::transposition_table_v11::{Bound, TTEntry, TTStats, TranspositionTable};
 use crate::utils::long_algebraic::move_description_to_long_algebraic;
 use std::time::{Duration, Instant};
 

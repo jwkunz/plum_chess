@@ -40,6 +40,7 @@ pub mod search {
     pub mod board_scoring;
     pub mod iterative_deepening;
     pub mod iterative_deepening_v10;
+    pub mod iterative_deepening_v11;
     pub mod iterative_deepening_v3;
     pub mod iterative_deepening_v4;
     pub mod iterative_deepening_v5;
@@ -48,6 +49,7 @@ pub mod search {
     pub mod iterative_deepening_v8;
     pub mod iterative_deepening_v9;
     pub mod transposition_table;
+    pub mod transposition_table_v11;
     pub mod zobrist;
 }
 pub mod tables {
@@ -60,6 +62,7 @@ pub mod engines {
     pub mod engine_greedy;
     pub mod engine_iterative_v1;
     pub mod engine_iterative_v10;
+    pub mod engine_iterative_v11;
     pub mod engine_iterative_v2;
     pub mod engine_iterative_v3;
     pub mod engine_iterative_v4;

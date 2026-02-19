@@ -19,7 +19,7 @@ fn main() -> Result<(), String> {
             as Box<dyn Engine>
     };
     let player2 = || {
-        Box::new(plum_chess::engines::engine_iterative_v10::IterativeEngine::new_alpha_zero(6))
+        Box::new(plum_chess::engines::engine_iterative_v11::IterativeEngine::new_alpha_zero(6))
             as Box<dyn Engine>
     };
 
