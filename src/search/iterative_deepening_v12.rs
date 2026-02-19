@@ -32,6 +32,7 @@ use crate::moves::move_descriptions::{
 use crate::search::board_scoring::BoardScorer;
 use crate::search::transposition_table_v11::{Bound, TTEntry, TTStats, TranspositionTable};
 use crate::utils::long_algebraic::move_description_to_long_algebraic;
+use std::sync::{atomic::Ordering, Arc};
 use std::time::{Duration, Instant};
 
 const MATE_SCORE: i32 = 30000;
@@ -41,10 +42,11 @@ const SEE_BAD_CAPTURE_THRESHOLD: i32 = -120;
 const QUIESCENCE_MAX_PLY: u8 = 10;
 const QUIESCENCE_CHECK_PLY: u8 = 2;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct SearchConfig {
     pub max_depth: u8,
     pub movetime_ms: Option<u64>,
+    pub stop_flag: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 
 impl Default for SearchConfig {
@@ -52,6 +54,7 @@ impl Default for SearchConfig {
         Self {
             max_depth: 4,
             movetime_ms: None,
+            stop_flag: None,
         }
     }
 }
@@ -91,6 +94,7 @@ pub fn iterative_deepening_search_with_tt<G: MoveGenerator, S: BoardScorer>(
 ) -> MoveGenResult<SearchResult> {
     let started_at = Instant::now();
     let mut heuristics = SearchHeuristics::default();
+    let stop_flag = config.stop_flag.as_ref();
     let deadline = config
         .movetime_ms
         .map(|ms| started_at + Duration::from_millis(ms.max(1)));
@@ -112,10 +116,8 @@ pub fn iterative_deepening_search_with_tt<G: MoveGenerator, S: BoardScorer>(
 
     let mut prev_iter_score = 0i32;
     for depth in 1..=config.max_depth {
-        if let Some(limit) = deadline {
-            if Instant::now() >= limit {
-                break;
-            }
+        if should_abort(deadline, stop_flag) {
+            break;
         }
 
         tt.new_generation();
@@ -129,6 +131,7 @@ pub fn iterative_deepening_search_with_tt<G: MoveGenerator, S: BoardScorer>(
             prev_iter_score,
             &mut nodes,
             deadline,
+            stop_flag,
             tt,
             &mut heuristics,
         )?
@@ -154,6 +157,24 @@ pub fn iterative_deepening_search_with_tt<G: MoveGenerator, S: BoardScorer>(
     Ok(result)
 }
 
+#[inline]
+fn should_abort(
+    deadline: Option<Instant>,
+    stop_flag: Option<&Arc<std::sync::atomic::AtomicBool>>,
+) -> bool {
+    if let Some(limit) = deadline {
+        if Instant::now() >= limit {
+            return true;
+        }
+    }
+    if let Some(flag) = stop_flag {
+        if flag.load(Ordering::Relaxed) {
+            return true;
+        }
+    }
+    false
+}
+
 fn negamax_root<S: BoardScorer>(
     game_state: &mut GameState,
     scorer: &S,
@@ -162,6 +183,7 @@ fn negamax_root<S: BoardScorer>(
     beta: i32,
     nodes: &mut u64,
     deadline: Option<Instant>,
+    stop_flag: Option<&Arc<std::sync::atomic::AtomicBool>>,
     tt: &mut TranspositionTable,
     heuristics: &mut SearchHeuristics,
 ) -> MoveGenResult<Option<(Option<u64>, i32)>> {
@@ -186,10 +208,8 @@ fn negamax_root<S: BoardScorer>(
     let mut best_score = -MATE_SCORE;
 
     for mv in moves {
-        if let Some(limit) = deadline {
-            if Instant::now() >= limit {
-                return Ok(None);
-            }
+        if should_abort(deadline, stop_flag) {
+            return Ok(None);
         }
 
         make_move_in_place(game_state, mv).map_err(|x| {
@@ -208,6 +228,7 @@ fn negamax_root<S: BoardScorer>(
             Some(mv),
             nodes,
             deadline,
+            stop_flag,
             tt,
             heuristics,
         )?;
@@ -243,6 +264,7 @@ fn search_root_with_aspiration<S: BoardScorer>(
     prev_score: i32,
     nodes: &mut u64,
     deadline: Option<Instant>,
+    stop_flag: Option<&Arc<std::sync::atomic::AtomicBool>>,
     tt: &mut TranspositionTable,
     heuristics: &mut SearchHeuristics,
 ) -> MoveGenResult<Option<(Option<u64>, i32)>> {
@@ -255,6 +277,7 @@ fn search_root_with_aspiration<S: BoardScorer>(
             MATE_SCORE,
             nodes,
             deadline,
+            stop_flag,
             tt,
             heuristics,
         );
@@ -268,7 +291,7 @@ fn search_root_with_aspiration<S: BoardScorer>(
     loop {
         attempts = attempts.saturating_add(1);
         let Some((best_move, score)) = negamax_root(
-            game_state, scorer, depth, alpha, beta, nodes, deadline, tt, heuristics,
+            game_state, scorer, depth, alpha, beta, nodes, deadline, stop_flag, tt, heuristics,
         )?
         else {
             return Ok(None);
@@ -323,13 +346,12 @@ fn negamax<S: BoardScorer>(
     prev_move: Option<u64>,
     nodes: &mut u64,
     deadline: Option<Instant>,
+    stop_flag: Option<&Arc<std::sync::atomic::AtomicBool>>,
     tt: &mut TranspositionTable,
     heuristics: &mut SearchHeuristics,
 ) -> MoveGenResult<Option<i32>> {
-    if let Some(limit) = deadline {
-        if Instant::now() >= limit {
-            return Ok(None);
-        }
+    if should_abort(deadline, stop_flag) {
+        return Ok(None);
     }
 
     if is_draw_state(game_state) {
@@ -352,7 +374,9 @@ fn negamax<S: BoardScorer>(
     *nodes += 1;
 
     if depth == 0 {
-        return quiescence(game_state, scorer, alpha, beta, 0, nodes, deadline);
+        return quiescence(
+            game_state, scorer, alpha, beta, 0, nodes, deadline, stop_flag,
+        );
     }
 
     let in_check = is_king_in_check(game_state, game_state.side_to_move);
@@ -371,6 +395,7 @@ fn negamax<S: BoardScorer>(
             None,
             nodes,
             deadline,
+            stop_flag,
             tt,
             heuristics,
         )?;
@@ -394,6 +419,7 @@ fn negamax<S: BoardScorer>(
                     prev_move,
                     nodes,
                     deadline,
+                    stop_flag,
                     tt,
                     heuristics,
                 )?;
@@ -435,10 +461,8 @@ fn negamax<S: BoardScorer>(
     let mut best_move: Option<u64> = None;
 
     for (move_index, mv) in moves.into_iter().enumerate() {
-        if let Some(limit) = deadline {
-            if Instant::now() >= limit {
-                return Ok(None);
-            }
+        if should_abort(deadline, stop_flag) {
+            return Ok(None);
         }
 
         make_move_in_place(game_state, mv).map_err(|x| {
@@ -473,6 +497,7 @@ fn negamax<S: BoardScorer>(
                     Some(mv),
                     nodes,
                     deadline,
+                    stop_flag,
                     tt,
                     heuristics,
                 )?;
@@ -500,6 +525,7 @@ fn negamax<S: BoardScorer>(
                         Some(mv),
                         nodes,
                         deadline,
+                        stop_flag,
                         tt,
                         heuristics,
                     )?
@@ -519,6 +545,7 @@ fn negamax<S: BoardScorer>(
                     Some(mv),
                     nodes,
                     deadline,
+                    stop_flag,
                     tt,
                     heuristics,
                 )?
@@ -537,6 +564,7 @@ fn negamax<S: BoardScorer>(
                 Some(mv),
                 nodes,
                 deadline,
+                stop_flag,
                 tt,
                 heuristics,
             )?
@@ -556,6 +584,7 @@ fn negamax<S: BoardScorer>(
                     Some(mv),
                     nodes,
                     deadline,
+                    stop_flag,
                     tt,
                     heuristics,
                 )?
@@ -572,6 +601,7 @@ fn negamax<S: BoardScorer>(
                     Some(mv),
                     nodes,
                     deadline,
+                    stop_flag,
                     tt,
                     heuristics,
                 )?
@@ -599,6 +629,7 @@ fn negamax<S: BoardScorer>(
                     Some(mv),
                     nodes,
                     deadline,
+                    stop_flag,
                     tt,
                     heuristics,
                 )?
@@ -679,11 +710,10 @@ fn quiescence<S: BoardScorer>(
     qply: u8,
     nodes: &mut u64,
     deadline: Option<Instant>,
+    stop_flag: Option<&Arc<std::sync::atomic::AtomicBool>>,
 ) -> MoveGenResult<Option<i32>> {
-    if let Some(limit) = deadline {
-        if Instant::now() >= limit {
-            return Ok(None);
-        }
+    if should_abort(deadline, stop_flag) {
+        return Ok(None);
     }
 
     if is_draw_state(game_state) {
@@ -715,6 +745,7 @@ fn quiescence<S: BoardScorer>(
                 qply.saturating_add(1),
                 nodes,
                 deadline,
+                stop_flag,
             )?;
 
             unmake_move_in_place(game_state).map_err(|x| {
@@ -760,10 +791,8 @@ fn quiescence<S: BoardScorer>(
     order_moves_basic(&mut moves, None);
 
     for mv in moves {
-        if let Some(limit) = deadline {
-            if Instant::now() >= limit {
-                return Ok(None);
-            }
+        if should_abort(deadline, stop_flag) {
+            return Ok(None);
         }
 
         make_move_in_place(game_state, mv).map_err(|x| {
@@ -778,6 +807,7 @@ fn quiescence<S: BoardScorer>(
             qply.saturating_add(1),
             nodes,
             deadline,
+            stop_flag,
         )?;
 
         unmake_move_in_place(game_state).map_err(|x| {

@@ -420,6 +420,7 @@ impl UciState {
 
         let handle = thread::spawn(move || {
             let mut worker_engine = build_engine(skill_level);
+            worker_engine.set_stop_signal(Some(Arc::clone(&stop_flag)));
             let _ = worker_engine.set_option("Hash", &hash_mb.to_string());
             let _ = worker_engine.set_option("Threads", &threads.to_string());
             let _ = worker_engine.set_option("OwnBook", if own_book { "true" } else { "false" });

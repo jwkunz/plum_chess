@@ -4,6 +4,7 @@
 //! strategies can be selected at runtime behind a single trait interface.
 
 use crate::game_state::game_state::GameState;
+use std::sync::{atomic::AtomicBool, Arc};
 
 #[derive(Debug, Clone, Default)]
 pub struct GoParams {
@@ -33,6 +34,7 @@ pub trait Engine: Send {
     fn set_option(&mut self, _name: &str, _value: &str) -> Result<(), String> {
         Ok(())
     }
+    fn set_stop_signal(&mut self, _stop_signal: Option<Arc<AtomicBool>>) {}
 
     fn choose_move(
         &mut self,

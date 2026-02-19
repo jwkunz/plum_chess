@@ -24,6 +24,7 @@ use crate::search::transposition_table_v11::TranspositionTable;
 use crate::tables::opening_book::OpeningBook;
 use crate::utils::long_algebraic::move_description_to_long_algebraic;
 use rand::rng;
+use std::sync::{atomic::AtomicBool, Arc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IterativeScorerKind {
@@ -42,6 +43,7 @@ pub struct IterativeEngine {
     tt: TranspositionTable,
     hash_mb: usize,
     time_strategy: TimeManagementStrategy,
+    stop_signal: Option<Arc<AtomicBool>>,
 }
 
 impl IterativeEngine {
@@ -70,6 +72,7 @@ impl IterativeEngine {
             tt: TranspositionTable::new_with_mb(hash_mb),
             hash_mb,
             time_strategy: TimeManagementStrategy::AdaptiveV13,
+            stop_signal: None,
         }
     }
 }
@@ -104,6 +107,10 @@ impl Engine for IterativeEngine {
             return Ok(());
         }
         Ok(())
+    }
+
+    fn set_stop_signal(&mut self, stop_signal: Option<Arc<AtomicBool>>) {
+        self.stop_signal = stop_signal;
     }
 
     fn choose_move(
@@ -153,6 +160,7 @@ impl Engine for IterativeEngine {
                 SearchConfig {
                     max_depth: depth,
                     movetime_ms: effective_params.movetime_ms,
+                    stop_flag: self.stop_signal.clone(),
                 },
                 &mut self.tt,
             ),
@@ -163,6 +171,7 @@ impl Engine for IterativeEngine {
                 SearchConfig {
                     max_depth: depth,
                     movetime_ms: effective_params.movetime_ms,
+                    stop_flag: self.stop_signal.clone(),
                 },
                 &mut self.tt,
             ),
