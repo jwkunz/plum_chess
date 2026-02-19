@@ -47,6 +47,7 @@ struct UciState {
     analyse_mode: bool,
     chess960: bool,
     debug_mode: bool,
+    pending_go: Option<GoParams>,
 }
 
 impl UciState {
@@ -71,6 +72,7 @@ impl UciState {
             analyse_mode: false,
             chess960: false,
             debug_mode: false,
+            pending_go: None,
         }
     }
 
@@ -117,6 +119,7 @@ impl UciState {
             }
             "ucinewgame" => {
                 self.game_state = GameState::new_game();
+                self.pending_go = None;
                 self.engine.new_game();
             }
             "position" => {
@@ -131,10 +134,16 @@ impl UciState {
                 }
             }
             "stop" => {
-                // Search is currently synchronous; no-op for now.
+                if let Err(err) = self.handle_stop(out) {
+                    writeln!(out, "info string stop error: {}", err)?;
+                    writeln!(out, "bestmove 0000")?;
+                }
             }
             "ponderhit" => {
-                // Search is synchronous; no ponder thread to wake up.
+                if let Err(err) = self.handle_ponderhit(out) {
+                    writeln!(out, "info string ponderhit error: {}", err)?;
+                    writeln!(out, "bestmove 0000")?;
+                }
             }
             "debug" => {
                 let mode = parts.next().unwrap_or_default();
@@ -280,6 +289,7 @@ impl UciState {
         }
 
         self.game_state = base_state;
+        self.pending_go = None;
         Ok(())
     }
 
@@ -288,8 +298,51 @@ impl UciState {
         if params.depth.is_none() {
             params.depth = self.fixed_depth_override;
         }
+        if params.infinite || params.ponder {
+            self.pending_go = Some(params);
+            writeln!(
+                out,
+                "info string deferred search armed; waiting for stop/ponderhit"
+            )
+            .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+        self.pending_go = None;
         let result = self.engine.choose_move(&self.game_state, &params)?;
+        self.emit_engine_output(&result, out)
+    }
 
+    fn handle_stop(&mut self, out: &mut impl Write) -> Result<(), String> {
+        if let Some(mut pending) = self.pending_go.clone() {
+            pending.infinite = false;
+            pending.ponder = false;
+            if pending.movetime_ms.is_none() {
+                pending.movetime_ms = Some(100);
+            }
+            let result = self.engine.choose_move(&self.game_state, &pending)?;
+            self.pending_go = None;
+            return self.emit_engine_output(&result, out);
+        }
+        Ok(())
+    }
+
+    fn handle_ponderhit(&mut self, out: &mut impl Write) -> Result<(), String> {
+        if let Some(mut pending) = self.pending_go.clone() {
+            pending.ponder = false;
+            pending.infinite = false;
+            let result = self.engine.choose_move(&self.game_state, &pending)?;
+            self.pending_go = None;
+            return self.emit_engine_output(&result, out);
+        }
+        Ok(())
+    }
+
+    fn emit_engine_output(
+        &mut self,
+        result: &crate::engines::engine_trait::EngineOutput,
+        out: &mut impl Write,
+    ) -> Result<(), String> {
+        self.pending_go = None;
         for info in &result.info_lines {
             writeln!(out, "{}", info).map_err(|e| e.to_string())?;
         }
@@ -311,7 +364,6 @@ impl UciState {
         } else {
             writeln!(out, "bestmove 0000").map_err(|e| e.to_string())?;
         }
-
         Ok(())
     }
 }
@@ -544,5 +596,24 @@ mod tests {
         assert_eq!(params.mate, Some(3));
         assert!(params.ponder);
         assert!(params.infinite);
+    }
+
+    #[test]
+    fn go_infinite_defers_until_stop() {
+        let mut state = UciState::new();
+        let mut out = Vec::<u8>::new();
+        let _ = state
+            .handle_command("go infinite", &mut out)
+            .expect("go infinite should parse");
+        let text = String::from_utf8(out.clone()).expect("valid utf8");
+        assert!(text.contains("deferred search armed"));
+        assert!(!text.contains("bestmove"));
+
+        out.clear();
+        let _ = state
+            .handle_command("stop", &mut out)
+            .expect("stop should parse");
+        let text = String::from_utf8(out).expect("valid utf8");
+        assert!(text.contains("bestmove"));
     }
 }
