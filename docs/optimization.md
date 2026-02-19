@@ -84,222 +84,219 @@ digraph optimization_journey {
 
 ## Optimization Map By Theme
 
-### 1) Baseline iterative deepening and alpha-beta
-
+### 1) Baseline iterative deepening + alpha-beta
 Theory:
-- Iterative deepening gives a usable best move at every depth and improves move ordering for deeper iterations.
-- Alpha-beta transforms minimax from `O(b^d)` toward `O(b^(d/2))` under good ordering.
-
+- Iterative deepening ensures you always have a move at any stop point.
+- Alpha-beta dramatically reduces explored nodes with good ordering.
 Classification:
 - `Strength + Performance`
-
 Where:
 - `src/search/iterative_deepening.rs`
-- early iterative engine wrappers (`src/engines/engine_iterative_v1.rs`)
+- `src/engines/engine_iterative_v1.rs`
 
----
-
-### 2) Repetition-while-winning draw policy and early endgame check extension
-
+### 2) Repetition-while-winning policy
 Theory:
-- Engines that score all draws as neutral can choose drawing lines while better.
-- A draw-penalty while winning pushes search away from sterile repetition.
-- Endgame check extension helps avoid horizon misses in low-material king races.
-
-Classification:
-- Repetition policy: `Strength`
-- Endgame check extension: `Strength`
-
-Where introduced:
-- `src/search/iterative_deepening_v3.rs`
-
----
-
-### 3) Promotion-aware root choice (queen preference)
-
-Theory:
-- Underpromotion is rarely best outside tactical motifs.
-- Biasing root selection toward queen promotions reduces practical blunders and improves conversion.
-
+- Neutral draw scoring causes engines to accept repeats while better.
+- Penalizing draw lines while ahead improves conversion behavior.
 Classification:
 - `Strength`
+Where:
+- `src/search/iterative_deepening_v3.rs`
 
+### 3) Late-endgame check extension
+Theory:
+- In sparse positions, one checking tempo often decides outcomes.
+- Extending those lines reduces horizon-induced tactical misses.
+Classification:
+- `Strength`
+Where:
+- `src/search/iterative_deepening_v3.rs`
+
+### 4) Promotion-aware root selection
+Theory:
+- Most underpromotions are practical mistakes unless tactically forced.
+- Queen preference improves conversion reliability.
+Classification:
+- `Strength`
 Where:
 - `src/engines/engine_iterative_v2.rs`
 
----
-
-### 4) Move ordering memory: killer/history, then countermove+continuation
-
+### 5) Killer heuristic
 Theory:
-- Alpha-beta is mostly a move-ordering problem.
-- Killer and history heuristics prioritize moves that caused cutoffs in similar contexts.
-- Countermove and continuation history encode local tactical/positional response patterns.
-
+- Quiet moves that previously caused cutoffs are strong ordering candidates.
 Classification:
-- `Strength + Performance`
-
+- `Performance + Strength`
 Where:
-- Killer/history + LMR: `src/search/iterative_deepening_v4.rs`
-- Countermove/continuation: `src/search/iterative_deepening_v7.rs`
+- `src/search/iterative_deepening_v4.rs`
 
----
-
-### 5) Pruning ladder: LMR, aspiration windows, null move, LMP, verification
-
+### 6) History heuristic
 Theory:
-- LMR: reduce depth for late quiet moves unlikely to be best, then re-search on fail-high.
-- Aspiration windows: narrow alpha-beta window around previous iteration score to increase cutoffs.
-- Null move: test whether doing nothing still holds beta, implying likely cutoff.
-- Null verification: guards against false cutoffs (especially zugzwang-like cases).
-- LMP: skip very late quiet moves in shallow nodes once enough evidence exists.
-
+- Move success statistics by side/piece/target square guide ordering quality.
 Classification:
-- LMR / aspiration / null move / LMP: `Performance + some Strength`
-- Null verification: `Strength + stability`
-
+- `Performance + Strength`
 Where:
-- LMR: `src/search/iterative_deepening_v4.rs`
-- Aspiration + null move: `src/search/iterative_deepening_v5.rs`
-- Null verification: `src/search/iterative_deepening_v10.rs`
-- LMP: `src/search/iterative_deepening_v9.rs`
+- `src/search/iterative_deepening_v4.rs`
 
----
-
-### 6) PVS (Principal Variation Search)
-
+### 7) Late Move Reductions (LMR)
 Theory:
-- After first (best-ordered) move, most alternatives fail low.
-- Searching non-PV moves with zero-width window is much cheaper; only re-search on improvement.
-
+- Late quiet moves are less likely to be best, so reduced-depth probes are efficient.
 Classification:
-- `Performance` (and indirect `Strength` from deeper reach)
+- `Performance`
+Where:
+- `src/search/iterative_deepening_v4.rs`
 
+### 8) Aspiration windows
+Theory:
+- Searching near the previous score with narrow bounds increases cutoff frequency.
+Classification:
+- `Performance`
+Where:
+- `src/search/iterative_deepening_v5.rs`
+
+### 9) Null-move pruning
+Theory:
+- If a null move still holds beta, many real moves likely also hold; prune aggressively.
+Classification:
+- `Performance`
+Where:
+- `src/search/iterative_deepening_v5.rs`
+
+### 10) Principal Variation Search (PVS)
+Theory:
+- Search the likely best move full-window; probe others zero-window first.
+Classification:
+- `Performance` (with indirect `Strength` from deeper reach)
 Where:
 - `src/search/iterative_deepening_v6.rs`
 
----
-
-### 7) TT progression: aging, bucketization, replacement quality, mate-distance consistency
-
+### 11) Countermove ordering
 Theory:
-- TT hit quality matters as much as hit rate.
-- Aging prevents stale lines from displacing relevant current-search entries.
-- Bucketed replacement improves retention under collisions.
-- Mate-distance normalization prevents inconsistent mate score interpretation across plies.
-
+- Strong tactical replies recur in similar local patterns.
 Classification:
-- Aging/bucketization: `Performance + stability`
-- Mate-distance audit/normalization: `Strength + correctness`
-
+- `Performance + Strength`
 Where:
-- TT aging/replacement: `src/search/iterative_deepening_v9.rs`
-- 4-way bucketed TT: `src/search/iterative_deepening_v11.rs`
-- Mate-distance consistency: `src/search/iterative_deepening_v14.rs` and `src/search/iterative_deepening_v15.rs`
+- `src/search/iterative_deepening_v7.rs`
 
----
-
-### 8) Quiescence and SEE tactical filtering
-
+### 12) Continuation-history ordering
 Theory:
-- Plain depth cutoffs are noisy in tactical positions (horizon effect).
-- Quiescence extends tactical lines (captures, promotions, checks in later versions).
-- SEE-like gating removes hopeless tactical moves and prioritizes materially favorable exchanges.
-
+- Move quality depends on move sequence context, not only individual move features.
 Classification:
-- Early SEE pruning: `Performance`
-- Deeper qsearch + selective checks: `Strength`
-- Net effect in mature form: `Strength + Performance`
-
+- `Performance + Strength`
 Where:
-- SEE tactical pruning/order: `src/search/iterative_deepening_v8.rs`
-- Deeper qsearch + stronger SEE thresholds: `src/search/iterative_deepening_v12.rs`
+- `src/search/iterative_deepening_v7.rs`
 
----
-
-### 9) Evaluation evolution: material -> AlphaZero values -> endgame tapered terms
-
+### 13) SEE tactical filtering (initial)
 Theory:
-- Material-only eval is too coarse for conversion.
-- Tapering (phase-aware weighting) increases endgame relevance of king activity and passed pawns.
-- Additional endgame terms improve practical win conversion:
-  - rook on open/semi-open file
-  - rook behind passer
-  - opposition
-  - outside passer
-  - bishop pair in simplified positions
-
+- Static exchange estimation removes obviously losing tactical exchanges early.
 Classification:
-- Mostly `Strength` (small perf cost)
-
+- `Performance`
 Where:
-- `src/search/board_scoring.rs`
-  - `AlphaZeroMetric`
-  - `EndgameTaperedScorerV3`
-  - `EndgameTaperedScorerV14`
+- `src/search/iterative_deepening_v8.rs`
 
----
-
-### 10) Time management: fixed fraction and adaptive budgeting
-
+### 14) TT generation aging + replacement refinement
 Theory:
-- Search strength depends on spending time where marginal depth matters most.
-- Fixed fraction (`1/20`) is robust and simple.
-- Adaptive budgeting uses remaining time, increment, phase, and optional movestogo.
-
+- Prefer keeping current/deeper/reliable entries over stale ones.
 Classification:
-- Primarily `Strength` in real games; also practical `Performance` (less timeout risk)
-
+- `Performance + Stability`
 Where:
-- `src/engines/time_management.rs`
-- adopted in engine wrappers (`src/engines/engine_iterative_v13.rs` onward)
+- `src/search/iterative_deepening_v9.rs`
 
----
-
-### 11) Contempt and draw-avoidance when winning
-
+### 15) Late Move Pruning (LMP)
 Theory:
-- Slight contempt in balanced positions avoids passive draw drift.
-- Stronger draw penalties under clear advantage pushes the engine to convert instead of repeating.
+- Past a depth- and move-index threshold, late quiet moves can be skipped.
+Classification:
+- `Performance`
+Where:
+- `src/search/iterative_deepening_v9.rs`
 
+### 16) Null-move verification
+Theory:
+- Adds a guard re-search against false null cutoffs (especially zugzwang-like cases).
+Classification:
+- `Strength + Stability`
+Where:
+- `src/search/iterative_deepening_v10.rs`
+
+### 17) 4-way bucketed TT
+Theory:
+- Multiple slots per index improve retention and reduce collision damage.
+Classification:
+- `Performance + Stability`
+Where:
+- `src/search/iterative_deepening_v11.rs`
+
+### 18) Deeper quiescence + selective quiet checks
+Theory:
+- Tactical frontier search must follow forcing continuations further.
 Classification:
 - `Strength`
+Where:
+- `src/search/iterative_deepening_v12.rs`
 
+### 19) Stronger SEE thresholds
+Theory:
+- Better SEE calibration balances tactical safety against over-pruning.
+Classification:
+- `Strength + Performance`
+Where:
+- `src/search/iterative_deepening_v12.rs`
+
+### 20) Adaptive time management
+Theory:
+- Clock-aware budgeting improves practical strength under real game controls.
+Classification:
+- `Strength` (with practical time-efficiency benefits)
+Where:
+- `src/engines/time_management.rs`
+- `src/engines/engine_iterative_v13.rs`
+
+### 21) Expanded endgame tapered evaluation terms
+Theory:
+- Endgame conversion needs king activity, passer quality, rook placement, and opposition signals.
+Classification:
+- `Strength`
+Where:
+- `src/search/board_scoring.rs` (`EndgameTaperedScorerV14`)
+
+### 22) Mate-distance consistency audit (TT score normalization)
+Theory:
+- Mate scores must encode/decode consistently across ply to avoid ordering/selection pathologies.
+Classification:
+- `Strength + Correctness`
+Where:
+- `src/search/iterative_deepening_v14.rs`
+- `src/search/iterative_deepening_v15.rs`
+
+### 23) Contempt + draw-avoidance tuning
+Theory:
+- Slight draw bias in near-equal nodes and stronger anti-draw pressure while winning improves decisiveness.
+Classification:
+- `Strength`
 Where:
 - `src/search/iterative_deepening_v15.rs`
 
----
-
-### 12) Mate-score shaping and conversion policy
-
+### 24) Mate-score shaping (fail-soft cutoffs + root mate preference)
 Theory:
-- Fail-soft propagation preserves score granularity (including mate distance trends) at cutoffs.
-- Root-level immediate mate preference reduces missed short mates.
-- Combined with TT mate normalization, this improves mating consistency.
-
+- Preserve score granularity at cutoffs and explicitly prefer immediate mating continuations.
 Classification:
 - `Strength`
-
 Where:
 - `src/search/iterative_deepening_v15.rs`
 - `src/engines/engine_iterative_v15.rs`
 
----
-
-### 13) Selective endgame extensions and endgame-specific pruning tuning
-
+### 25) Selective endgame extensions
 Theory:
-- Endgames are tempo-sensitive; over-pruning quiet king/pawn maneuvers loses wins.
-- Selective extensions focus depth where one extra ply is most valuable:
-  - checking moves
-  - advanced passed-pawn pushes
-  - king-pawn race motifs
-- Endgame-specific SEE/delta/LMP relaxation reduces tactical blindness in sparse positions.
-
+- Extend only decisive endgame motifs (checks, advanced passer pushes, king-pawn race signals).
 Classification:
-- Extensions: `Strength`
-- Endgame pruning tuning: `Strength + stability` (small speed tradeoff)
+- `Strength`
+Where:
+- `src/search/iterative_deepening_v15.rs`
 
+### 26) Endgame-specific pruning tuning
+Theory:
+- Relax SEE/delta/LMP aggressiveness in critical endgames to avoid pruning decisive tempos.
+Classification:
+- `Strength + Stability`
 Where:
 - `src/search/iterative_deepening_v15.rs`
 
@@ -350,103 +347,27 @@ digraph endgame_policy {
 }
 ```
 
-## Consolidated Step List (Theory + Classification)
+## Narrative Walkthrough (Theory + Classification)
 
-1. Iterative deepening + alpha-beta baseline.
-- Why: stable progressive search and fundamental pruning.
-- Type: `Strength + Performance`.
+The optimization journey started with the classic engine backbone: iterative deepening on top of negamax alpha-beta. That baseline matters because it gives two assets at once: tactical soundness that improves with depth, and a practical way to stop early with the best line found so far. From day one this was both a `Strength + Performance` foundation, because every later optimization depends on this search shape.
 
-2. Repetition penalty while winning.
-- Why: avoid voluntary draw lines from advantageous positions.
-- Type: `Strength`.
+The first strategic pivot was philosophical rather than purely computational: the engine needed to stop accepting draws in winning positions. Repetition penalties while ahead and early endgame check extensions were introduced to make the search prefer conversion over safety. This stage was mostly a `Strength` upgrade, and it changed behavior in human-visible ways long before major speedups arrived.
 
-3. Late-endgame check extension.
-- Why: improve tactical visibility where one tempo decides outcomes.
-- Type: `Strength`.
+Next came practical play hygiene. Promotion-aware root selection reduced underpromotion mistakes by preferring queen promotions unless a concrete tactic demanded otherwise. This seems small, but in live play it prevents many low-level conversion failures. This was a direct `Strength` gain.
 
-4. Queen-promotion preference.
-- Why: prevent practical underpromotion mistakes.
-- Type: `Strength`.
+After behavior was stabilized, the focus shifted to throughput: move ordering and selective pruning. Killer/history, then countermove and continuation history, taught the engine where cutoffs are likely. LMR, aspiration windows, null move pruning, and later LMP all worked toward a single goal: spend full-depth effort only where the branch still has realistic potential. These were primarily `Performance` improvements, but because better ordering reaches deeper principal lines, they also produced secondary `Strength` gains.
 
-5. Killer/history move ordering.
-- Why: accelerate alpha-beta cutoffs with better ordering priors.
-- Type: `Performance + Strength`.
+PVS (Principal Variation Search) was the next structural leap. Instead of searching every sibling move with a wide window, the engine searched the likely best move fully and challenged alternatives with narrow probes. This was mostly `Performance`, yet it often translates into better play because depth rises at fixed time.
 
-6. LMR.
-- Why: spend less depth on unlikely late quiet moves.
-- Type: `Performance`.
+As search got faster, transposition quality became the bottleneck. TT aging and replacement refinements improved cache usefulness, then 4-way bucketization improved collision handling under load. Later, mate-distance normalization fixed semantic consistency for mating scores across probe/store paths. Together these changes were `Performance + stability`, with mate-distance normalization adding an explicit `Strength + correctness` dimension.
 
-7. Aspiration windows.
-- Why: narrower windows increase cutoff density.
-- Type: `Performance`.
+Quiescence and SEE tuning formed another important chapter. Early SEE-guided filtering reduced tactical noise and prevented wasteful capture trees. Later, deeper quiescence with selective quiet checks and stronger SEE calibration improved horizon behavior. This sequence started as a speed control mechanism and matured into a mixed `Strength + Performance` block.
 
-8. Null move pruning.
-- Why: cheaply detect fail-high regions.
-- Type: `Performance`.
+Time management came after core search maturity. A simple `1/20` budget rule provided predictable behavior, then adaptive budgeting used remaining time, increments, and game phase to allocate effort more intelligently. These were mostly `Strength` improvements under real game clocks, with practical performance side effects like fewer time-pressure collapses.
 
-9. PVS.
-- Why: zero-window search for non-PV moves lowers node count.
-- Type: `Performance`.
+Evaluation then became endgame-centric. Moving from plain material to tapered endgame scoring and richer terms (rook file control, rook behind passer, opposition, outside passer, bishop pair in simplified positions) improved conversion in positions where tactical brute force alone is insufficient. This cluster was predominantly `Strength`.
 
-10. Countermove + continuation history.
-- Why: leverage local tactical context for ordering.
-- Type: `Performance + Strength`.
-
-11. SEE-guided quiescence filtering.
-- Why: reduce tactical noise and useless exchanges.
-- Type: `Performance`.
-
-12. TT aging and replacement refinement.
-- Why: retain relevant entries, reduce collision damage.
-- Type: `Performance + stability`.
-
-13. LMP.
-- Why: skip low-value quiet tails in shallow nodes.
-- Type: `Performance`.
-
-14. Null verification search.
-- Why: curb false null cutoffs in fragile positions.
-- Type: `Strength + stability`.
-
-15. Bucketed TT.
-- Why: improve TT quality under high load.
-- Type: `Performance + stability`.
-
-16. Deeper quiescence with selective quiet checks.
-- Why: improve tactical resolution at horizon.
-- Type: `Strength`.
-
-17. Stronger SEE thresholds.
-- Why: better tactical filter calibration.
-- Type: `Strength + Performance`.
-
-18. Mate-distance TT consistency.
-- Why: consistent mating score semantics across probe/store.
-- Type: `Strength + correctness`.
-
-19. Adaptive time management.
-- Why: spend time where value is highest by phase/clock/inc.
-- Type: `Strength`.
-
-20. Expanded endgame tapered eval terms.
-- Why: better conversion in simplified positions.
-- Type: `Strength`.
-
-21. Contempt + draw-avoidance.
-- Why: reduce draw drift in winning/near-equal play.
-- Type: `Strength`.
-
-22. Mate-score shaping (fail-soft + root mate preference).
-- Why: improve shortest-mate behavior and mating reliability.
-- Type: `Strength`.
-
-23. Selective endgame extensions.
-- Why: allocate depth to decisive king/pawn motifs.
-- Type: `Strength`.
-
-24. Endgame-aware pruning tuning.
-- Why: avoid over-pruning critical endgame tactics.
-- Type: `Strength + stability`.
+In the latest phase, the engine became explicitly conversion-aware. Contempt and draw-avoidance policy reduced draw drift, mate-score shaping (fail-soft propagation plus immediate mate preference) improved mating consistency, and selective endgame extensions concentrated depth on king/pawn race moments. Finally, endgame-specific pruning tuning relaxed overly aggressive filters exactly where tempo sensitivity is highest. This end phase is best described as `Strength + stability`: fewer sterile draws, more clean conversions, and less brittleness in critical endings.
 
 ## Practical Takeaways For Readers
 
