@@ -19,7 +19,7 @@ fn main() -> Result<(), String> {
             as Box<dyn Engine>
     };
     let player2 = || {
-        Box::new(plum_chess::engines::engine_iterative_v9::IterativeEngine::new_alpha_zero(6))
+        Box::new(plum_chess::engines::engine_iterative_v10::IterativeEngine::new_alpha_zero(6))
             as Box<dyn Engine>
     };
 
@@ -118,9 +118,18 @@ Conclusion:  Adding fast SEE-style estimate from moved/captured/promotion piece 
 ---
 
 In a 10 game series of 200 plies:
-plum_chess::engines::engine_iterative_v8::IterativeEngine::new_alpha_zero(6) = 3 wins @ 38.336 ms per move
+plum_chess::engines::engine_iterative_v8::IterativeEngine::new_alpha_zero(6) = 7 wins @ 38.336 ms per move
 vs
-plum_chess::engines::engine_iterative_v9::IterativeEngine::new_alpha_zero(6) = 2 wins @ 40.148 ms per move
-Conclusion:  Adding transposition-table aging + improved replacement policy didn't really do anything
+plum_chess::engines::engine_iterative_v9::IterativeEngine::new_alpha_zero(6) = 2 wins @ 18.498 ms per move
+Conclusion:  The two improvements in v9 made it faster, but weaker
+
+---
+
+In a 10 game series of 200 plies:
+plum_chess::engines::engine_iterative_v8::IterativeEngine::new_alpha_zero(6) = 6 wins @ 38.336 ms per move
+vs
+plum_chess::engines::engine_iterative_v10::IterativeEngine::new_alpha_zero(6) = 2 wins @ 21.574 ms per move
+Conclusion:  Null move verification search is faster, but still weaker
+
 
 */

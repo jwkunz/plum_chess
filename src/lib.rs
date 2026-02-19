@@ -39,6 +39,7 @@ pub mod move_generation {
 pub mod search {
     pub mod board_scoring;
     pub mod iterative_deepening;
+    pub mod iterative_deepening_v10;
     pub mod iterative_deepening_v3;
     pub mod iterative_deepening_v4;
     pub mod iterative_deepening_v5;
@@ -58,6 +59,7 @@ pub mod uci {
 pub mod engines {
     pub mod engine_greedy;
     pub mod engine_iterative_v1;
+    pub mod engine_iterative_v10;
     pub mod engine_iterative_v2;
     pub mod engine_iterative_v3;
     pub mod engine_iterative_v4;
