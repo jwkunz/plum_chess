@@ -10,6 +10,8 @@
 use crate::engines::engine_trait::{Engine, EngineOutput, GoParams};
 use crate::engines::time_management::{resolve_go_params, TimeManagementStrategy};
 use crate::game_state::game_state::GameState;
+use crate::move_generation::legal_move_apply::apply_move;
+use crate::move_generation::legal_move_checks::is_king_in_check;
 use crate::move_generation::legal_move_generator::{
     generate_legal_move_descriptions_in_place, FastLegalMoveGenerator,
 };
@@ -118,9 +120,18 @@ impl Engine for IterativeEngine {
         game_state: &GameState,
         params: &GoParams,
     ) -> Result<EngineOutput, String> {
-        let effective_params = resolve_go_params(game_state, params, self.time_strategy);
+        let mate_mode = params.mate;
+        let mut effective_params = resolve_go_params(game_state, params, self.time_strategy);
+        if mate_mode.is_some() && params.movetime_ms.is_none() {
+            // In mate mode, prioritize completing depth target over adaptive clock slicing.
+            effective_params.movetime_ms = None;
+        }
         let requested_searchmoves = params.searchmoves.as_deref();
-        if self.use_own_book && effective_params.depth.is_none() && game_state.ply < 20 {
+        if self.use_own_book
+            && mate_mode.is_none()
+            && effective_params.depth.is_none()
+            && game_state.ply < 20
+        {
             let mut rng = rng();
             if let Some(book_move) = self.opening_book.choose_weighted_move(game_state, &mut rng) {
                 if let Some(allowed) = requested_searchmoves {
@@ -146,10 +157,11 @@ impl Engine for IterativeEngine {
 
         // Honor explicit UCI depth limits first; otherwise fall back to the
         // configured difficulty depth for this engine instance.
+        let mate_depth_target = mate_mode.map(|m| m.saturating_mul(2).saturating_add(1).max(1));
         let depth = effective_params
             .depth
-            .or_else(|| params.mate.map(|m| m.saturating_mul(2).max(1)))
             .unwrap_or(self.default_depth)
+            .max(mate_depth_target.unwrap_or(1))
             .max(1);
 
         let result = match self.scorer_kind {
@@ -205,6 +217,16 @@ impl Engine for IterativeEngine {
             .best_move
             .filter(|mv| root_legal.contains(mv))
             .or_else(|| root_legal.first().copied());
+
+        if mate_mode.is_some() {
+            if let Some(mate_one) = find_mate_in_one(game_state, &root_legal) {
+                chosen = Some(mate_one);
+                out.info_lines.push(
+                    "info string iterative_engine_v13 mate_mode immediate_mate_selected".to_owned(),
+                );
+            }
+        }
+
         if let Some(best) = chosen {
             let preferred = prefer_queen_promotion(best, &root_legal);
             if preferred != best {
@@ -230,6 +252,12 @@ impl Engine for IterativeEngine {
             "info string iterative_engine_v13 used_depth {}",
             depth
         ));
+        if let Some(mate) = mate_mode {
+            out.info_lines.push(format!(
+                "info string iterative_engine_v13 mate_mode plies_target {}",
+                mate.saturating_mul(2).saturating_add(1)
+            ));
+        }
         if let Some(ms) = effective_params.movetime_ms {
             out.info_lines.push(format!(
                 "info string iterative_engine_v13 movetime_ms {}",
@@ -274,6 +302,8 @@ impl Engine for IterativeEngine {
             "info string iterative_engine_v13 movetime_source {}",
             if params.movetime_ms.is_some() {
                 "explicit"
+            } else if mate_mode.is_some() {
+                "mate_mode_unbounded"
             } else {
                 "strategy"
             }
@@ -312,6 +342,22 @@ impl Engine for IterativeEngine {
 
         Ok(out)
     }
+}
+
+fn find_mate_in_one(game_state: &GameState, legal_moves: &[u64]) -> Option<u64> {
+    for mv in legal_moves {
+        let Ok(next) = apply_move(game_state, *mv) else {
+            continue;
+        };
+        let mut probe = next.clone();
+        let Ok(replies) = generate_legal_move_descriptions_in_place(&mut probe) else {
+            continue;
+        };
+        if replies.is_empty() && is_king_in_check(&next, next.side_to_move) {
+            return Some(*mv);
+        }
+    }
+    None
 }
 
 fn prefer_queen_promotion(chosen: u64, legal_moves: &[u64]) -> u64 {
@@ -370,6 +416,9 @@ mod tests {
     use super::IterativeEngine;
     use crate::engines::engine_trait::{Engine, GoParams};
     use crate::game_state::game_state::GameState;
+    use crate::move_generation::legal_move_apply::apply_move;
+    use crate::move_generation::legal_move_checks::is_king_in_check;
+    use crate::move_generation::legal_move_generator::generate_legal_move_descriptions_in_place;
 
     #[test]
     fn iterative_engine_honors_go_depth_override() {
@@ -392,6 +441,31 @@ mod tests {
         assert!(
             joined.contains("used_depth 1"),
             "expected used_depth=1 info"
+        );
+    }
+
+    #[test]
+    fn iterative_engine_mate_mode_prefers_checkmate() {
+        let game =
+            GameState::from_fen("6k1/5Q2/6K1/8/8/8/8/8 w - - 0 1").expect("FEN should parse");
+        let mut engine = IterativeEngine::new(2);
+        let params = GoParams {
+            mate: Some(1),
+            ..GoParams::default()
+        };
+
+        let out = engine
+            .choose_move(&game, &params)
+            .expect("engine should choose a move");
+        let best = out.best_move.expect("best move should exist");
+        let next = apply_move(&game, best).expect("best move should apply");
+        let mut probe = next.clone();
+        let replies =
+            generate_legal_move_descriptions_in_place(&mut probe).expect("legal moves should run");
+        assert!(replies.is_empty(), "mate mode should choose a mating move");
+        assert!(
+            is_king_in_check(&next, next.side_to_move),
+            "chosen move should deliver checkmate"
         );
     }
 }
