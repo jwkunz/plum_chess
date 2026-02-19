@@ -46,6 +46,7 @@ const QUIESCENCE_CHECK_PLY: u8 = 2;
 pub struct SearchConfig {
     pub max_depth: u8,
     pub movetime_ms: Option<u64>,
+    pub max_nodes: Option<u64>,
     pub stop_flag: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 
@@ -54,6 +55,7 @@ impl Default for SearchConfig {
         Self {
             max_depth: 4,
             movetime_ms: None,
+            max_nodes: None,
             stop_flag: None,
         }
     }
@@ -95,6 +97,7 @@ pub fn iterative_deepening_search_with_tt<G: MoveGenerator, S: BoardScorer>(
     let started_at = Instant::now();
     let mut heuristics = SearchHeuristics::default();
     let stop_flag = config.stop_flag.as_ref();
+    let max_nodes = config.max_nodes.filter(|n| *n > 0);
     let deadline = config
         .movetime_ms
         .map(|ms| started_at + Duration::from_millis(ms.max(1)));
@@ -113,10 +116,15 @@ pub fn iterative_deepening_search_with_tt<G: MoveGenerator, S: BoardScorer>(
     }
 
     let mut result = SearchResult::default();
+    let mut total_nodes = 0u64;
 
     let mut prev_iter_score = 0i32;
     for depth in 1..=config.max_depth {
-        if should_abort(deadline, stop_flag) {
+        if should_abort(deadline, stop_flag, total_nodes, max_nodes) {
+            break;
+        }
+        let node_cap = max_nodes.map(|cap| cap.saturating_sub(total_nodes));
+        if node_cap == Some(0) {
             break;
         }
 
@@ -131,6 +139,7 @@ pub fn iterative_deepening_search_with_tt<G: MoveGenerator, S: BoardScorer>(
             prev_iter_score,
             &mut nodes,
             deadline,
+            node_cap,
             stop_flag,
             tt,
             &mut heuristics,
@@ -139,10 +148,11 @@ pub fn iterative_deepening_search_with_tt<G: MoveGenerator, S: BoardScorer>(
             break;
         };
 
+        total_nodes = total_nodes.saturating_add(nodes);
         result.best_move = best_move;
         result.best_score = best_score;
         result.reached_depth = depth;
-        result.nodes = nodes;
+        result.nodes = total_nodes;
         prev_iter_score = best_score;
     }
 
@@ -161,7 +171,14 @@ pub fn iterative_deepening_search_with_tt<G: MoveGenerator, S: BoardScorer>(
 fn should_abort(
     deadline: Option<Instant>,
     stop_flag: Option<&Arc<std::sync::atomic::AtomicBool>>,
+    nodes: u64,
+    max_nodes: Option<u64>,
 ) -> bool {
+    if let Some(cap) = max_nodes {
+        if nodes >= cap {
+            return true;
+        }
+    }
     if let Some(limit) = deadline {
         if Instant::now() >= limit {
             return true;
@@ -183,6 +200,7 @@ fn negamax_root<S: BoardScorer>(
     beta: i32,
     nodes: &mut u64,
     deadline: Option<Instant>,
+    node_cap: Option<u64>,
     stop_flag: Option<&Arc<std::sync::atomic::AtomicBool>>,
     tt: &mut TranspositionTable,
     heuristics: &mut SearchHeuristics,
@@ -208,7 +226,7 @@ fn negamax_root<S: BoardScorer>(
     let mut best_score = -MATE_SCORE;
 
     for mv in moves {
-        if should_abort(deadline, stop_flag) {
+        if should_abort(deadline, stop_flag, *nodes, node_cap) {
             return Ok(None);
         }
 
@@ -228,6 +246,7 @@ fn negamax_root<S: BoardScorer>(
             Some(mv),
             nodes,
             deadline,
+            node_cap,
             stop_flag,
             tt,
             heuristics,
@@ -264,6 +283,7 @@ fn search_root_with_aspiration<S: BoardScorer>(
     prev_score: i32,
     nodes: &mut u64,
     deadline: Option<Instant>,
+    node_cap: Option<u64>,
     stop_flag: Option<&Arc<std::sync::atomic::AtomicBool>>,
     tt: &mut TranspositionTable,
     heuristics: &mut SearchHeuristics,
@@ -277,6 +297,7 @@ fn search_root_with_aspiration<S: BoardScorer>(
             MATE_SCORE,
             nodes,
             deadline,
+            node_cap,
             stop_flag,
             tt,
             heuristics,
@@ -291,7 +312,8 @@ fn search_root_with_aspiration<S: BoardScorer>(
     loop {
         attempts = attempts.saturating_add(1);
         let Some((best_move, score)) = negamax_root(
-            game_state, scorer, depth, alpha, beta, nodes, deadline, stop_flag, tt, heuristics,
+            game_state, scorer, depth, alpha, beta, nodes, deadline, node_cap, stop_flag, tt,
+            heuristics,
         )?
         else {
             return Ok(None);
@@ -346,11 +368,12 @@ fn negamax<S: BoardScorer>(
     prev_move: Option<u64>,
     nodes: &mut u64,
     deadline: Option<Instant>,
+    node_cap: Option<u64>,
     stop_flag: Option<&Arc<std::sync::atomic::AtomicBool>>,
     tt: &mut TranspositionTable,
     heuristics: &mut SearchHeuristics,
 ) -> MoveGenResult<Option<i32>> {
-    if should_abort(deadline, stop_flag) {
+    if should_abort(deadline, stop_flag, *nodes, node_cap) {
         return Ok(None);
     }
 
@@ -375,7 +398,7 @@ fn negamax<S: BoardScorer>(
 
     if depth == 0 {
         return quiescence(
-            game_state, scorer, alpha, beta, 0, nodes, deadline, stop_flag,
+            game_state, scorer, alpha, beta, 0, nodes, deadline, node_cap, stop_flag,
         );
     }
 
@@ -395,6 +418,7 @@ fn negamax<S: BoardScorer>(
             None,
             nodes,
             deadline,
+            node_cap,
             stop_flag,
             tt,
             heuristics,
@@ -419,6 +443,7 @@ fn negamax<S: BoardScorer>(
                     prev_move,
                     nodes,
                     deadline,
+                    node_cap,
                     stop_flag,
                     tt,
                     heuristics,
@@ -461,7 +486,7 @@ fn negamax<S: BoardScorer>(
     let mut best_move: Option<u64> = None;
 
     for (move_index, mv) in moves.into_iter().enumerate() {
-        if should_abort(deadline, stop_flag) {
+        if should_abort(deadline, stop_flag, *nodes, node_cap) {
             return Ok(None);
         }
 
@@ -497,6 +522,7 @@ fn negamax<S: BoardScorer>(
                     Some(mv),
                     nodes,
                     deadline,
+                    node_cap,
                     stop_flag,
                     tt,
                     heuristics,
@@ -525,6 +551,7 @@ fn negamax<S: BoardScorer>(
                         Some(mv),
                         nodes,
                         deadline,
+                        node_cap,
                         stop_flag,
                         tt,
                         heuristics,
@@ -545,6 +572,7 @@ fn negamax<S: BoardScorer>(
                     Some(mv),
                     nodes,
                     deadline,
+                    node_cap,
                     stop_flag,
                     tt,
                     heuristics,
@@ -564,6 +592,7 @@ fn negamax<S: BoardScorer>(
                 Some(mv),
                 nodes,
                 deadline,
+                node_cap,
                 stop_flag,
                 tt,
                 heuristics,
@@ -584,6 +613,7 @@ fn negamax<S: BoardScorer>(
                     Some(mv),
                     nodes,
                     deadline,
+                    node_cap,
                     stop_flag,
                     tt,
                     heuristics,
@@ -601,6 +631,7 @@ fn negamax<S: BoardScorer>(
                     Some(mv),
                     nodes,
                     deadline,
+                    node_cap,
                     stop_flag,
                     tt,
                     heuristics,
@@ -629,6 +660,7 @@ fn negamax<S: BoardScorer>(
                     Some(mv),
                     nodes,
                     deadline,
+                    node_cap,
                     stop_flag,
                     tt,
                     heuristics,
@@ -710,9 +742,10 @@ fn quiescence<S: BoardScorer>(
     qply: u8,
     nodes: &mut u64,
     deadline: Option<Instant>,
+    node_cap: Option<u64>,
     stop_flag: Option<&Arc<std::sync::atomic::AtomicBool>>,
 ) -> MoveGenResult<Option<i32>> {
-    if should_abort(deadline, stop_flag) {
+    if should_abort(deadline, stop_flag, *nodes, node_cap) {
         return Ok(None);
     }
 
@@ -745,6 +778,7 @@ fn quiescence<S: BoardScorer>(
                 qply.saturating_add(1),
                 nodes,
                 deadline,
+                node_cap,
                 stop_flag,
             )?;
 
@@ -791,7 +825,7 @@ fn quiescence<S: BoardScorer>(
     order_moves_basic(&mut moves, None);
 
     for mv in moves {
-        if should_abort(deadline, stop_flag) {
+        if should_abort(deadline, stop_flag, *nodes, node_cap) {
             return Ok(None);
         }
 
@@ -807,6 +841,7 @@ fn quiescence<S: BoardScorer>(
             qply.saturating_add(1),
             nodes,
             deadline,
+            node_cap,
             stop_flag,
         )?;
 
@@ -1446,5 +1481,26 @@ mod tests {
             "mate score should dominate material, got {}",
             result.best_score
         );
+    }
+
+    #[test]
+    fn search_respects_node_cap() {
+        let game = GameState::new_game();
+        let gen = LegalMoveGenerator;
+        let scorer = MaterialScorer;
+
+        let result = iterative_deepening_search(
+            &game,
+            &gen,
+            &scorer,
+            SearchConfig {
+                max_depth: 8,
+                max_nodes: Some(200),
+                ..SearchConfig::default()
+            },
+        )
+        .expect("search should run");
+
+        assert!(result.nodes <= 200, "nodes exceeded cap: {}", result.nodes);
     }
 }

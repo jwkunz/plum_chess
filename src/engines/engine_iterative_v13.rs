@@ -160,6 +160,7 @@ impl Engine for IterativeEngine {
                 SearchConfig {
                     max_depth: depth,
                     movetime_ms: effective_params.movetime_ms,
+                    max_nodes: params.nodes,
                     stop_flag: self.stop_signal.clone(),
                 },
                 &mut self.tt,
@@ -171,6 +172,7 @@ impl Engine for IterativeEngine {
                 SearchConfig {
                     max_depth: depth,
                     movetime_ms: effective_params.movetime_ms,
+                    max_nodes: params.nodes,
                     stop_flag: self.stop_signal.clone(),
                 },
                 &mut self.tt,
@@ -246,11 +248,11 @@ impl Engine for IterativeEngine {
             "info string iterative_engine_v13 go_modes nodes={:?} mate={:?} ponder={} infinite={}",
             params.nodes, params.mate, params.ponder, params.infinite
         ));
-        if params.nodes.is_some() {
-            out.info_lines.push(
-                "info string iterative_engine_v13 note nodes limit parsed but hard node-cap is not implemented yet"
-                    .to_owned(),
-            );
+        if let Some(node_cap) = params.nodes {
+            out.info_lines.push(format!(
+                "info string iterative_engine_v13 node_cap {}",
+                node_cap
+            ));
         }
         if params.ponder {
             out.info_lines.push(

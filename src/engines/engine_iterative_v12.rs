@@ -125,6 +125,7 @@ impl Engine for IterativeEngine {
                 SearchConfig {
                     max_depth: depth,
                     movetime_ms: effective_params.movetime_ms,
+                    max_nodes: params.nodes,
                     stop_flag: None,
                 },
                 &mut self.tt,
@@ -136,6 +137,7 @@ impl Engine for IterativeEngine {
                 SearchConfig {
                     max_depth: depth,
                     movetime_ms: effective_params.movetime_ms,
+                    max_nodes: params.nodes,
                     stop_flag: None,
                 },
                 &mut self.tt,
