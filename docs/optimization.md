@@ -90,9 +90,10 @@ Theory:
 - Alpha-beta dramatically reduces explored nodes with good ordering.
 Classification:
 - `Strength + Performance`
-Where:
-- `src/search/iterative_deepening.rs`
-- `src/engines/engine_iterative_v1.rs`
+Code examples:
+- [`iterative_deepening_search`](../src/search/iterative_deepening.rs#L53)
+- [`iterative_deepening_search_with_tt`](../src/search/iterative_deepening.rs#L63)
+- [`Engine::choose_move` baseline wrapper](../src/engines/engine_iterative_v1.rs#L95)
 
 ### 2) Repetition-while-winning policy
 Theory:
@@ -100,8 +101,8 @@ Theory:
 - Penalizing draw lines while ahead improves conversion behavior.
 Classification:
 - `Strength`
-Where:
-- `src/search/iterative_deepening_v3.rs`
+Code examples:
+- [`repetition_draw_score` (early version)](../src/search/iterative_deepening_v3.rs#L443)
 
 ### 3) Late-endgame check extension
 Theory:
@@ -109,8 +110,8 @@ Theory:
 - Extending those lines reduces horizon-induced tactical misses.
 Classification:
 - `Strength`
-Where:
-- `src/search/iterative_deepening_v3.rs`
+Code examples:
+- [`should_extend_check` (early extension gate)](../src/search/iterative_deepening_v3.rs#L480)
 
 ### 4) Promotion-aware root selection
 Theory:
@@ -118,187 +119,201 @@ Theory:
 - Queen preference improves conversion reliability.
 Classification:
 - `Strength`
-Where:
-- `src/engines/engine_iterative_v2.rs`
+Code examples:
+- [`prefer_queen_promotion`](../src/engines/engine_iterative_v2.rs#L210)
 
 ### 5) Killer heuristic
 Theory:
 - Quiet moves that previously caused cutoffs are strong ordering candidates.
 Classification:
 - `Performance + Strength`
-Where:
-- `src/search/iterative_deepening_v4.rs`
+Code examples:
+- [`record_killer`](../src/search/iterative_deepening_v4.rs#L721)
 
 ### 6) History heuristic
 Theory:
 - Move success statistics by side/piece/target square guide ordering quality.
 Classification:
 - `Performance + Strength`
-Where:
-- `src/search/iterative_deepening_v4.rs`
+Code examples:
+- [`record_history`](../src/search/iterative_deepening_v4.rs#L729)
 
 ### 7) Late Move Reductions (LMR)
 Theory:
 - Late quiet moves are less likely to be best, so reduced-depth probes are efficient.
 Classification:
 - `Performance`
-Where:
-- `src/search/iterative_deepening_v4.rs`
+Code examples:
+- [`lmr_reduction`](../src/search/iterative_deepening_v4.rs#L685)
 
 ### 8) Aspiration windows
 Theory:
 - Searching near the previous score with narrow bounds increases cutoff frequency.
 Classification:
 - `Performance`
-Where:
-- `src/search/iterative_deepening_v5.rs`
+Code examples:
+- [`search_root_with_aspiration`](../src/search/iterative_deepening_v5.rs#L222)
 
 ### 9) Null-move pruning
 Theory:
 - If a null move still holds beta, many real moves likely also hold; prune aggressively.
 Classification:
 - `Performance`
-Where:
-- `src/search/iterative_deepening_v5.rs`
+Code examples:
+- [`should_try_null_move`](../src/search/iterative_deepening_v5.rs#L816)
+- [`make_null_move`](../src/search/iterative_deepening_v5.rs#L841)
 
 ### 10) Principal Variation Search (PVS)
 Theory:
 - Search the likely best move full-window; probe others zero-window first.
 Classification:
 - `Performance` (with indirect `Strength` from deeper reach)
-Where:
-- `src/search/iterative_deepening_v6.rs`
+Code examples:
+- [`should_use_pvs`](../src/search/iterative_deepening_v6.rs#L590)
 
 ### 11) Countermove ordering
 Theory:
 - Strong tactical replies recur in similar local patterns.
 Classification:
 - `Performance + Strength`
-Where:
-- `src/search/iterative_deepening_v7.rs`
+Code examples:
+- [`record_countermove`](../src/search/iterative_deepening_v7.rs#L1042)
 
 ### 12) Continuation-history ordering
 Theory:
 - Move quality depends on move sequence context, not only individual move features.
 Classification:
 - `Performance + Strength`
-Where:
-- `src/search/iterative_deepening_v7.rs`
+Code examples:
+- [`record_continuation`](../src/search/iterative_deepening_v7.rs#L1056)
+- [`continuation_bonus` usage in ordering](../src/search/iterative_deepening_v7.rs#L1075)
 
 ### 13) SEE tactical filtering (initial)
 Theory:
 - Static exchange estimation removes obviously losing tactical exchanges early.
 Classification:
 - `Performance`
-Where:
-- `src/search/iterative_deepening_v8.rs`
+Code examples:
+- [`passes_quiescence_pruning` (initial SEE gate)](../src/search/iterative_deepening_v8.rs#L904)
+- [`static_exchange_estimate`](../src/search/iterative_deepening_v8.rs#L938)
 
 ### 14) TT generation aging + replacement refinement
 Theory:
 - Prefer keeping current/deeper/reliable entries over stale ones.
 Classification:
 - `Performance + Stability`
-Where:
-- `src/search/iterative_deepening_v9.rs`
+Code examples:
+- [`tt.new_generation()` in search loop](../src/search/iterative_deepening_v9.rs#L115)
+- [`new_generation` in TT implementation](../src/search/transposition_table.rs#L55)
+- [`store` replacement logic](../src/search/transposition_table.rs#L93)
 
 ### 15) Late Move Pruning (LMP)
 Theory:
 - Past a depth- and move-index threshold, late quiet moves can be skipped.
 Classification:
 - `Performance`
-Where:
-- `src/search/iterative_deepening_v9.rs`
+Code examples:
+- [`should_lmp_prune`](../src/search/iterative_deepening_v9.rs#L978)
 
 ### 16) Null-move verification
 Theory:
 - Adds a guard re-search against false null cutoffs (especially zugzwang-like cases).
 Classification:
 - `Strength + Stability`
-Where:
-- `src/search/iterative_deepening_v10.rs`
+Code examples:
+- [`should_verify_null_cutoff`](../src/search/iterative_deepening_v10.rs#L1067)
 
 ### 17) 4-way bucketed TT
 Theory:
 - Multiple slots per index improve retention and reduce collision damage.
 Classification:
 - `Performance + Stability`
-Where:
-- `src/search/iterative_deepening_v11.rs`
+Code examples:
+- [`TranspositionTable` bucket layout](../src/search/transposition_table_v11.rs#L38)
+- [`store` with bucket victim selection](../src/search/transposition_table_v11.rs#L100)
+- [`replacement_priority`](../src/search/transposition_table_v11.rs#L148)
 
 ### 18) Deeper quiescence + selective quiet checks
 Theory:
 - Tactical frontier search must follow forcing continuations further.
 Classification:
 - `Strength`
-Where:
-- `src/search/iterative_deepening_v12.rs`
+Code examples:
+- [`append_quiescence_check_moves`](../src/search/iterative_deepening_v12.rs#L1067)
 
 ### 19) Stronger SEE thresholds
 Theory:
 - Better SEE calibration balances tactical safety against over-pruning.
 Classification:
 - `Strength + Performance`
-Where:
-- `src/search/iterative_deepening_v12.rs`
+Code examples:
+- [`see_bad_capture_threshold` (qply-aware)](../src/search/iterative_deepening_v12.rs#L1063)
 
 ### 20) Adaptive time management
 Theory:
 - Clock-aware budgeting improves practical strength under real game controls.
 Classification:
 - `Strength` (with practical time-efficiency benefits)
-Where:
-- `src/engines/time_management.rs`
-- `src/engines/engine_iterative_v13.rs`
+Code examples:
+- [`resolve_go_params`](../src/engines/time_management.rs#L18)
+- [`adaptive_budget_ms`](../src/engines/time_management.rs#L45)
+- [`resolve_go_params` usage in engine](../src/engines/engine_iterative_v13.rs#L151)
 
 ### 21) Expanded endgame tapered evaluation terms
 Theory:
 - Endgame conversion needs king activity, passer quality, rook placement, and opposition signals.
 Classification:
 - `Strength`
-Where:
-- `src/search/board_scoring.rs` (`EndgameTaperedScorerV14`)
+Code examples:
+- [`EndgameTaperedScorerV14::score`](../src/search/board_scoring.rs#L218)
+- [`endgame_rook_file_control_white_minus_black`](../src/search/board_scoring.rs#L523)
 
 ### 22) Mate-distance consistency audit (TT score normalization)
 Theory:
 - Mate scores must encode/decode consistently across ply to avoid ordering/selection pathologies.
 Classification:
 - `Strength + Correctness`
-Where:
-- `src/search/iterative_deepening_v14.rs`
-- `src/search/iterative_deepening_v15.rs`
+Code examples:
+- [`tt_score_for_storage` (v14)](../src/search/iterative_deepening_v14.rs#L741)
+- [`tt_score_from_storage` (v14)](../src/search/iterative_deepening_v14.rs#L752)
+- [`tt_score_for_storage` (v15)](../src/search/iterative_deepening_v15.rs#L745)
+- [`tt_score_from_storage` (v15)](../src/search/iterative_deepening_v15.rs#L756)
 
 ### 23) Contempt + draw-avoidance tuning
 Theory:
 - Slight draw bias in near-equal nodes and stronger anti-draw pressure while winning improves decisiveness.
 Classification:
 - `Strength`
-Where:
-- `src/search/iterative_deepening_v15.rs`
+Code examples:
+- [`repetition_draw_score` with contempt windows](../src/search/iterative_deepening_v15.rs#L912)
 
 ### 24) Mate-score shaping (fail-soft cutoffs + root mate preference)
 Theory:
 - Preserve score granularity at cutoffs and explicitly prefer immediate mating continuations.
 Classification:
 - `Strength`
-Where:
-- `src/search/iterative_deepening_v15.rs`
-- `src/engines/engine_iterative_v15.rs`
+Code examples:
+- [`find_mate_in_one`](../src/engines/engine_iterative_v15.rs#L399)
+- [`tt_score_for_storage`/fail-soft context in v15 search](../src/search/iterative_deepening_v15.rs#L745)
 
 ### 25) Selective endgame extensions
 Theory:
 - Extend only decisive endgame motifs (checks, advanced passer pushes, king-pawn race signals).
 Classification:
 - `Strength`
-Where:
-- `src/search/iterative_deepening_v15.rs`
+Code examples:
+- [`should_extend_endgame_move`](../src/search/iterative_deepening_v15.rs#L981)
 
 ### 26) Endgame-specific pruning tuning
 Theory:
 - Relax SEE/delta/LMP aggressiveness in critical endgames to avoid pruning decisive tempos.
 Classification:
 - `Strength + Stability`
-Where:
-- `src/search/iterative_deepening_v15.rs`
+Code examples:
+- [`is_critical_endgame`](../src/search/iterative_deepening_v15.rs#L1383)
+- [`quiescence_delta_margin`](../src/search/iterative_deepening_v15.rs#L1268)
+- [`see_bad_capture_threshold` (endgame-aware)](../src/search/iterative_deepening_v15.rs#L1256)
+- [`should_lmp_prune` (endgame-aware)](../src/search/iterative_deepening_v15.rs#L1348)
 
 ## Search Pipeline (Where Optimizations Plug In)
 
