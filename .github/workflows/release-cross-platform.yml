@@ -10,9 +10,43 @@ permissions:
   contents: write
 
 jobs:
+  cleanup-release-assets:
+    name: Cleanup Existing Release Assets
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Delete existing assets for this tag release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = context.ref.replace("refs/tags/", "");
+            let release;
+            try {
+              const r = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag
+              });
+              release = r.data;
+            } catch (err) {
+              core.info(`No existing release for tag ${tag}; nothing to clean.`);
+              return;
+            }
+
+            for (const asset of release.assets) {
+              core.info(`Deleting old asset: ${asset.name}`);
+              await github.rest.repos.deleteReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                asset_id: asset.id
+              });
+            }
+
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: [cleanup-release-assets]
+    if: always() && (needs.cleanup-release-assets.result == 'success' || needs.cleanup-release-assets.result == 'skipped')
     strategy:
       fail-fast: false
       matrix:
@@ -51,20 +85,23 @@ jobs:
           BIN_PATH="target/release/${PKG_NAME}${EXT}"
           ASSET_NAME="${PKG_NAME}-v${PKG_VERSION}-${OS_TAG}-${ARCH}${EXT}"
 
-          cp "$BIN_PATH" "$ASSET_NAME"
+          mkdir -p releases
+          rm -f releases/*
+          cp "$BIN_PATH" "releases/$ASSET_NAME"
 
           echo "asset_name=$ASSET_NAME" >> "$GITHUB_OUTPUT"
+          echo "asset_path=releases/$ASSET_NAME" >> "$GITHUB_OUTPUT"
           echo "Created asset: $ASSET_NAME"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.asset.outputs.asset_name }}
-          path: ${{ steps.asset.outputs.asset_name }}
+          path: ${{ steps.asset.outputs.asset_path }}
           if-no-files-found: error
 
       - name: Upload to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.asset.outputs.asset_name }}
+          files: ${{ steps.asset.outputs.asset_path }}
