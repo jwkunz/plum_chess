@@ -80,6 +80,8 @@ struct AsyncSearchHandle {
     stop: Arc<AtomicBool>,
     latest: Arc<Mutex<Option<crate::engines::engine_trait::EngineOutput>>>,
     error: Arc<Mutex<Option<String>>>,
+    go_params: GoParams,
+    is_ponder: bool,
     handle: JoinHandle<()>,
 }
 
@@ -331,10 +333,11 @@ impl UciState {
             params.depth = self.fixed_depth_override;
         }
         if params.infinite || params.ponder {
+            let start_mode = if params.ponder { "ponder" } else { "infinite" };
             self.start_async_search(params)?;
             writeln!(
                 out,
-                "info string async search started; waiting for stop/ponderhit"
+                "info string async search started mode={start_mode}; waiting for stop/ponderhit"
             )
             .map_err(|e| e.to_string())?;
             return Ok(());
@@ -361,6 +364,27 @@ impl UciState {
     }
 
     fn handle_ponderhit(&mut self, out: &mut impl Write) -> Result<(), String> {
+        if let Some(active) = self.async_search.as_ref() {
+            if active.is_ponder {
+                let mut resumed = active.go_params.clone();
+                resumed.ponder = false;
+                resumed.infinite = false;
+                if resumed.movetime_ms.is_none()
+                    && resumed.wtime_ms.is_none()
+                    && resumed.btime_ms.is_none()
+                {
+                    resumed.movetime_ms = Some(250);
+                }
+                let _ = self.stop_async_search_and_collect()?;
+                self.start_async_search(resumed)?;
+                writeln!(
+                    out,
+                    "info string ponderhit accepted; switched to normal async search"
+                )
+                .map_err(|e| e.to_string())?;
+                return Ok(());
+            }
+        }
         let had_async = self.async_search.is_some();
         if let Some(result) = self.stop_async_search_and_collect()? {
             return self.emit_engine_output(&result, out);
@@ -426,6 +450,7 @@ impl UciState {
     }
 
     fn start_async_search(&mut self, params: GoParams) -> Result<(), String> {
+        let is_ponder = params.ponder;
         let game_state = self.game_state.clone();
         let skill_level = self.skill_level;
         let hash_mb = self.hash_mb;
@@ -437,6 +462,7 @@ impl UciState {
         let time_strategy = self.time_strategy.clone();
         let info_tx = self.async_info_tx.clone();
         let depth_override = self.fixed_depth_override;
+        let params_for_worker = params.clone();
 
         let stop = Arc::new(AtomicBool::new(false));
         let latest = Arc::new(Mutex::new(None));
@@ -466,7 +492,7 @@ impl UciState {
                 if stop_flag.load(Ordering::Relaxed) {
                     break;
                 }
-                let mut iter_params = params.clone();
+                let mut iter_params = params_for_worker.clone();
                 iter_params.ponder = false;
                 iter_params.infinite = false;
                 if iter_params.movetime_ms.is_none() {
@@ -505,6 +531,8 @@ impl UciState {
             stop,
             latest,
             error,
+            go_params: params,
+            is_ponder,
             handle,
         });
         Ok(())
@@ -828,5 +856,50 @@ mod tests {
             .handle_command("setoption name Hash value 128", &mut set_out)
             .expect("setoption should succeed");
         assert!(state.async_search.is_none());
+    }
+
+    #[test]
+    fn ponderhit_switches_ponder_to_normal_async_without_bestmove() {
+        let mut state = UciState::new();
+        let mut out = Vec::<u8>::new();
+        state
+            .handle_command("go ponder", &mut out)
+            .expect("go ponder should succeed");
+        let text = String::from_utf8(out).expect("valid utf8");
+        assert!(text.contains("mode=ponder"));
+        assert!(state
+            .async_search
+            .as_ref()
+            .map(|h| h.is_ponder)
+            .unwrap_or(false));
+
+        let mut hit_out = Vec::<u8>::new();
+        state
+            .handle_command("ponderhit", &mut hit_out)
+            .expect("ponderhit should succeed");
+        let hit_text = String::from_utf8(hit_out).expect("valid utf8");
+        assert!(hit_text.contains("ponderhit accepted"));
+        assert!(!hit_text.contains("bestmove"));
+        assert!(state.async_search.is_some());
+        assert!(!state
+            .async_search
+            .as_ref()
+            .map(|h| h.is_ponder)
+            .unwrap_or(true));
+    }
+
+    #[test]
+    fn ponder_stop_emits_bestmove() {
+        let mut state = UciState::new();
+        let mut out = Vec::<u8>::new();
+        state
+            .handle_command("go ponder", &mut out)
+            .expect("go ponder should succeed");
+        out.clear();
+        state
+            .handle_command("stop", &mut out)
+            .expect("stop should succeed");
+        let text = String::from_utf8(out).expect("valid utf8");
+        assert!(text.contains("bestmove"));
     }
 }
