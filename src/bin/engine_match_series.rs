@@ -15,11 +15,11 @@ fn main() -> Result<(), String> {
 
     // Customize these two lines to experiment with different engines/scorers/depths.
     let player1 = || {
-        Box::new(plum_chess::engines::engine_iterative_v3::IterativeEngine::new_alpha_zero(4))
+        Box::new(plum_chess::engines::engine_iterative_v5::IterativeEngine::new_alpha_zero(5))
             as Box<dyn Engine>
     };
     let player2 = || {
-        Box::new(plum_chess::engines::engine_iterative_v5::IterativeEngine::new_alpha_zero(4))
+        Box::new(plum_chess::engines::engine_iterative_v6::IterativeEngine::new_alpha_zero(5))
             as Box<dyn Engine>
     };
 
