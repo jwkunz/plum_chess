@@ -6,7 +6,7 @@
 use std::io::{self, BufRead, Write};
 
 use crate::engines::engine_greedy::GreedyEngine;
-use crate::engines::engine_iterative_v12::IterativeEngine;
+use crate::engines::engine_iterative_v13::IterativeEngine;
 use crate::engines::engine_random::RandomEngine;
 use crate::engines::engine_trait::{Engine, GoParams};
 use crate::game_state::game_state::GameState;
@@ -85,6 +85,10 @@ impl UciState {
                 )?;
                 writeln!(out, "option name Hash type spin default 64 min 1 max 4096")?;
                 writeln!(out, "option name OwnBook type check default true")?;
+                writeln!(
+                    out,
+                    "option name TimeStrategy type combo default adaptive var adaptive var fraction20"
+                )?;
                 writeln!(out, "uciok")?;
             }
             "isready" => {
@@ -223,7 +227,6 @@ impl UciState {
         if params.depth.is_none() {
             params.depth = self.fixed_depth_override;
         }
-        apply_basic_time_management(&self.game_state, &mut params);
         let result = self.engine.choose_move(&self.game_state, &params)?;
 
         for info in &result.info_lines {
@@ -238,23 +241,6 @@ impl UciState {
         }
 
         Ok(())
-    }
-}
-
-fn apply_basic_time_management(game_state: &GameState, params: &mut GoParams) {
-    // Keep existing explicit limits unchanged.
-    if params.movetime_ms.is_some() {
-        return;
-    }
-
-    let remaining_ms = match game_state.side_to_move {
-        crate::game_state::chess_types::Color::Light => params.wtime_ms,
-        crate::game_state::chess_types::Color::Dark => params.btime_ms,
-    };
-
-    if let Some(clock) = remaining_ms {
-        // Spend roughly one twentieth of remaining clock to better sustain longer games.
-        params.movetime_ms = Some((clock / 20).max(1));
     }
 }
 
@@ -294,9 +280,6 @@ fn build_engine(skill_level: u8) -> Box<dyn Engine> {
 #[cfg(test)]
 mod tests {
     use super::UciState;
-    use crate::engines::engine_trait::GoParams;
-    use crate::game_state::chess_types::Color;
-    use crate::game_state::game_state::GameState;
 
     #[test]
     fn position_startpos_with_moves_updates_state() {
@@ -377,38 +360,12 @@ mod tests {
     }
 
     #[test]
-    fn go_time_management_uses_twentieth_of_remaining_time_for_side_to_move() {
-        let game = GameState::new_game();
-        assert_eq!(game.side_to_move, Color::Light);
-        let mut params = GoParams {
-            wtime_ms: Some(120_000),
-            btime_ms: Some(60_000),
-            ..GoParams::default()
-        };
-        super::apply_basic_time_management(&game, &mut params);
-        assert_eq!(params.movetime_ms, Some(6_000));
-
-        let game_dark =
-            GameState::from_fen("8/8/8/8/8/8/8/4k2K b - - 0 1").expect("fen should parse");
-        let mut params_dark = GoParams {
-            wtime_ms: Some(120_000),
-            btime_ms: Some(60_000),
-            ..GoParams::default()
-        };
-        super::apply_basic_time_management(&game_dark, &mut params_dark);
-        assert_eq!(params_dark.movetime_ms, Some(3_000));
-    }
-
-    #[test]
-    fn go_time_management_does_not_override_explicit_movetime() {
-        let game = GameState::new_game();
-        let mut params = GoParams {
-            movetime_ms: Some(250),
-            wtime_ms: Some(120_000),
-            btime_ms: Some(60_000),
-            ..GoParams::default()
-        };
-        super::apply_basic_time_management(&game, &mut params);
-        assert_eq!(params.movetime_ms, Some(250));
+    fn parse_go_params_keeps_clock_fields_without_forcing_movetime() {
+        let params = super::parse_go_params("go wtime 120000 btime 60000 winc 1000 binc 1000");
+        assert_eq!(params.movetime_ms, None);
+        assert_eq!(params.wtime_ms, Some(120_000));
+        assert_eq!(params.btime_ms, Some(60_000));
+        assert_eq!(params.winc_ms, Some(1_000));
+        assert_eq!(params.binc_ms, Some(1_000));
     }
 }

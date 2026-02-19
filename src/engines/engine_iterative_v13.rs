@@ -1,11 +1,11 @@
-//! Iterative-deepening material-search engine (V11).
+//! Iterative-deepening material-search engine (V13).
 //!
 //! Wraps the core negamax alpha-beta search with fixed-depth configuration and
 //! material scoring for deterministic stronger difficulty levels.
 //!
-//! V11 marker:
-//! - Successor to V10 with refined transposition-table behavior.
-//! - Uses bucketed TT with depth/bound/age-aware replacement.
+//! V13 marker:
+//! - Successor to V12 with flexible time-management strategies.
+//! - Supports legacy `1/20` and adaptive budget allocation.
 
 use crate::engines::engine_trait::{Engine, EngineOutput, GoParams};
 use crate::engines::time_management::{resolve_go_params, TimeManagementStrategy};
@@ -17,7 +17,7 @@ use crate::moves::move_descriptions::{
     move_from, move_promotion_piece_code, move_to, piece_kind_from_code,
 };
 use crate::search::board_scoring::{EndgameTaperedScorerV3, V3MaterialKind};
-use crate::search::iterative_deepening_v11::{
+use crate::search::iterative_deepening_v12::{
     iterative_deepening_search_with_tt, principal_variation_from_tt, SearchConfig,
 };
 use crate::search::transposition_table_v11::TranspositionTable;
@@ -41,6 +41,7 @@ pub struct IterativeEngine {
     use_own_book: bool,
     tt: TranspositionTable,
     hash_mb: usize,
+    time_strategy: TimeManagementStrategy,
 }
 
 impl IterativeEngine {
@@ -68,6 +69,7 @@ impl IterativeEngine {
             use_own_book: true,
             tt: TranspositionTable::new_with_mb(hash_mb),
             hash_mb,
+            time_strategy: TimeManagementStrategy::AdaptiveV13,
         }
     }
 }
@@ -92,6 +94,15 @@ impl Engine for IterativeEngine {
             self.tt = TranspositionTable::new_with_mb(self.hash_mb);
             return Ok(());
         }
+        if name.eq_ignore_ascii_case("TimeStrategy") {
+            let v = value.trim().to_ascii_lowercase();
+            self.time_strategy = match v.as_str() {
+                "adaptive" | "v13" => TimeManagementStrategy::AdaptiveV13,
+                "fraction20" | "legacy" | "simple" => TimeManagementStrategy::Fraction20,
+                _ => return Err(format!("invalid TimeStrategy value '{value}'")),
+            };
+            return Ok(());
+        }
         Ok(())
     }
 
@@ -100,8 +111,7 @@ impl Engine for IterativeEngine {
         game_state: &GameState,
         params: &GoParams,
     ) -> Result<EngineOutput, String> {
-        let effective_params =
-            resolve_go_params(game_state, params, TimeManagementStrategy::Fraction20);
+        let effective_params = resolve_go_params(game_state, params, self.time_strategy);
         if self.use_own_book && effective_params.depth.is_none() && game_state.ply < 20 {
             let mut rng = rng();
             if let Some(book_move) = self.opening_book.choose_weighted_move(game_state, &mut rng) {
@@ -151,7 +161,7 @@ impl Engine for IterativeEngine {
             let preferred = prefer_queen_promotion(best, &legal);
             if preferred != best {
                 out.info_lines
-                    .push("info string iterative_engine_v11 queen_promotion_preferred".to_owned());
+                    .push("info string iterative_engine_v13 queen_promotion_preferred".to_owned());
             }
             chosen = Some(preferred);
         }
@@ -161,23 +171,27 @@ impl Engine for IterativeEngine {
             result.reached_depth, result.best_score, result.nodes, result.elapsed_ms, result.nps
         ));
         out.info_lines.push(format!(
-            "info string iterative_engine_v11 default_depth {}",
+            "info string iterative_engine_v13 default_depth {}",
             self.default_depth
         ));
         out.info_lines.push(format!(
-            "info string iterative_engine_v11 scorer {:?}",
+            "info string iterative_engine_v13 scorer {:?}",
             self.scorer_kind
         ));
         out.info_lines.push(format!(
-            "info string iterative_engine_v11 used_depth {}",
+            "info string iterative_engine_v13 used_depth {}",
             depth
         ));
         if let Some(ms) = effective_params.movetime_ms {
             out.info_lines.push(format!(
-                "info string iterative_engine_v11 movetime_ms {}",
+                "info string iterative_engine_v13 movetime_ms {}",
                 ms
             ));
         }
+        out.info_lines.push(format!(
+            "info string iterative_engine_v13 time_strategy {:?}",
+            self.time_strategy
+        ));
         out.info_lines.push(format!(
             "info string tt probes {} hits {} stores {} size_entries {}",
             result.tt_stats.probes,
