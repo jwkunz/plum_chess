@@ -15,11 +15,11 @@ fn main() -> Result<(), String> {
 
     // Customize these two lines to experiment with different engines/scorers/depths.
     let player1 = || {
-        Box::new(plum_chess::engines::engine_iterative_v5::IterativeEngine::new_alpha_zero(5))
+        Box::new(plum_chess::engines::engine_iterative_v6::IterativeEngine::new_alpha_zero(5))
             as Box<dyn Engine>
     };
     let player2 = || {
-        Box::new(plum_chess::engines::engine_iterative_v6::IterativeEngine::new_alpha_zero(5))
+        Box::new(plum_chess::engines::engine_iterative_v7::IterativeEngine::new_alpha_zero(5))
             as Box<dyn Engine>
     };
 
@@ -90,5 +90,21 @@ plum_chess::engines::engine_iterative_v3::IterativeEngine::new_alpha_zero(4) = 1
 vs
 plum_chess::engines::engine_iterative_v5::IterativeEngine::new_alpha_zero(4) = 2 wins @ 10.725 ms per move
 Conclusion:  Adding the aspiration windows and null move pruning for significant speed up without loss of performance
+
+---
+
+In a 10 game series of 200 plies:
+plum_chess::engines::engine_iterative_v5::IterativeEngine::new_alpha_zero(5) = 1 wins @ 18.534 ms per move
+vs
+plum_chess::engines::engine_iterative_v6::IterativeEngine::new_alpha_zero(5) = 1 wins @ 17.858 ms per move
+Conclusion:  Adding PVS shaved off about a ms per move.
+
+---
+
+In a 10 game series of 200 plies:
+plum_chess::engines::engine_iterative_v6::IterativeEngine::new_alpha_zero(5) = 1 wins @ 11.514 ms per move
+vs
+plum_chess::engines::engine_iterative_v7::IterativeEngine::new_alpha_zero(5) = 3 wins @ 12.534 ms per move
+Conclusion:  Adding countermove + continuation-history move ordering made slight stronger with a bit of a slow down
 
 */

@@ -43,6 +43,7 @@ pub mod search {
     pub mod iterative_deepening_v4;
     pub mod iterative_deepening_v5;
     pub mod iterative_deepening_v6;
+    pub mod iterative_deepening_v7;
     pub mod transposition_table;
     pub mod zobrist;
 }
@@ -60,6 +61,7 @@ pub mod engines {
     pub mod engine_iterative_v4;
     pub mod engine_iterative_v5;
     pub mod engine_iterative_v6;
+    pub mod engine_iterative_v7;
     pub mod engine_random;
     pub mod engine_trait;
 }
