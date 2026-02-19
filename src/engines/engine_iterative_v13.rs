@@ -34,6 +34,14 @@ pub enum IterativeScorerKind {
     AlphaZero,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GoControlMode {
+    MoveTime,
+    Nodes,
+    Mate,
+    ClocksOrDepth,
+}
+
 pub struct IterativeEngine {
     default_depth: u8,
     move_generator: FastLegalMoveGenerator,
@@ -120,10 +128,31 @@ impl Engine for IterativeEngine {
         game_state: &GameState,
         params: &GoParams,
     ) -> Result<EngineOutput, String> {
-        let mate_mode = params.mate;
+        let control_mode = if params.movetime_ms.is_some() {
+            GoControlMode::MoveTime
+        } else if params.nodes.is_some() {
+            GoControlMode::Nodes
+        } else if params.mate.is_some() {
+            GoControlMode::Mate
+        } else {
+            GoControlMode::ClocksOrDepth
+        };
+
+        let mate_mode = if control_mode == GoControlMode::Mate {
+            params.mate
+        } else {
+            None
+        };
+        let node_cap = if control_mode == GoControlMode::Nodes {
+            params.nodes
+        } else {
+            None
+        };
         let mut effective_params = resolve_go_params(game_state, params, self.time_strategy);
-        if mate_mode.is_some() && params.movetime_ms.is_none() {
-            // In mate mode, prioritize completing depth target over adaptive clock slicing.
+        if matches!(control_mode, GoControlMode::Mate | GoControlMode::Nodes)
+            && params.movetime_ms.is_none()
+        {
+            // In mate/nodes modes, prioritize these explicit controls over adaptive clock slicing.
             effective_params.movetime_ms = None;
         }
         let requested_searchmoves = params.searchmoves.as_deref();
@@ -172,7 +201,7 @@ impl Engine for IterativeEngine {
                 SearchConfig {
                     max_depth: depth,
                     movetime_ms: effective_params.movetime_ms,
-                    max_nodes: params.nodes,
+                    max_nodes: node_cap,
                     stop_flag: self.stop_signal.clone(),
                 },
                 &mut self.tt,
@@ -184,7 +213,7 @@ impl Engine for IterativeEngine {
                 SearchConfig {
                     max_depth: depth,
                     movetime_ms: effective_params.movetime_ms,
-                    max_nodes: params.nodes,
+                    max_nodes: node_cap,
                     stop_flag: self.stop_signal.clone(),
                 },
                 &mut self.tt,
@@ -252,6 +281,10 @@ impl Engine for IterativeEngine {
             "info string iterative_engine_v13 used_depth {}",
             depth
         ));
+        out.info_lines.push(format!(
+            "info string iterative_engine_v13 control_mode {:?}",
+            control_mode
+        ));
         if let Some(mate) = mate_mode {
             out.info_lines.push(format!(
                 "info string iterative_engine_v13 mate_mode plies_target {}",
@@ -276,7 +309,7 @@ impl Engine for IterativeEngine {
             "info string iterative_engine_v13 go_modes nodes={:?} mate={:?} ponder={} infinite={}",
             params.nodes, params.mate, params.ponder, params.infinite
         ));
-        if let Some(node_cap) = params.nodes {
+        if let Some(node_cap) = node_cap {
             out.info_lines.push(format!(
                 "info string iterative_engine_v13 node_cap {}",
                 node_cap
@@ -300,14 +333,28 @@ impl Engine for IterativeEngine {
         ));
         out.info_lines.push(format!(
             "info string iterative_engine_v13 movetime_source {}",
-            if params.movetime_ms.is_some() {
+            if control_mode == GoControlMode::MoveTime {
                 "explicit"
-            } else if mate_mode.is_some() {
+            } else if control_mode == GoControlMode::Mate {
                 "mate_mode_unbounded"
+            } else if control_mode == GoControlMode::Nodes {
+                "node_mode_unbounded"
             } else {
                 "strategy"
             }
         ));
+        if control_mode == GoControlMode::MoveTime
+            && (params.nodes.is_some() || params.mate.is_some())
+        {
+            out.info_lines.push(
+                "info string iterative_engine_v13 precedence movetime overrides nodes/mate"
+                    .to_owned(),
+            );
+        } else if control_mode == GoControlMode::Nodes && params.mate.is_some() {
+            out.info_lines.push(
+                "info string iterative_engine_v13 precedence nodes overrides mate".to_owned(),
+            );
+        }
         out.info_lines.push(format!(
             "info string tt probes {} hits {} stores {} size_entries {}",
             result.tt_stats.probes,
@@ -467,5 +514,50 @@ mod tests {
             is_king_in_check(&next, next.side_to_move),
             "chosen move should deliver checkmate"
         );
+    }
+
+    #[test]
+    fn iterative_engine_precedence_movetime_overrides_nodes_and_mate() {
+        let game = GameState::new_game();
+        let mut engine = IterativeEngine::new(3);
+        engine
+            .set_option("OwnBook", "false")
+            .expect("setoption should work");
+        let params = GoParams {
+            movetime_ms: Some(20),
+            nodes: Some(10),
+            mate: Some(2),
+            ..GoParams::default()
+        };
+        let out = engine
+            .choose_move(&game, &params)
+            .expect("engine should choose a move");
+        let joined = out.info_lines.join("\n");
+        assert!(joined.contains("control_mode MoveTime"));
+        assert!(joined.contains("precedence movetime overrides nodes/mate"));
+        assert!(!joined.contains("node_cap 10"));
+        assert!(!joined.contains("mate_mode plies_target"));
+    }
+
+    #[test]
+    fn iterative_engine_precedence_nodes_overrides_mate() {
+        let game = GameState::new_game();
+        let mut engine = IterativeEngine::new(4);
+        engine
+            .set_option("OwnBook", "false")
+            .expect("setoption should work");
+        let params = GoParams {
+            nodes: Some(200),
+            mate: Some(3),
+            ..GoParams::default()
+        };
+        let out = engine
+            .choose_move(&game, &params)
+            .expect("engine should choose a move");
+        let joined = out.info_lines.join("\n");
+        assert!(joined.contains("control_mode Nodes"));
+        assert!(joined.contains("precedence nodes overrides mate"));
+        assert!(joined.contains("node_cap 200"));
+        assert!(!joined.contains("mate_mode plies_target"));
     }
 }
