@@ -132,6 +132,58 @@ impl BoardScorer for AlphaZeroPlusLegalMoves {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum V3MaterialKind {
+    Standard,
+    AlphaZero,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct EndgameTaperedScorerV3 {
+    pub material_kind: V3MaterialKind,
+}
+
+impl EndgameTaperedScorerV3 {
+    pub const fn standard() -> Self {
+        Self {
+            material_kind: V3MaterialKind::Standard,
+        }
+    }
+
+    pub const fn alpha_zero() -> Self {
+        Self {
+            material_kind: V3MaterialKind::AlphaZero,
+        }
+    }
+
+    #[inline]
+    fn base_material_white_minus_black(&self, game_state: &GameState) -> i32 {
+        match self.material_kind {
+            V3MaterialKind::Standard => {
+                MaterialScorer::material_balance_white_minus_black(game_state)
+            }
+            V3MaterialKind::AlphaZero => {
+                AlphaZeroMetric::material_balance_white_minus_black(game_state)
+            }
+        }
+    }
+}
+
+impl BoardScorer for EndgameTaperedScorerV3 {
+    fn score(&self, game_state: &GameState) -> i32 {
+        let base = self.base_material_white_minus_black(game_state);
+        let eg_weight = endgame_weight(game_state);
+        let eg_term = endgame_king_activity_white_minus_black(game_state)
+            + endgame_passed_pawn_white_minus_black(game_state);
+        let white_minus_black = base + ((eg_term as f64) * eg_weight) as i32;
+
+        match game_state.side_to_move {
+            Color::Light => white_minus_black,
+            Color::Dark => -white_minus_black,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StandardScorer;
 
@@ -267,10 +319,106 @@ fn piece_square_bonus(piece: PieceKind, color: Color, sq: u8) -> i32 {
     }
 }
 
+fn endgame_weight(game_state: &GameState) -> f64 {
+    // Phase based on non-pawn material. 24 = full opening phase.
+    let mut phase = 0i32;
+    for color in [Color::Light, Color::Dark] {
+        phase += game_state.pieces[color.index()][PieceKind::Queen.index()].count_ones() as i32 * 4;
+        phase += game_state.pieces[color.index()][PieceKind::Rook.index()].count_ones() as i32 * 2;
+        phase += game_state.pieces[color.index()][PieceKind::Bishop.index()].count_ones() as i32;
+        phase += game_state.pieces[color.index()][PieceKind::Knight.index()].count_ones() as i32;
+    }
+    let capped = phase.clamp(0, 24) as f64;
+    1.0 - (capped / 24.0)
+}
+
+fn endgame_king_activity_white_minus_black(game_state: &GameState) -> i32 {
+    let white_king = game_state.pieces[Color::Light.index()][PieceKind::King.index()];
+    let black_king = game_state.pieces[Color::Dark.index()][PieceKind::King.index()];
+    if white_king == 0 || black_king == 0 {
+        return 0;
+    }
+
+    let w_sq = white_king.trailing_zeros() as i32;
+    let b_sq = black_king.trailing_zeros() as i32;
+    let w_file = w_sq % 8;
+    let w_rank = w_sq / 8;
+    let b_file = b_sq % 8;
+    let b_rank = b_sq / 8;
+
+    let white_center = 7 - ((w_file - 3).abs() + (w_rank - 3).abs());
+    let black_center = 7 - ((b_file - 3).abs() + (b_rank - 3).abs());
+    (white_center - black_center) * 6
+}
+
+fn endgame_passed_pawn_white_minus_black(game_state: &GameState) -> i32 {
+    let white_pawns = game_state.pieces[Color::Light.index()][PieceKind::Pawn.index()];
+    let black_pawns = game_state.pieces[Color::Dark.index()][PieceKind::Pawn.index()];
+    let mut score = 0i32;
+
+    let mut wp = white_pawns;
+    while wp != 0 {
+        let sq = wp.trailing_zeros() as u8;
+        if is_passed_pawn(Color::Light, sq, black_pawns) {
+            let rank = (sq / 8) as i32;
+            score += (rank + 1) * 12;
+        }
+        wp &= wp - 1;
+    }
+
+    let mut bp = black_pawns;
+    while bp != 0 {
+        let sq = bp.trailing_zeros() as u8;
+        if is_passed_pawn(Color::Dark, sq, white_pawns) {
+            let rank_from_black = (7 - (sq / 8)) as i32;
+            score -= (rank_from_black + 1) * 12;
+        }
+        bp &= bp - 1;
+    }
+
+    score
+}
+
+fn is_passed_pawn(color: Color, sq: u8, enemy_pawns: u64) -> bool {
+    let file = (sq % 8) as i8;
+    let rank = (sq / 8) as i8;
+    let files = [file - 1, file, file + 1];
+
+    for f in files {
+        if !(0..=7).contains(&f) {
+            continue;
+        }
+        match color {
+            Color::Light => {
+                let mut r = rank + 1;
+                while r <= 7 {
+                    let target = (r as u8) * 8 + (f as u8);
+                    if (enemy_pawns & (1u64 << target)) != 0 {
+                        return false;
+                    }
+                    r += 1;
+                }
+            }
+            Color::Dark => {
+                let mut r = rank - 1;
+                while r >= 0 {
+                    let target = (r as u8) * 8 + (f as u8);
+                    if (enemy_pawns & (1u64 << target)) != 0 {
+                        return false;
+                    }
+                    r -= 1;
+                }
+            }
+        }
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        AlphaZeroMetric, AlphaZeroPlusLegalMoves, BoardScorer, MaterialScorer, StandardScorer,
+        AlphaZeroMetric, AlphaZeroPlusLegalMoves, BoardScorer, EndgameTaperedScorerV3,
+        MaterialScorer, StandardScorer,
     };
     use crate::game_state::game_state::GameState;
 
@@ -317,5 +465,13 @@ mod tests {
         let scorer = AlphaZeroPlusLegalMoves;
         // Start position has 20 legal moves and 0 AZ material balance.
         assert_eq!(scorer.score(&game), 100);
+    }
+
+    #[test]
+    fn endgame_tapered_scorer_rewards_active_king_and_passed_pawn() {
+        let active = GameState::from_fen("k7/8/8/8/4K3/4P3/8/8 w - - 0 1").expect("FEN parse");
+        let passive = GameState::from_fen("k7/8/8/8/8/4P3/8/4K3 w - - 0 1").expect("FEN parse");
+        let scorer = EndgameTaperedScorerV3::standard();
+        assert!(scorer.score(&active) > scorer.score(&passive));
     }
 }
