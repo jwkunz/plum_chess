@@ -16,6 +16,7 @@ use crate::engines::engine_random::RandomEngine;
 use crate::engines::engine_trait::{Engine, GoParams};
 use crate::game_state::game_state::GameState;
 use crate::move_generation::legal_move_apply::apply_move;
+use crate::move_generation::legal_move_generator::generate_legal_move_descriptions_in_place;
 use crate::utils::long_algebraic::{
     long_algebraic_to_move_description, move_description_to_long_algebraic,
 };
@@ -70,6 +71,7 @@ struct UciState {
     ponder: bool,
     analyse_mode: bool,
     chess960: bool,
+    show_wdl: bool,
     debug_mode: bool,
     time_strategy: String,
     async_search: Option<AsyncSearchHandle>,
@@ -106,6 +108,7 @@ impl UciState {
             ponder: false,
             analyse_mode: false,
             chess960: false,
+            show_wdl: false,
             debug_mode: false,
             time_strategy: "adaptive".to_owned(),
             async_search: None,
@@ -143,6 +146,7 @@ impl UciState {
                 writeln!(out, "option name Ponder type check default false")?;
                 writeln!(out, "option name UCI_AnalyseMode type check default false")?;
                 writeln!(out, "option name UCI_Chess960 type check default false")?;
+                writeln!(out, "option name UCI_ShowWDL type check default false")?;
                 writeln!(out, "option name OwnBook type check default true")?;
                 writeln!(
                     out,
@@ -270,6 +274,9 @@ impl UciState {
             self.chess960 = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
             self.engine
                 .set_option("UCI_Chess960", if self.chess960 { "true" } else { "false" })?;
+        } else if name.eq_ignore_ascii_case("UCI_ShowWDL") {
+            let lower = value.to_ascii_lowercase();
+            self.show_wdl = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
         } else if name.eq_ignore_ascii_case("TimeStrategy") {
             let normalized = value.trim().to_ascii_lowercase();
             self.time_strategy = normalized.clone();
@@ -409,15 +416,29 @@ impl UciState {
         for info in &result.info_lines {
             writeln!(out, "{}", info).map_err(|e| e.to_string())?;
         }
+        if self.show_wdl {
+            if let Some(cp) = extract_last_cp_score(&result.info_lines) {
+                let (w, d, l) = cp_to_wdl(cp);
+                writeln!(out, "info wdl {} {} {}", w, d, l).map_err(|e| e.to_string())?;
+            }
+        }
 
         if let Some(best_move) = result.best_move {
             let lan = move_description_to_long_algebraic(best_move, &self.game_state)?;
             if let Some(ponder_move) = result.ponder_move {
                 let next_state = apply_move(&self.game_state, best_move)?;
-                if let Ok(ponder_lan) = move_description_to_long_algebraic(ponder_move, &next_state)
-                {
-                    writeln!(out, "bestmove {} ponder {}", lan, ponder_lan)
-                        .map_err(|e| e.to_string())?;
+                let mut probe = next_state.clone();
+                let legal_ponder = generate_legal_move_descriptions_in_place(&mut probe)
+                    .map_err(|e| e.to_string())?;
+                if legal_ponder.contains(&ponder_move) {
+                    if let Ok(ponder_lan) =
+                        move_description_to_long_algebraic(ponder_move, &next_state)
+                    {
+                        writeln!(out, "bestmove {} ponder {}", lan, ponder_lan)
+                            .map_err(|e| e.to_string())?;
+                    } else {
+                        writeln!(out, "bestmove {}", lan).map_err(|e| e.to_string())?;
+                    }
                 } else {
                     writeln!(out, "bestmove {}", lan).map_err(|e| e.to_string())?;
                 }
@@ -512,6 +533,16 @@ impl UciState {
                             for line in &out.info_lines {
                                 let _ = tx.send(line.clone());
                             }
+                            if let Some(best) = out.best_move {
+                                if let Ok(curr_lan) =
+                                    move_description_to_long_algebraic(best, &game_state)
+                                {
+                                    let _ = tx.send(format!(
+                                        "info currmove {} currmovenumber {}",
+                                        curr_lan, iter_depth
+                                    ));
+                                }
+                            }
                         }
                         if let Ok(mut guard) = latest_ref.lock() {
                             *guard = Some(out);
@@ -560,6 +591,44 @@ impl UciState {
         }
         Err("failed to read async search result".to_owned())
     }
+}
+
+fn extract_last_cp_score(info_lines: &[String]) -> Option<i32> {
+    for line in info_lines.iter().rev() {
+        let tokens = line.split_whitespace().collect::<Vec<_>>();
+        for w in tokens.windows(2) {
+            if w[0] == "cp" {
+                if let Ok(v) = w[1].parse::<i32>() {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn cp_to_wdl(cp: i32) -> (u16, u16, u16) {
+    let cp_f = cp as f64;
+    let win_sigmoid = 1.0 / (1.0 + (-cp_f / 180.0).exp());
+    let draw = (0.30 - (cp_f.abs() / 1200.0)).clamp(0.05, 0.30);
+    let decisive = 1.0 - draw;
+    let win = decisive * win_sigmoid;
+    let loss = decisive * (1.0 - win_sigmoid);
+
+    let mut w = (win * 1000.0).round() as i32;
+    let mut d = (draw * 1000.0).round() as i32;
+    let mut l = (loss * 1000.0).round() as i32;
+    let delta = 1000 - (w + d + l);
+    if delta > 0 {
+        d += delta;
+    } else if delta < 0 {
+        let remove = (-delta).min(d);
+        d -= remove;
+    }
+    w = w.clamp(0, 1000);
+    d = d.clamp(0, 1000);
+    l = (1000 - w - d).clamp(0, 1000);
+    (w as u16, d as u16, l as u16)
 }
 
 fn parse_go_params(line: &str, game_state: &GameState) -> Result<GoParams, String> {
@@ -901,5 +970,106 @@ mod tests {
             .expect("stop should succeed");
         let text = String::from_utf8(out).expect("valid utf8");
         assert!(text.contains("bestmove"));
+    }
+
+    #[test]
+    fn startup_sequence_is_resilient() {
+        let mut state = UciState::new();
+        let mut out = Vec::<u8>::new();
+        state
+            .handle_command("uci", &mut out)
+            .expect("uci should work");
+        let uci_text = String::from_utf8(out.clone()).expect("utf8");
+        assert!(uci_text.contains("uciok"));
+        assert!(uci_text.contains("UCI_ShowWDL"));
+
+        out.clear();
+        state
+            .handle_command("isready", &mut out)
+            .expect("isready should work");
+        assert!(String::from_utf8(out.clone())
+            .expect("utf8")
+            .contains("readyok"));
+
+        out.clear();
+        state
+            .handle_command("setoption name Hash value 128", &mut out)
+            .expect("setoption should work");
+        state
+            .handle_command("setoption name Threads value 2", &mut out)
+            .expect("setoption should work");
+        state
+            .handle_command("setoption name UCI_ShowWDL value true", &mut out)
+            .expect("setoption should work");
+        state
+            .handle_command("ucinewgame", &mut out)
+            .expect("ucinewgame should work");
+        state
+            .handle_command("position startpos moves e2e4 e7e5", &mut out)
+            .expect("position should work");
+        out.clear();
+        state
+            .handle_command("go depth 1", &mut out)
+            .expect("go should work");
+        let go_text = String::from_utf8(out).expect("utf8");
+        assert!(go_text.contains("bestmove"));
+    }
+
+    #[test]
+    fn malformed_position_reports_error_and_keeps_loop_alive() {
+        let mut state = UciState::new();
+        let mut out = Vec::<u8>::new();
+        state
+            .handle_command("position fen", &mut out)
+            .expect("command loop should not fail");
+        let text = String::from_utf8(out.clone()).expect("utf8");
+        assert!(text.contains("position error"));
+
+        out.clear();
+        state
+            .handle_command("isready", &mut out)
+            .expect("isready should still work");
+        assert!(String::from_utf8(out).expect("utf8").contains("readyok"));
+    }
+
+    #[test]
+    fn isready_responds_during_async_search() {
+        let mut state = UciState::new();
+        let mut out = Vec::<u8>::new();
+        state
+            .handle_command("go infinite", &mut out)
+            .expect("go infinite should start");
+        out.clear();
+        state
+            .handle_command("isready", &mut out)
+            .expect("isready should respond while searching");
+        assert!(String::from_utf8(out).expect("utf8").contains("readyok"));
+        let mut stop_out = Vec::<u8>::new();
+        state
+            .handle_command("stop", &mut stop_out)
+            .expect("stop should succeed");
+    }
+
+    #[test]
+    fn show_wdl_outputs_wdl_info_line() {
+        let mut state = UciState::new();
+        let mut out = Vec::<u8>::new();
+        state
+            .handle_command("setoption name OwnBook value false", &mut out)
+            .expect("setoption should parse");
+        out.clear();
+        state
+            .handle_command("setoption name Skill Level value 3", &mut out)
+            .expect("setoption should parse");
+        out.clear();
+        state
+            .handle_command("setoption name UCI_ShowWDL value true", &mut out)
+            .expect("setoption should parse");
+        out.clear();
+        state
+            .handle_command("go depth 1", &mut out)
+            .expect("go should succeed");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(text.contains("info wdl"));
     }
 }
