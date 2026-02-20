@@ -521,6 +521,11 @@ impl UciState {
                 writeln!(out, "info wdl {} {} {}", w, d, l).map_err(|e| e.to_string())?;
             }
         }
+        if self.show_currline {
+            if let Some(currline) = build_currline_text(result, &self.game_state) {
+                writeln!(out, "info currline {}", currline).map_err(|e| e.to_string())?;
+            }
+        }
 
         if let Some(best_move) = result.best_move {
             let lan = move_description_to_long_algebraic(best_move, &self.game_state)?;
@@ -671,6 +676,11 @@ impl UciState {
                             for line in &out.info_lines {
                                 let _ = tx.send(line.clone());
                             }
+                            if show_currline {
+                                if let Some(currline) = build_currline_text(&out, &game_state) {
+                                    let _ = tx.send(format!("info currline {}", currline));
+                                }
+                            }
                             if let Some(best) = out.best_move {
                                 if let Ok(curr_lan) =
                                     move_description_to_long_algebraic(best, &game_state)
@@ -740,6 +750,33 @@ fn extract_last_cp_score(info_lines: &[String]) -> Option<i32> {
                     return Some(v);
                 }
             }
+        }
+    }
+    None
+}
+
+fn extract_last_pv_moves(info_lines: &[String]) -> Option<String> {
+    for line in info_lines.iter().rev() {
+        if let Some(rest) = line.strip_prefix("info pv ") {
+            let trimmed = rest.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_owned());
+            }
+        }
+    }
+    None
+}
+
+fn build_currline_text(
+    result: &crate::engines::engine_trait::EngineOutput,
+    game_state: &GameState,
+) -> Option<String> {
+    if let Some(pv) = extract_last_pv_moves(&result.info_lines) {
+        return Some(pv);
+    }
+    if let Some(best) = result.best_move {
+        if let Ok(best_lan) = move_description_to_long_algebraic(best, game_state) {
+            return Some(best_lan);
         }
     }
     None
@@ -1376,5 +1413,28 @@ mod tests {
             .expect("go should succeed");
         let text = String::from_utf8(out).expect("utf8");
         assert!(text.contains("info refutation "));
+    }
+
+    #[test]
+    fn show_currline_outputs_currline_info_line() {
+        let mut state = UciState::new();
+        let mut out = Vec::<u8>::new();
+        state
+            .handle_command("setoption name OwnBook value false", &mut out)
+            .expect("setoption should parse");
+        out.clear();
+        state
+            .handle_command("setoption name Skill Level value 3", &mut out)
+            .expect("setoption should parse");
+        out.clear();
+        state
+            .handle_command("setoption name UCI_ShowCurrLine value true", &mut out)
+            .expect("setoption should parse");
+        out.clear();
+        state
+            .handle_command("go depth 1", &mut out)
+            .expect("go should succeed");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(text.contains("info currline "));
     }
 }
