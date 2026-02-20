@@ -338,7 +338,7 @@ impl Engine for IterativeEngine {
         out.best_move = chosen;
 
         let ranked = if self.multipv > 1 || self.show_refutations || use_parallel_root_main {
-            let (ranked, workers, budget_stopped) = self.rank_root_candidates(
+            let (ranked, workers, budget_stopped, panics) = self.rank_root_candidates(
                 game_state,
                 &root_legal,
                 depth,
@@ -351,9 +351,20 @@ impl Engine for IterativeEngine {
                     workers
                 ));
             }
+            if workers > 1 {
+                out.info_lines.push(format!(
+                    "info string iterative_engine_v16 parallel_root split_stats workers={} panics={}",
+                    workers, panics
+                ));
+            }
             if budget_stopped {
                 out.info_lines.push(
                     "info string iterative_engine_v16 parallel_root budget_stop".to_owned(),
+                );
+            }
+            if panics > 0 {
+                out.info_lines.push(
+                    "info string iterative_engine_v16 parallel_root panic_fallback_used".to_owned(),
                 );
             }
             Some(ranked)
@@ -542,13 +553,13 @@ impl IterativeEngine {
         depth: u8,
         node_cap: Option<u64>,
         movetime_ms: Option<u64>,
-    ) -> (Vec<RankedCandidate>, usize, bool) {
+    ) -> (Vec<RankedCandidate>, usize, bool, usize) {
         let threads = self.threading.normalized_threads();
         let use_parallel = !self.deterministic_search
             && matches!(self.threading.model, ThreadingModel::LazySmp)
             && threads > 1
             && root_legal.len() > 1;
-        let (mut ranked, budget_stopped) = if use_parallel {
+        let (mut ranked, budget_stopped, panics) = if use_parallel {
             self.rank_root_candidates_parallel(game_state, root_legal, depth, node_cap, movetime_ms)
         } else {
             let ranked = match self.scorer_kind {
@@ -575,15 +586,43 @@ impl IterativeEngine {
                     movetime_ms,
                 ),
             };
-            (ranked, false)
+            (ranked, false, 0)
         };
+        if panics > 0 {
+            // Safety fallback: when worker panics occur, recompute serially so
+            // the engine still returns a full, deterministic root ranking.
+            ranked = match self.scorer_kind {
+                IterativeScorerKind::Standard => rank_root_candidates_with_scorer(
+                    game_state,
+                    root_legal,
+                    &self.standard_scorer,
+                    depth,
+                    &self.move_generator,
+                    &mut self.tt,
+                    self.stop_signal.clone(),
+                    node_cap,
+                    movetime_ms,
+                ),
+                IterativeScorerKind::AlphaZero => rank_root_candidates_with_scorer(
+                    game_state,
+                    root_legal,
+                    &self.alpha_zero_scorer,
+                    depth,
+                    &self.move_generator,
+                    &mut self.tt,
+                    self.stop_signal.clone(),
+                    node_cap,
+                    movetime_ms,
+                ),
+            };
+        }
         ranked.sort_by(|a, b| b.cp.cmp(&a.cp));
         let workers_used = if use_parallel {
             threads.min(root_legal.len())
         } else {
             1
         };
-        (ranked, workers_used, budget_stopped)
+        (ranked, workers_used, budget_stopped, panics)
     }
 
     fn rank_root_candidates_parallel(
@@ -593,7 +632,7 @@ impl IterativeEngine {
         depth: u8,
         node_cap: Option<u64>,
         movetime_ms: Option<u64>,
-    ) -> (Vec<RankedCandidate>, bool) {
+    ) -> (Vec<RankedCandidate>, bool, usize) {
         let worker_count = self.threading.normalized_threads().min(root_legal.len()).max(1);
         let roots = root_legal.to_vec();
         let shared = SharedSearchState::new();
@@ -668,12 +707,15 @@ impl IterativeEngine {
         }
 
         let mut merged = Vec::<RankedCandidate>::with_capacity(root_legal.len());
+        let mut panics = 0usize;
         for h in handles {
             if let Ok(mut v) = h.join() {
                 merged.append(&mut v);
+            } else {
+                panics += 1;
             }
         }
-        (merged, shared.should_stop())
+        (merged, shared.should_stop(), panics)
     }
 
     fn build_multipv_lines(
@@ -1109,6 +1151,7 @@ mod tests {
             .expect("engine should choose a move");
         let joined = out.info_lines.join("\n");
         assert!(joined.contains("parallel_root workers="));
+        assert!(joined.contains("parallel_root split_stats"));
         assert!(joined.contains("parallel_root_main enabled"));
     }
 
