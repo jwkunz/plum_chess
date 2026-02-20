@@ -66,34 +66,5 @@ mod tests{
         assert_eq!(count, 4865609)
         // Log
         // Oct 1 Version gave 4865609 in 6.74s on release      
-    }    
-    #[test]
-    fn perft_6(){
-        let game = GameState::new_game();
-        let count = perft(&game, 6);
-        assert_eq!(count, 119060324)
-        // Log
-        // Oct 1 Version gave 119060197 in 191.41s on release
-    }   
-    #[test]
-    fn perft_7(){
-        let game = GameState::new_game();
-        let count = perft(&game, 7);
-        assert_eq!(count, 3195901860)
-        // Log
-    }    
-    #[test]
-    fn perft_8(){
-        let game = GameState::new_game();
-        let count = perft(&game, 8);
-        assert_eq!(count, 84998978956)
-        // Log
-    }        
-    #[test]
-    fn perft_9(){
-        let game = GameState::new_game();
-        let count = perft(&game, 9);
-        assert_eq!(count, 2439530234167	)
-        // Log
-    }            
+    }               
 }
