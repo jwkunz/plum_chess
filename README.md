@@ -92,15 +92,33 @@ You may also click the **weather icon** to configure additional game parameters 
 
 ## Difficulty Levels
 
-Plum Chess 2.0 supports difficulty levels **0 through 7**, each corresponding to a different playing strategy:
+The engine difficulty levels are set like this:
 
-* **Level 0** — Fully random move generation
-* **Level 1** — Greedy play (always attacks)
-* **Levels 2–7** — Iterative deepening using a conventional material-based evaluation, searching progressively deeper layers
+```
+    match skill_level {
+        1 => Box::new(RandomEngine::new()),  // Used for debugging
+        2 => Box::new(GreedyEngine::new()), // Always attacks
+        3 => Box::new(IterativeEngine::new_standard(2)), // ~ ELO 400
+        4 => Box::new(IterativeEngine::new_alpha_zero(2)),
+        5 => Box::new(IterativeEngine::new_standard(3)), // ~ ELO 1000
+        6 => Box::new(IterativeEngine::new_alpha_zero(3)),
+        7 => Box::new(IterativeEngine::new_standard(4)), // ~ ELO 1300
+        8 => Box::new(IterativeEngine::new_alpha_zero(4)),
+        9 => Box::new(IterativeEngine::new_standard(5)), // ~ ELO 1800
+        10 => Box::new(IterativeEngine::new_alpha_zero(5)),
+        11 => Box::new(IterativeEngine::new_standard(7)),
+        12 => Box::new(IterativeEngine::new_alpha_zero(7)),
+        13 => Box::new(IterativeEngine::new_standard(9)),
+        14 => Box::new(IterativeEngine::new_alpha_zero(9)),
+        15 => Box::new(IterativeEngine::new_standard(11)),
+        16 => Box::new(IterativeEngine::new_alpha_zero(11)),
+        17 => Box::new(IterativeEngine::new_standard(13)),
+        18 => Box::new(IterativeEngine::new_alpha_zero(13)),
+        19 => Box::new(IterativeEngine::new_alpha_zero(15)),
+        _ => Box::new(IterativeEngine::new_alpha_zero(20)),
+    }
+'''
 
-The highest level plays at approximately level 1800 ELO as determined by centipawn loss using the the Chessis analysis toolkit over candidate 10 games against stockfish.
-
----
 
 ## Enjoy!
 
