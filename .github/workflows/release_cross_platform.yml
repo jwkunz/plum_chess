@@ -1,0 +1,161 @@
+name: Build And Release Binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  BIN_NAME: plum_chess
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  cleanup-release-assets:
+    name: Cleanup Existing Release Assets
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Delete existing assets for this tag release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = context.ref.replace("refs/tags/", "");
+            let release;
+            try {
+              const r = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag
+              });
+              release = r.data;
+            } catch (err) {
+              core.info(`No existing release for tag ${tag}; nothing to clean.`);
+              return;
+            }
+
+            for (const asset of release.assets) {
+              core.info(`Deleting old asset: ${asset.name}`);
+              await github.rest.repos.deleteReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                asset_id: asset.id
+              });
+            }
+
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: [cleanup-release-assets]
+    if: always() && (needs.cleanup-release-assets.result == 'success' || needs.cleanup-release-assets.result == 'skipped')
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Show build environment
+        run: |
+          set -euxo pipefail
+          rustc -Vv
+          cargo -V
+          echo "runner.os=${{ runner.os }}"
+          echo "runner.arch=${{ runner.arch }}"
+          uname -a || true
+
+      - name: Run test suite
+        run: |
+          set -euxo pipefail
+          cargo test --locked --all-targets
+
+      - name: Build release binary
+        run: |
+          set -euxo pipefail
+          cargo build --release --locked --bin "${BIN_NAME}"
+
+      - name: Create versioned asset name from Cargo.toml
+        id: asset
+        run: |
+          set -euxo pipefail
+
+          # Parse [package] name/version in a portable way (GNU/BSD sed differ on \s).
+          PKG_NAME="$(awk '
+            /^\[package\]/ { in_pkg=1; next }
+            /^\[/ && in_pkg { in_pkg=0 }
+            in_pkg && $1 == "name" {
+              gsub(/"/, "", $3); print $3; exit
+            }
+          ' Cargo.toml | tr -d '\r' | xargs)"
+          PKG_VERSION="$(awk '
+            /^\[package\]/ { in_pkg=1; next }
+            /^\[/ && in_pkg { in_pkg=0 }
+            in_pkg && $1 == "version" {
+              gsub(/"/, "", $3); print $3; exit
+            }
+          ' Cargo.toml | tr -d '\r' | xargs)"
+
+          if [[ -z "${PKG_NAME}" || -z "${PKG_VERSION}" ]]; then
+            echo "Failed to parse package name/version from Cargo.toml"
+            exit 1
+          fi
+          HOST_TRIPLE="$(rustc -vV | awk '/^host:/ {print $2}')"
+          ARCH="$(echo "$HOST_TRIPLE" | cut -d- -f1)"
+          OS_TAG="$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')"
+
+          EXT=""
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            EXT=".exe"
+          fi
+
+          BIN_PATH="target/release/${BIN_NAME}${EXT}"
+          ASSET_NAME="${PKG_NAME}-v${PKG_VERSION}-${OS_TAG}-${ARCH}${EXT}"
+
+          if [[ ! -d "target/release" ]]; then
+            echo "target/release directory does not exist"
+            exit 1
+          fi
+
+          if [[ ! -f "$BIN_PATH" ]]; then
+            echo "Expected binary not found at: $BIN_PATH"
+            echo "Contents of target/release:"
+            ls -la target/release || true
+            exit 1
+          fi
+
+          rm -rf releases
+          mkdir -p releases
+          cp "$BIN_PATH" "releases/$ASSET_NAME"
+
+          echo "asset_name=$ASSET_NAME" >> "$GITHUB_OUTPUT"
+          echo "asset_path=releases/$ASSET_NAME" >> "$GITHUB_OUTPUT"
+          echo "Created asset: $ASSET_NAME"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.asset.outputs.asset_name }}
+          path: ${{ steps.asset.outputs.asset_path }}
+          if-no-files-found: error
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.asset.outputs.asset_path }}
