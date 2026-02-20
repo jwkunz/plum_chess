@@ -74,6 +74,7 @@ struct UciState {
     fixed_depth_override: Option<u8>,
     hash_mb: usize,
     threads: usize,
+    deterministic_search: bool,
     own_book: bool,
     ponder: bool,
     analyse_mode: bool,
@@ -121,6 +122,7 @@ impl UciState {
             fixed_depth_override: None,
             hash_mb,
             threads,
+            deterministic_search: false,
             own_book,
             ponder: false,
             analyse_mode: false,
@@ -177,6 +179,10 @@ impl UciState {
                 writeln!(
                     out,
                     "option name ThreadingModel type combo default LazySmp var SingleThreaded var LazySmp"
+                )?;
+                writeln!(
+                    out,
+                    "option name DeterministicSearch type check default false"
                 )?;
                 writeln!(out, "option name Ponder type check default false")?;
                 writeln!(out, "option name UCI_AnalyseMode type check default false")?;
@@ -328,6 +334,13 @@ impl UciState {
             self.threads = parsed.max(1);
             self.engine
                 .set_option("Threads", &self.threads.to_string())?;
+        } else if name.eq_ignore_ascii_case("DeterministicSearch") {
+            let lower = value.to_ascii_lowercase();
+            self.deterministic_search = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
+            self.engine.set_option(
+                "DeterministicSearch",
+                if self.deterministic_search { "true" } else { "false" },
+            )?;
         } else if name.eq_ignore_ascii_case("Ponder") {
             let lower = value.to_ascii_lowercase();
             self.ponder = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
@@ -650,6 +663,10 @@ impl UciState {
         self.engine.set_option("Hash", &self.hash_mb.to_string())?;
         self.engine
             .set_option("Threads", &self.threads.to_string())?;
+        self.engine.set_option(
+            "DeterministicSearch",
+            if self.deterministic_search { "true" } else { "false" },
+        )?;
         self.engine
             .set_option("Ponder", if self.ponder { "true" } else { "false" })?;
         self.engine.set_option(
@@ -689,6 +706,7 @@ impl UciState {
         let skill_level = self.effective_skill_level();
         let hash_mb = self.hash_mb;
         let threads = self.threads;
+        let deterministic_search = self.deterministic_search;
         let own_book = self.own_book;
         let ponder = self.ponder;
         let limit_strength = self.limit_strength;
@@ -716,6 +734,10 @@ impl UciState {
             worker_engine.set_stop_signal(Some(Arc::clone(&stop_flag)));
             let _ = worker_engine.set_option("Hash", &hash_mb.to_string());
             let _ = worker_engine.set_option("Threads", &threads.to_string());
+            let _ = worker_engine.set_option(
+                "DeterministicSearch",
+                if deterministic_search { "true" } else { "false" },
+            );
             let _ = worker_engine.set_option("OwnBook", if own_book { "true" } else { "false" });
             let _ = worker_engine.set_option("Ponder", if ponder { "true" } else { "false" });
             let _ = worker_engine.set_option(
@@ -1214,6 +1236,16 @@ mod tests {
     }
 
     #[test]
+    fn setoption_deterministic_search_parse() {
+        let mut state = UciState::new();
+        assert!(!state.deterministic_search);
+        state
+            .handle_setoption("setoption name DeterministicSearch value true")
+            .expect("deterministic should parse");
+        assert!(state.deterministic_search);
+    }
+
+    #[test]
     fn setoption_clear_hash_button_is_accepted() {
         let mut state = UciState::new();
         state
@@ -1533,6 +1565,7 @@ mod tests {
         assert!(uci_text.contains("UCI_Elo"));
         assert!(uci_text.contains("MultiPV"));
         assert!(uci_text.contains("ThreadingModel"));
+        assert!(uci_text.contains("DeterministicSearch"));
         assert!(uci_text.contains("UCI_ShowWDL"));
         assert!(uci_text.contains("UCI_ShowCurrLine"));
         assert!(uci_text.contains("UCI_ShowRefutations"));

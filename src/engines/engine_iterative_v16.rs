@@ -68,6 +68,7 @@ pub struct IterativeEngine {
     show_refutations: bool,
     threading: ThreadingConfig,
     thread_contexts: ThreadContextPool,
+    deterministic_search: bool,
     time_strategy: TimeManagementStrategy,
     stop_signal: Option<Arc<AtomicBool>>,
 }
@@ -101,6 +102,7 @@ impl IterativeEngine {
             show_refutations: false,
             threading: ThreadingConfig::default(),
             thread_contexts: ThreadContextPool::with_threads(1),
+            deterministic_search: false,
             time_strategy: TimeManagementStrategy::AdaptiveV13,
             stop_signal: None,
         }
@@ -161,6 +163,11 @@ impl Engine for IterativeEngine {
                 "lazy" | "lazysmp" | "lazy_smp" => ThreadingModel::LazySmp,
                 _ => return Err(format!("invalid ThreadingModel value '{value}'")),
             };
+            return Ok(());
+        }
+        if name.eq_ignore_ascii_case("DeterministicSearch") {
+            let v = value.trim().to_ascii_lowercase();
+            self.deterministic_search = matches!(v.as_str(), "true" | "1" | "yes" | "on");
             return Ok(());
         }
         if name.eq_ignore_ascii_case("UCI_ShowRefutations") {
@@ -296,7 +303,8 @@ impl Engine for IterativeEngine {
             return Ok(out);
         }
 
-        let use_parallel_root_main = matches!(self.threading.model, ThreadingModel::LazySmp)
+        let use_parallel_root_main = !self.deterministic_search
+            && matches!(self.threading.model, ThreadingModel::LazySmp)
             && self.threading.normalized_threads() > 1
             && root_legal.len() > 1;
 
@@ -424,6 +432,10 @@ impl Engine for IterativeEngine {
             self.threading.helper_threads()
         ));
         out.info_lines.push(format!(
+            "info string iterative_engine_v16 deterministic_search {}",
+            self.deterministic_search
+        ));
+        out.info_lines.push(format!(
             "info string iterative_engine_v16 thread_contexts workers={} helpers={}",
             self.thread_contexts.len(),
             self.thread_contexts.helper_count()
@@ -532,7 +544,8 @@ impl IterativeEngine {
         movetime_ms: Option<u64>,
     ) -> (Vec<RankedCandidate>, usize, bool) {
         let threads = self.threading.normalized_threads();
-        let use_parallel = matches!(self.threading.model, ThreadingModel::LazySmp)
+        let use_parallel = !self.deterministic_search
+            && matches!(self.threading.model, ThreadingModel::LazySmp)
             && threads > 1
             && root_legal.len() > 1;
         let (mut ranked, budget_stopped) = if use_parallel {
@@ -1121,5 +1134,33 @@ mod tests {
             .expect("engine should choose a move");
         let joined = out.info_lines.join("\n");
         assert!(joined.contains("parallel_root_main enabled"));
+    }
+
+    #[test]
+    fn iterative_engine_deterministic_mode_disables_parallel_root() {
+        let game = GameState::new_game();
+        let mut engine = IterativeEngine::new(2);
+        engine
+            .set_option("OwnBook", "false")
+            .expect("setoption should work");
+        engine
+            .set_option("ThreadingModel", "LazySmp")
+            .expect("threading model should parse");
+        engine
+            .set_option("Threads", "4")
+            .expect("threads should parse");
+        engine
+            .set_option("DeterministicSearch", "true")
+            .expect("deterministic should parse");
+        let params = GoParams {
+            depth: Some(2),
+            ..GoParams::default()
+        };
+        let out = engine
+            .choose_move(&game, &params)
+            .expect("engine should choose a move");
+        let joined = out.info_lines.join("\n");
+        assert!(joined.contains("deterministic_search true"));
+        assert!(!joined.contains("parallel_root workers="));
     }
 }
