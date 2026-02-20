@@ -268,6 +268,11 @@ impl SharedTranspositionTable {
             .sum()
     }
 
+    #[inline]
+    pub fn shard_count(&self) -> usize {
+        self.shards.len()
+    }
+
     pub fn stats(&self) -> TTStats {
         let mut merged = TTStats::default();
         for shard in &self.shards {
@@ -330,6 +335,12 @@ mod tests {
         let probed = tt.probe(12345).expect("entry should exist");
         assert_eq!(probed.key, 12345);
         assert_eq!(probed.score, 42);
+    }
+
+    #[test]
+    fn shared_tt_reports_shard_count() {
+        let tt = SharedTranspositionTable::new_with_mb(8, 6);
+        assert_eq!(tt.shard_count(), 6);
     }
 
     #[test]

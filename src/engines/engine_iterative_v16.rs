@@ -79,6 +79,12 @@ pub struct IterativeEngine {
 }
 
 impl IterativeEngine {
+    fn shared_tt_shard_count(&self) -> usize {
+        // Keep shard count proportional to thread count while avoiding
+        // excessive mutex fan-out at low hash sizes.
+        (self.threading.normalized_threads() * 2).clamp(2, 64)
+    }
+
     pub fn new(default_depth: u8) -> Self {
         Self::new_with_scorer(default_depth, IterativeScorerKind::Standard)
     }
@@ -102,7 +108,7 @@ impl IterativeEngine {
             opening_book: OpeningBook::load_default(),
             use_own_book: true,
             tt: TranspositionTable::new_with_mb(hash_mb),
-            shared_tt: SharedTranspositionTable::new_with_mb(hash_mb, 8),
+            shared_tt: SharedTranspositionTable::new_with_mb(hash_mb, 2),
             hash_mb,
             multipv: 1,
             show_refutations: false,
@@ -134,7 +140,8 @@ impl Engine for IterativeEngine {
                 .map_err(|_| format!("invalid Hash value '{value}'"))?;
             self.hash_mb = parsed.max(1);
             self.tt = TranspositionTable::new_with_mb(self.hash_mb);
-            self.shared_tt = SharedTranspositionTable::new_with_mb(self.hash_mb, 8);
+            self.shared_tt =
+                SharedTranspositionTable::new_with_mb(self.hash_mb, self.shared_tt_shard_count());
             return Ok(());
         }
         if name.eq_ignore_ascii_case("TimeStrategy") {
@@ -162,6 +169,8 @@ impl Engine for IterativeEngine {
             self.threading.requested_threads = parsed.max(1);
             self.thread_contexts =
                 ThreadContextPool::with_threads(self.threading.normalized_threads());
+            self.shared_tt =
+                SharedTranspositionTable::new_with_mb(self.hash_mb, self.shared_tt_shard_count());
             return Ok(());
         }
         if name.eq_ignore_ascii_case("ThreadingModel") {
@@ -465,6 +474,10 @@ impl Engine for IterativeEngine {
             shared_stats.probes, shared_stats.hits, shared_stats.stores
         ));
         out.info_lines.push(format!(
+            "info string iterative_engine_v16 shared_tt_shards {}",
+            self.shared_tt.shard_count()
+        ));
+        out.info_lines.push(format!(
             "info string iterative_engine_v16 multipv {}",
             self.multipv
         ));
@@ -648,7 +661,7 @@ impl IterativeEngine {
         movetime_ms: Option<u64>,
     ) -> (Vec<RankedCandidate>, bool, usize, usize) {
         let worker_count = self.threading.normalized_threads().min(root_legal.len()).max(1);
-        let roots = root_legal.to_vec();
+        let roots = Arc::new(root_legal.to_vec());
         let work_index = Arc::new(AtomicUsize::new(0));
         self.shared_tt.new_generation();
         let shared = SharedSearchState::new();
@@ -659,7 +672,7 @@ impl IterativeEngine {
 
         for _worker_id in 0..worker_count {
             let game = game_state.clone();
-            let roots_local = roots.clone();
+            let roots_local = Arc::clone(&roots);
             let work_index_local = Arc::clone(&work_index);
             let shared_local = Arc::clone(&shared);
             let shared_tt = self.shared_tt.clone();
@@ -667,7 +680,8 @@ impl IterativeEngine {
             let scorer_kind = self.scorer_kind;
             let hash_mb = self.hash_mb;
             handles.push(thread::spawn(move || {
-                let mut local_tt = TranspositionTable::new_with_mb((hash_mb / worker_count).max(1));
+                let local_tt_mb = (hash_mb / (worker_count * 2)).clamp(1, 16);
+                let mut local_tt = TranspositionTable::new_with_mb(local_tt_mb);
                 let move_generator = FastLegalMoveGenerator;
                 let standard = EndgameTaperedScorerV14::standard();
                 let alpha_zero = EndgameTaperedScorerV14::alpha_zero();
@@ -1171,6 +1185,7 @@ mod tests {
         let joined = out.info_lines.join("\n");
         assert!(joined.contains("threading model=SingleThreaded threads=4 helpers=3"));
         assert!(joined.contains("thread_contexts workers=4 helpers=3"));
+        assert!(joined.contains("shared_tt_shards 8"));
     }
 
     #[test]
