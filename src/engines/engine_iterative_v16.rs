@@ -31,7 +31,10 @@ use crate::search::transposition_table_v11::{Bound, TTEntry, TranspositionTable}
 use crate::tables::opening_book::OpeningBook;
 use crate::utils::long_algebraic::move_description_to_long_algebraic;
 use rand::rng;
-use std::sync::{atomic::AtomicBool, Arc};
+use std::sync::{
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    Arc,
+};
 use std::thread;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -343,7 +346,7 @@ impl Engine for IterativeEngine {
         out.best_move = chosen;
 
         let ranked = if self.multipv > 1 || self.show_refutations || use_parallel_root_main {
-            let (ranked, workers, budget_stopped, panics) = self.rank_root_candidates(
+            let (ranked, workers, budget_stopped, panics, completed) = self.rank_root_candidates(
                 game_state,
                 &root_legal,
                 depth,
@@ -358,8 +361,8 @@ impl Engine for IterativeEngine {
             }
             if workers > 1 {
                 out.info_lines.push(format!(
-                    "info string iterative_engine_v16 parallel_root split_stats workers={} panics={}",
-                    workers, panics
+                    "info string iterative_engine_v16 parallel_root split_stats workers={} completed={} panics={}",
+                    workers, completed, panics
                 ));
             }
             if budget_stopped {
@@ -563,13 +566,13 @@ impl IterativeEngine {
         depth: u8,
         node_cap: Option<u64>,
         movetime_ms: Option<u64>,
-    ) -> (Vec<RankedCandidate>, usize, bool, usize) {
+    ) -> (Vec<RankedCandidate>, usize, bool, usize, usize) {
         let threads = self.threading.normalized_threads();
         let use_parallel = !self.deterministic_search
             && matches!(self.threading.model, ThreadingModel::LazySmp)
             && threads > 1
             && root_legal.len() > 1;
-        let (mut ranked, budget_stopped, panics) = if use_parallel {
+        let (mut ranked, budget_stopped, panics, mut completed) = if use_parallel {
             self.rank_root_candidates_parallel(game_state, root_legal, depth, node_cap, movetime_ms)
         } else {
             let ranked = match self.scorer_kind {
@@ -596,7 +599,7 @@ impl IterativeEngine {
                     movetime_ms,
                 ),
             };
-            (ranked, false, 0)
+            (ranked, false, 0, root_legal.len())
         };
         if panics > 0 {
             // Safety fallback: when worker panics occur, recompute serially so
@@ -625,6 +628,7 @@ impl IterativeEngine {
                     movetime_ms,
                 ),
             };
+            completed = ranked.len();
         }
         ranked.sort_by(|a, b| b.cp.cmp(&a.cp));
         let workers_used = if use_parallel {
@@ -632,7 +636,7 @@ impl IterativeEngine {
         } else {
             1
         };
-        (ranked, workers_used, budget_stopped, panics)
+        (ranked, workers_used, budget_stopped, panics, completed)
     }
 
     fn rank_root_candidates_parallel(
@@ -642,9 +646,10 @@ impl IterativeEngine {
         depth: u8,
         node_cap: Option<u64>,
         movetime_ms: Option<u64>,
-    ) -> (Vec<RankedCandidate>, bool, usize) {
+    ) -> (Vec<RankedCandidate>, bool, usize, usize) {
         let worker_count = self.threading.normalized_threads().min(root_legal.len()).max(1);
         let roots = root_legal.to_vec();
+        let work_index = Arc::new(AtomicUsize::new(0));
         self.shared_tt.new_generation();
         let shared = SharedSearchState::new();
         shared.reset_accounting();
@@ -652,9 +657,10 @@ impl IterativeEngine {
         shared.set_time_budget_ms(movetime_ms.map(|ms| (ms / 2).max(2)));
         let mut handles = Vec::with_capacity(worker_count);
 
-        for worker_id in 0..worker_count {
+        for _worker_id in 0..worker_count {
             let game = game_state.clone();
             let roots_local = roots.clone();
+            let work_index_local = Arc::clone(&work_index);
             let shared_local = Arc::clone(&shared);
             let shared_tt = self.shared_tt.clone();
             let stop_signal = self.stop_signal.clone();
@@ -666,14 +672,17 @@ impl IterativeEngine {
                 let standard = EndgameTaperedScorerV14::standard();
                 let alpha_zero = EndgameTaperedScorerV14::alpha_zero();
                 let mut out = Vec::<RankedCandidate>::new();
-                let mut idx = worker_id;
-                while idx < roots_local.len() {
+                while !shared_local.should_stop() {
+                    let idx = work_index_local.fetch_add(1, Ordering::Relaxed);
+                    if idx >= roots_local.len() {
+                        break;
+                    }
                     if shared_local.should_stop() {
                         break;
                     }
                     if stop_signal
                         .as_ref()
-                        .is_some_and(|f| f.load(std::sync::atomic::Ordering::Relaxed))
+                        .is_some_and(|f| f.load(Ordering::Relaxed))
                     {
                         shared_local.request_stop();
                         break;
@@ -714,7 +723,6 @@ impl IterativeEngine {
                         shared_local.request_stop();
                         break;
                     }
-                    idx += worker_count;
                 }
                 out
             }));
@@ -729,7 +737,8 @@ impl IterativeEngine {
                 panics += 1;
             }
         }
-        (merged, shared.should_stop(), panics)
+        let completed = merged.len();
+        (merged, shared.should_stop(), panics, completed)
     }
 
     fn build_multipv_lines(
