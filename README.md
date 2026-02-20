@@ -119,8 +119,22 @@ The engine difficulty levels are set like this:
     }
 '''
 
+## Developer Notes
+
+Additional internal documentation is available in `docs/`:
+
+- `docs/code_structure.md`: architecture and module map.
+- `docs/optimization.md`: search/engine optimization journey.
+- `docs/uci_enhancement.md`: UCI feature implementation journey.
+- `docs/multithread_roadmap.md`: major-version 4 threading roadmap and outcomes.
+
+For thread scaling measurements, run:
+
+```bash
+cargo run --bin thread_scaling_bench -- 8 4 3
+```
+
 
 ## Enjoy!
 
 That’s it—set it up, experiment with the levels, and have fun playing against Plum Chess ♟️
-
