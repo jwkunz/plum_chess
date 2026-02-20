@@ -144,6 +144,7 @@ impl UciState {
                     "option name FixedDepth type spin default 0 min 0 max 64"
                 )?;
                 writeln!(out, "option name Hash type spin default 64 min 1 max 4096")?;
+                writeln!(out, "option name Clear Hash type button")?;
                 writeln!(out, "option name Threads type spin default 1 min 1 max 128")?;
                 writeln!(out, "option name Ponder type check default false")?;
                 writeln!(out, "option name UCI_AnalyseMode type check default false")?;
@@ -252,6 +253,9 @@ impl UciState {
                 .map_err(|_| format!("invalid Hash value '{}'", value))?;
             self.hash_mb = parsed.max(1);
             self.engine.set_option("Hash", &self.hash_mb.to_string())?;
+        } else if name.eq_ignore_ascii_case("Clear Hash") {
+            // UCI button option: clear transposition state without changing position.
+            self.engine.new_game();
         } else if name.eq_ignore_ascii_case("Threads") {
             let parsed = value
                 .parse::<usize>()
@@ -822,6 +826,14 @@ mod tests {
             .handle_setoption("setoption name OwnBook value false")
             .expect("ownbook should parse");
         assert!(!state.own_book);
+    }
+
+    #[test]
+    fn setoption_clear_hash_button_is_accepted() {
+        let mut state = UciState::new();
+        state
+            .handle_setoption("setoption name Clear Hash")
+            .expect("clear hash should parse");
     }
 
     #[test]
