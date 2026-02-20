@@ -23,7 +23,9 @@ use crate::search::board_scoring::{BoardScorer, EndgameTaperedScorerV14, V3Mater
 use crate::search::iterative_deepening_v15::{
     iterative_deepening_search_with_tt, principal_variation_from_tt, SearchConfig,
 };
-use crate::search::threading::{ThreadContextPool, ThreadingConfig, ThreadingModel};
+use crate::search::threading::{
+    SharedSearchState, ThreadContextPool, ThreadingConfig, ThreadingModel,
+};
 use crate::search::transposition_table_v11::TranspositionTable;
 use crate::tables::opening_book::OpeningBook;
 use crate::utils::long_algebraic::move_description_to_long_algebraic;
@@ -328,7 +330,7 @@ impl Engine for IterativeEngine {
         out.best_move = chosen;
 
         let ranked = if self.multipv > 1 || self.show_refutations || use_parallel_root_main {
-            let (ranked, workers) = self.rank_root_candidates(
+            let (ranked, workers, budget_stopped) = self.rank_root_candidates(
                 game_state,
                 &root_legal,
                 depth,
@@ -340,6 +342,11 @@ impl Engine for IterativeEngine {
                     "info string iterative_engine_v16 parallel_root workers={}",
                     workers
                 ));
+            }
+            if budget_stopped {
+                out.info_lines.push(
+                    "info string iterative_engine_v16 parallel_root budget_stop".to_owned(),
+                );
             }
             Some(ranked)
         } else {
@@ -523,15 +530,15 @@ impl IterativeEngine {
         depth: u8,
         node_cap: Option<u64>,
         movetime_ms: Option<u64>,
-    ) -> (Vec<RankedCandidate>, usize) {
+    ) -> (Vec<RankedCandidate>, usize, bool) {
         let threads = self.threading.normalized_threads();
         let use_parallel = matches!(self.threading.model, ThreadingModel::LazySmp)
             && threads > 1
             && root_legal.len() > 1;
-        let mut ranked = if use_parallel {
+        let (mut ranked, budget_stopped) = if use_parallel {
             self.rank_root_candidates_parallel(game_state, root_legal, depth, node_cap, movetime_ms)
         } else {
-            match self.scorer_kind {
+            let ranked = match self.scorer_kind {
                 IterativeScorerKind::Standard => rank_root_candidates_with_scorer(
                     game_state,
                     root_legal,
@@ -554,7 +561,8 @@ impl IterativeEngine {
                     node_cap,
                     movetime_ms,
                 ),
-            }
+            };
+            (ranked, false)
         };
         ranked.sort_by(|a, b| b.cp.cmp(&a.cp));
         let workers_used = if use_parallel {
@@ -562,7 +570,7 @@ impl IterativeEngine {
         } else {
             1
         };
-        (ranked, workers_used)
+        (ranked, workers_used, budget_stopped)
     }
 
     fn rank_root_candidates_parallel(
@@ -572,14 +580,19 @@ impl IterativeEngine {
         depth: u8,
         node_cap: Option<u64>,
         movetime_ms: Option<u64>,
-    ) -> Vec<RankedCandidate> {
+    ) -> (Vec<RankedCandidate>, bool) {
         let worker_count = self.threading.normalized_threads().min(root_legal.len()).max(1);
         let roots = root_legal.to_vec();
+        let shared = SharedSearchState::new();
+        shared.reset_accounting();
+        shared.set_node_budget(node_cap.map(|n| (n / 2).max(32)));
+        shared.set_time_budget_ms(movetime_ms.map(|ms| (ms / 2).max(2)));
         let mut handles = Vec::with_capacity(worker_count);
 
         for worker_id in 0..worker_count {
             let game = game_state.clone();
             let roots_local = roots.clone();
+            let shared_local = Arc::clone(&shared);
             let stop_signal = self.stop_signal.clone();
             let scorer_kind = self.scorer_kind;
             let hash_mb = self.hash_mb;
@@ -591,6 +604,20 @@ impl IterativeEngine {
                 let mut out = Vec::<RankedCandidate>::new();
                 let mut idx = worker_id;
                 while idx < roots_local.len() {
+                    if shared_local.should_stop() {
+                        break;
+                    }
+                    if stop_signal
+                        .as_ref()
+                        .is_some_and(|f| f.load(std::sync::atomic::Ordering::Relaxed))
+                    {
+                        shared_local.request_stop();
+                        break;
+                    }
+                    if shared_local.bump_nodes_and_check_budget(1) {
+                        shared_local.request_stop();
+                        break;
+                    }
                     let mv = roots_local[idx];
                     let candidate = match scorer_kind {
                         IterativeScorerKind::Standard => score_root_candidate(
@@ -617,6 +644,10 @@ impl IterativeEngine {
                         ),
                     };
                     out.push(candidate);
+                    if shared_local.time_budget_exceeded() {
+                        shared_local.request_stop();
+                        break;
+                    }
                     idx += worker_count;
                 }
                 out
@@ -629,7 +660,7 @@ impl IterativeEngine {
                 merged.append(&mut v);
             }
         }
-        merged
+        (merged, shared.should_stop())
     }
 
     fn build_multipv_lines(
