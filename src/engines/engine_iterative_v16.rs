@@ -24,9 +24,10 @@ use crate::search::iterative_deepening_v15::{
     iterative_deepening_search_with_tt, principal_variation_from_tt, SearchConfig,
 };
 use crate::search::threading::{
-    SharedSearchState, ThreadContextPool, ThreadingConfig, ThreadingModel,
+    SharedSearchState, SharedTranspositionTable, ThreadContextPool, ThreadingConfig,
+    ThreadingModel,
 };
-use crate::search::transposition_table_v11::TranspositionTable;
+use crate::search::transposition_table_v11::{Bound, TTEntry, TranspositionTable};
 use crate::tables::opening_book::OpeningBook;
 use crate::utils::long_algebraic::move_description_to_long_algebraic;
 use rand::rng;
@@ -63,6 +64,7 @@ pub struct IterativeEngine {
     opening_book: OpeningBook,
     use_own_book: bool,
     tt: TranspositionTable,
+    shared_tt: Arc<SharedTranspositionTable>,
     hash_mb: usize,
     multipv: usize,
     show_refutations: bool,
@@ -97,6 +99,7 @@ impl IterativeEngine {
             opening_book: OpeningBook::load_default(),
             use_own_book: true,
             tt: TranspositionTable::new_with_mb(hash_mb),
+            shared_tt: SharedTranspositionTable::new_with_mb(hash_mb, 8),
             hash_mb,
             multipv: 1,
             show_refutations: false,
@@ -112,6 +115,7 @@ impl IterativeEngine {
 impl Engine for IterativeEngine {
     fn new_game(&mut self) {
         self.tt.clear();
+        self.shared_tt.clear();
     }
 
     fn set_option(&mut self, name: &str, value: &str) -> Result<(), String> {
@@ -127,6 +131,7 @@ impl Engine for IterativeEngine {
                 .map_err(|_| format!("invalid Hash value '{value}'"))?;
             self.hash_mb = parsed.max(1);
             self.tt = TranspositionTable::new_with_mb(self.hash_mb);
+            self.shared_tt = SharedTranspositionTable::new_with_mb(self.hash_mb, 8);
             return Ok(());
         }
         if name.eq_ignore_ascii_case("TimeStrategy") {
@@ -451,6 +456,11 @@ impl Engine for IterativeEngine {
             self.thread_contexts.len(),
             self.thread_contexts.helper_count()
         ));
+        let shared_stats = self.shared_tt.stats();
+        out.info_lines.push(format!(
+            "info string iterative_engine_v16 shared_tt probes={} hits={} stores={}",
+            shared_stats.probes, shared_stats.hits, shared_stats.stores
+        ));
         out.info_lines.push(format!(
             "info string iterative_engine_v16 multipv {}",
             self.multipv
@@ -635,6 +645,7 @@ impl IterativeEngine {
     ) -> (Vec<RankedCandidate>, bool, usize) {
         let worker_count = self.threading.normalized_threads().min(root_legal.len()).max(1);
         let roots = root_legal.to_vec();
+        self.shared_tt.new_generation();
         let shared = SharedSearchState::new();
         shared.reset_accounting();
         shared.set_node_budget(node_cap.map(|n| (n / 2).max(32)));
@@ -645,6 +656,7 @@ impl IterativeEngine {
             let game = game_state.clone();
             let roots_local = roots.clone();
             let shared_local = Arc::clone(&shared);
+            let shared_tt = self.shared_tt.clone();
             let stop_signal = self.stop_signal.clone();
             let scorer_kind = self.scorer_kind;
             let hash_mb = self.hash_mb;
@@ -682,6 +694,7 @@ impl IterativeEngine {
                             stop_signal.clone(),
                             node_cap,
                             movetime_ms,
+                            Some(shared_tt.as_ref()),
                         ),
                         IterativeScorerKind::AlphaZero => score_root_candidate(
                             &game,
@@ -693,6 +706,7 @@ impl IterativeEngine {
                             stop_signal.clone(),
                             node_cap,
                             movetime_ms,
+                            Some(shared_tt.as_ref()),
                         ),
                     };
                     out.push(candidate);
@@ -792,6 +806,7 @@ fn score_root_candidate(
     stop_signal: Option<Arc<AtomicBool>>,
     node_cap: Option<u64>,
     movetime_ms: Option<u64>,
+    shared_tt: Option<&SharedTranspositionTable>,
 ) -> RankedCandidate {
     let Ok(next) = apply_move(game_state, mv) else {
         return RankedCandidate {
@@ -828,6 +843,19 @@ fn score_root_candidate(
     let refine_time = movetime_ms.map(|ms| (ms / 4).max(2));
     let refine_depth = depth.saturating_sub(1).max(1);
 
+    if let Some(shared) = shared_tt {
+        if let Some(entry) = shared.probe(next.zobrist_key) {
+            if entry.depth >= refine_depth && matches!(entry.bound, Bound::Exact) {
+                let continuation = entry.best_move.into_iter().collect();
+                return RankedCandidate {
+                    mv,
+                    cp: -entry.score,
+                    continuation,
+                };
+            }
+        }
+    }
+
     let search = iterative_deepening_search_with_tt(
         &next,
         move_generator,
@@ -843,6 +871,15 @@ fn score_root_candidate(
 
     match search {
         Ok(r) => {
+            if let Some(shared) = shared_tt {
+                shared.store(TTEntry {
+                    key: next.zobrist_key,
+                    depth: r.reached_depth,
+                    score: r.best_score,
+                    bound: Bound::Exact,
+                    best_move: r.best_move,
+                });
+            }
             let pv = principal_variation_from_tt(&next, tt, r.reached_depth);
             RankedCandidate {
                 mv,
@@ -883,6 +920,7 @@ fn rank_root_candidates_with_scorer<S: BoardScorer>(
                 stop_signal.clone(),
                 node_cap,
                 movetime_ms,
+                None,
             )
         })
         .collect()
