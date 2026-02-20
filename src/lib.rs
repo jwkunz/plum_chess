@@ -63,21 +63,7 @@ pub mod uci {
 }
 pub mod engines {
     pub mod engine_greedy;
-    pub mod engine_iterative_v1;
-    pub mod engine_iterative_v10;
-    pub mod engine_iterative_v11;
-    pub mod engine_iterative_v12;
-    pub mod engine_iterative_v13;
-    pub mod engine_iterative_v14;
-    pub mod engine_iterative_v15;
-    pub mod engine_iterative_v2;
-    pub mod engine_iterative_v3;
-    pub mod engine_iterative_v4;
-    pub mod engine_iterative_v5;
-    pub mod engine_iterative_v6;
-    pub mod engine_iterative_v7;
-    pub mod engine_iterative_v8;
-    pub mod engine_iterative_v9;
+    pub mod engine_iterative_v16;
     pub mod engine_random;
     pub mod engine_trait;
     pub mod time_management;

@@ -11,7 +11,7 @@ use std::sync::{
 use std::thread::{self, JoinHandle};
 
 use crate::engines::engine_greedy::GreedyEngine;
-use crate::engines::engine_iterative_v15::IterativeEngine;
+use crate::engines::engine_iterative_v16::IterativeEngine;
 use crate::engines::engine_random::RandomEngine;
 use crate::engines::engine_trait::{Engine, GoParams};
 use crate::game_state::game_state::GameState;

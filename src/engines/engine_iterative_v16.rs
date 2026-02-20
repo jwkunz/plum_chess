@@ -1,10 +1,11 @@
-//! Iterative-deepening material-search engine (V15).
+//! Iterative-deepening material-search engine (V16).
 //!
 //! Wraps the core negamax alpha-beta search with fixed-depth configuration and
 //! material scoring for deterministic stronger difficulty levels.
 //!
-//! V15 marker:
-//! - Successor to V14 with contempt + draw-avoidance when clearly winning.
+//! V16 marker:
+//! - Consolidated final iterative engine for major version 3.
+//! - Carries forward all prior iterative engine enhancements into one module.
 //! - Supports legacy `1/20` and adaptive budget allocation.
 
 use crate::engines::engine_trait::{Engine, EngineOutput, GoParams};
@@ -260,7 +261,7 @@ impl Engine for IterativeEngine {
         };
         if root_legal.is_empty() {
             out.info_lines.push(
-                "info string iterative_engine_v15 no legal root move in requested searchmoves"
+                "info string iterative_engine_v16 no legal root move in requested searchmoves"
                     .to_owned(),
             );
             return Ok(out);
@@ -275,11 +276,11 @@ impl Engine for IterativeEngine {
             chosen = Some(mate_one);
             if mate_mode.is_some() {
                 out.info_lines.push(
-                    "info string iterative_engine_v15 mate_mode immediate_mate_selected".to_owned(),
+                    "info string iterative_engine_v16 mate_mode immediate_mate_selected".to_owned(),
                 );
             } else {
                 out.info_lines.push(
-                    "info string iterative_engine_v15 mate_score_shaping immediate_mate_selected"
+                    "info string iterative_engine_v16 mate_score_shaping immediate_mate_selected"
                         .to_owned(),
                 );
             }
@@ -289,7 +290,7 @@ impl Engine for IterativeEngine {
             let preferred = prefer_queen_promotion(best, &root_legal);
             if preferred != best {
                 out.info_lines
-                    .push("info string iterative_engine_v15 queen_promotion_preferred".to_owned());
+                    .push("info string iterative_engine_v16 queen_promotion_preferred".to_owned());
             }
             chosen = Some(preferred);
         }
@@ -326,73 +327,73 @@ impl Engine for IterativeEngine {
             result.reached_depth, result.best_score, result.nodes, result.elapsed_ms, result.nps
         ));
         out.info_lines.push(format!(
-            "info string iterative_engine_v15 default_depth {}",
+            "info string iterative_engine_v16 default_depth {}",
             self.default_depth
         ));
         out.info_lines.push(format!(
-            "info string iterative_engine_v15 scorer {:?}",
+            "info string iterative_engine_v16 scorer {:?}",
             self.scorer_kind
         ));
         out.info_lines.push(format!(
-            "info string iterative_engine_v15 used_depth {}",
+            "info string iterative_engine_v16 used_depth {}",
             depth
         ));
         out.info_lines.push(format!(
-            "info string iterative_engine_v15 control_mode {:?}",
+            "info string iterative_engine_v16 control_mode {:?}",
             control_mode
         ));
         if let Some(mate) = mate_mode {
             out.info_lines.push(format!(
-                "info string iterative_engine_v15 mate_mode plies_target {}",
+                "info string iterative_engine_v16 mate_mode plies_target {}",
                 mate.saturating_mul(2).saturating_add(1)
             ));
         }
         if let Some(ms) = effective_params.movetime_ms {
             out.info_lines.push(format!(
-                "info string iterative_engine_v15 movetime_ms {}",
+                "info string iterative_engine_v16 movetime_ms {}",
                 ms
             ));
         }
         out.info_lines.push(format!(
-            "info string iterative_engine_v15 time_strategy {:?}",
+            "info string iterative_engine_v16 time_strategy {:?}",
             self.time_strategy
         ));
         out.info_lines.push(format!(
-            "info string iterative_engine_v15 multipv {}",
+            "info string iterative_engine_v16 multipv {}",
             self.multipv
         ));
         out.info_lines.push(format!(
-            "info string iterative_engine_v15 go_raw movetime={:?} wtime={:?} btime={:?} winc={:?} binc={:?}",
+            "info string iterative_engine_v16 go_raw movetime={:?} wtime={:?} btime={:?} winc={:?} binc={:?}",
             params.movetime_ms, params.wtime_ms, params.btime_ms, params.winc_ms, params.binc_ms
         ));
         out.info_lines.push(format!(
-            "info string iterative_engine_v15 go_modes nodes={:?} mate={:?} ponder={} infinite={}",
+            "info string iterative_engine_v16 go_modes nodes={:?} mate={:?} ponder={} infinite={}",
             params.nodes, params.mate, params.ponder, params.infinite
         ));
         if let Some(node_cap) = node_cap {
             out.info_lines.push(format!(
-                "info string iterative_engine_v15 node_cap {}",
+                "info string iterative_engine_v16 node_cap {}",
                 node_cap
             ));
         }
         if params.ponder {
             out.info_lines.push(
-                "info string iterative_engine_v15 note ponder mode parsed; search remains synchronous"
+                "info string iterative_engine_v16 note ponder mode parsed; search remains synchronous"
                     .to_owned(),
             );
         }
         if params.infinite {
             out.info_lines.push(
-                "info string iterative_engine_v15 note infinite parsed; bounded iterative search is used in synchronous mode"
+                "info string iterative_engine_v16 note infinite parsed; bounded iterative search is used in synchronous mode"
                     .to_owned(),
             );
         }
         out.info_lines.push(format!(
-            "info string iterative_engine_v15 go_resolved movetime={:?}",
+            "info string iterative_engine_v16 go_resolved movetime={:?}",
             effective_params.movetime_ms
         ));
         out.info_lines.push(format!(
-            "info string iterative_engine_v15 movetime_source {}",
+            "info string iterative_engine_v16 movetime_source {}",
             if control_mode == GoControlMode::MoveTime {
                 "explicit"
             } else if control_mode == GoControlMode::Mate {
@@ -407,12 +408,12 @@ impl Engine for IterativeEngine {
             && (params.nodes.is_some() || params.mate.is_some())
         {
             out.info_lines.push(
-                "info string iterative_engine_v15 precedence movetime overrides nodes/mate"
+                "info string iterative_engine_v16 precedence movetime overrides nodes/mate"
                     .to_owned(),
             );
         } else if control_mode == GoControlMode::Nodes && params.mate.is_some() {
             out.info_lines.push(
-                "info string iterative_engine_v15 precedence nodes overrides mate".to_owned(),
+                "info string iterative_engine_v16 precedence nodes overrides mate".to_owned(),
             );
         }
         out.info_lines.push(format!(
