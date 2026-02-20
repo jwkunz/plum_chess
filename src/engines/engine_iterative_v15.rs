@@ -42,6 +42,13 @@ enum GoControlMode {
     ClocksOrDepth,
 }
 
+#[derive(Debug, Clone)]
+struct RankedCandidate {
+    mv: u64,
+    cp: i32,
+    continuation: Vec<u64>,
+}
+
 pub struct IterativeEngine {
     default_depth: u8,
     move_generator: FastLegalMoveGenerator,
@@ -452,7 +459,7 @@ impl IterativeEngine {
         depth: u8,
         node_cap: Option<u64>,
         movetime_ms: Option<u64>,
-    ) -> Vec<(u64, i32)> {
+    ) -> Vec<RankedCandidate> {
         let mut ranked = match self.scorer_kind {
             IterativeScorerKind::Standard => rank_root_candidates_with_scorer(
                 game_state,
@@ -477,39 +484,67 @@ impl IterativeEngine {
                 movetime_ms,
             ),
         };
-        ranked.sort_by(|a, b| b.1.cmp(&a.1));
+        ranked.sort_by(|a, b| b.cp.cmp(&a.cp));
         ranked
     }
 
-    fn build_multipv_lines(&self, game_state: &GameState, ranked: &[(u64, i32)], depth: u8) -> Vec<String> {
+    fn build_multipv_lines(
+        &self,
+        game_state: &GameState,
+        ranked: &[RankedCandidate],
+        depth: u8,
+    ) -> Vec<String> {
 
         let n = ranked.len().min(self.multipv);
         let mut lines = Vec::with_capacity(n);
-        for (idx, (mv, cp)) in ranked.iter().take(n).enumerate() {
-            if let Ok(lan) = move_description_to_long_algebraic(*mv, game_state) {
+        for (idx, candidate) in ranked.iter().take(n).enumerate() {
+            if let Ok(lan) = move_description_to_long_algebraic(candidate.mv, game_state) {
+                let mut pv_lan = vec![lan];
+                if !candidate.continuation.is_empty() {
+                    let mut state = match apply_move(game_state, candidate.mv) {
+                        Ok(s) => s,
+                        Err(_) => continue,
+                    };
+                    for reply in &candidate.continuation {
+                        if let Ok(reply_lan) = move_description_to_long_algebraic(*reply, &state) {
+                            pv_lan.push(reply_lan);
+                        } else {
+                            break;
+                        }
+                        if let Ok(next) = apply_move(&state, *reply) {
+                            state = next;
+                        } else {
+                            break;
+                        }
+                    }
+                }
                 lines.push(format!(
                     "info depth {} multipv {} score cp {} pv {}",
                     depth,
                     idx + 1,
-                    *cp,
-                    lan
+                    candidate.cp,
+                    pv_lan.join(" ")
                 ));
             }
         }
         lines
     }
 
-    fn build_refutation_lines(&self, game_state: &GameState, ranked: &[(u64, i32)]) -> Vec<String> {
+    fn build_refutation_lines(
+        &self,
+        game_state: &GameState,
+        ranked: &[RankedCandidate],
+    ) -> Vec<String> {
         if ranked.len() < 2 {
             return Vec::new();
         }
-        let Ok(best_lan) = move_description_to_long_algebraic(ranked[0].0, game_state) else {
+        let Ok(best_lan) = move_description_to_long_algebraic(ranked[0].mv, game_state) else {
             return Vec::new();
         };
         let limit = ranked.len().min(4);
         let mut lines = Vec::with_capacity(limit.saturating_sub(1));
-        for (mv, _cp) in ranked.iter().skip(1).take(limit - 1) {
-            if let Ok(alt_lan) = move_description_to_long_algebraic(*mv, game_state) {
+        for candidate in ranked.iter().skip(1).take(limit - 1) {
+            if let Ok(alt_lan) = move_description_to_long_algebraic(candidate.mv, game_state) {
                 lines.push(format!("info refutation {} {}", alt_lan, best_lan));
             }
         }
@@ -527,20 +562,36 @@ fn score_root_candidate(
     stop_signal: Option<Arc<AtomicBool>>,
     node_cap: Option<u64>,
     movetime_ms: Option<u64>,
-) -> i32 {
+) -> RankedCandidate {
     let Ok(next) = apply_move(game_state, mv) else {
-        return i32::MIN / 4;
+        return RankedCandidate {
+            mv,
+            cp: i32::MIN / 4,
+            continuation: Vec::new(),
+        };
     };
     let mut probe = next.clone();
     let Ok(replies) = generate_legal_move_descriptions_in_place(&mut probe) else {
-        return -scorer.score(&next);
+        return RankedCandidate {
+            mv,
+            cp: -scorer.score(&next),
+            continuation: Vec::new(),
+        };
     };
     if replies.is_empty() && is_king_in_check(&next, next.side_to_move) {
-        return 29_500;
+        return RankedCandidate {
+            mv,
+            cp: 29_500,
+            continuation: Vec::new(),
+        };
     }
 
     if depth <= 1 {
-        return -scorer.score(&next);
+        return RankedCandidate {
+            mv,
+            cp: -scorer.score(&next),
+            continuation: Vec::new(),
+        };
     }
 
     let refine_nodes = node_cap.map(|n| (n / 4).max(128));
@@ -561,8 +612,19 @@ fn score_root_candidate(
     );
 
     match search {
-        Ok(r) => -r.best_score,
-        Err(_) => -scorer.score(&next),
+        Ok(r) => {
+            let pv = principal_variation_from_tt(&next, tt, r.reached_depth);
+            RankedCandidate {
+                mv,
+                cp: -r.best_score,
+                continuation: pv.moves,
+            }
+        }
+        Err(_) => RankedCandidate {
+            mv,
+            cp: -scorer.score(&next),
+            continuation: Vec::new(),
+        },
     }
 }
 
@@ -576,24 +638,21 @@ fn rank_root_candidates_with_scorer<S: BoardScorer>(
     stop_signal: Option<Arc<AtomicBool>>,
     node_cap: Option<u64>,
     movetime_ms: Option<u64>,
-) -> Vec<(u64, i32)> {
+) -> Vec<RankedCandidate> {
     root_legal
         .iter()
         .copied()
         .map(|mv| {
-            (
+            score_root_candidate(
+                game_state,
                 mv,
-                score_root_candidate(
-                    game_state,
-                    mv,
-                    scorer,
-                    depth,
-                    move_generator,
-                    tt,
-                    stop_signal.clone(),
-                    node_cap,
-                    movetime_ms,
-                ),
+                scorer,
+                depth,
+                move_generator,
+                tt,
+                stop_signal.clone(),
+                node_cap,
+                movetime_ms,
             )
         })
         .collect()
