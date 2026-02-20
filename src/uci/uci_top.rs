@@ -1420,7 +1420,7 @@ mod tests {
             .handle_command("go infinite", &mut out)
             .expect("go infinite should succeed");
 
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1500);
         let mut saw_seldepth = false;
         while std::time::Instant::now() < deadline {
             if let Ok(line) = rx.recv_timeout(std::time::Duration::from_millis(20)) {

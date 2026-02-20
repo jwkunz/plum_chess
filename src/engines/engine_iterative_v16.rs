@@ -29,6 +29,7 @@ use crate::tables::opening_book::OpeningBook;
 use crate::utils::long_algebraic::move_description_to_long_algebraic;
 use rand::rng;
 use std::sync::{atomic::AtomicBool, Arc};
+use std::thread;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IterativeScorerKind {
@@ -323,16 +324,30 @@ impl Engine for IterativeEngine {
         out.best_move = chosen;
 
         let ranked = if self.multipv > 1 || self.show_refutations {
-            Some(self.rank_root_candidates(
+            let (ranked, workers) = self.rank_root_candidates(
                 game_state,
                 &root_legal,
                 depth,
                 node_cap,
                 effective_params.movetime_ms,
-            ))
+            );
+            if workers > 1 {
+                out.info_lines.push(format!(
+                    "info string iterative_engine_v16 parallel_root workers={}",
+                    workers
+                ));
+            }
+            Some(ranked)
         } else {
             None
         };
+
+        if let Some(ref ranked) = ranked {
+            if let Some(top) = ranked.first() {
+                chosen = Some(top.mv);
+                out.best_move = chosen;
+            }
+        }
 
         if self.multipv > 1 {
             if let Some(ref ranked) = ranked {
@@ -497,33 +512,113 @@ impl IterativeEngine {
         depth: u8,
         node_cap: Option<u64>,
         movetime_ms: Option<u64>,
-    ) -> Vec<RankedCandidate> {
-        let mut ranked = match self.scorer_kind {
-            IterativeScorerKind::Standard => rank_root_candidates_with_scorer(
-                game_state,
-                root_legal,
-                &self.standard_scorer,
-                depth,
-                &self.move_generator,
-                &mut self.tt,
-                self.stop_signal.clone(),
-                node_cap,
-                movetime_ms,
-            ),
-            IterativeScorerKind::AlphaZero => rank_root_candidates_with_scorer(
-                game_state,
-                root_legal,
-                &self.alpha_zero_scorer,
-                depth,
-                &self.move_generator,
-                &mut self.tt,
-                self.stop_signal.clone(),
-                node_cap,
-                movetime_ms,
-            ),
+    ) -> (Vec<RankedCandidate>, usize) {
+        let threads = self.threading.normalized_threads();
+        let use_parallel = matches!(self.threading.model, ThreadingModel::LazySmp)
+            && threads > 1
+            && root_legal.len() > 1;
+        let mut ranked = if use_parallel {
+            self.rank_root_candidates_parallel(game_state, root_legal, depth, node_cap, movetime_ms)
+        } else {
+            match self.scorer_kind {
+                IterativeScorerKind::Standard => rank_root_candidates_with_scorer(
+                    game_state,
+                    root_legal,
+                    &self.standard_scorer,
+                    depth,
+                    &self.move_generator,
+                    &mut self.tt,
+                    self.stop_signal.clone(),
+                    node_cap,
+                    movetime_ms,
+                ),
+                IterativeScorerKind::AlphaZero => rank_root_candidates_with_scorer(
+                    game_state,
+                    root_legal,
+                    &self.alpha_zero_scorer,
+                    depth,
+                    &self.move_generator,
+                    &mut self.tt,
+                    self.stop_signal.clone(),
+                    node_cap,
+                    movetime_ms,
+                ),
+            }
         };
         ranked.sort_by(|a, b| b.cp.cmp(&a.cp));
-        ranked
+        let workers_used = if use_parallel {
+            threads.min(root_legal.len())
+        } else {
+            1
+        };
+        (ranked, workers_used)
+    }
+
+    fn rank_root_candidates_parallel(
+        &self,
+        game_state: &GameState,
+        root_legal: &[u64],
+        depth: u8,
+        node_cap: Option<u64>,
+        movetime_ms: Option<u64>,
+    ) -> Vec<RankedCandidate> {
+        let worker_count = self.threading.normalized_threads().min(root_legal.len()).max(1);
+        let roots = root_legal.to_vec();
+        let mut handles = Vec::with_capacity(worker_count);
+
+        for worker_id in 0..worker_count {
+            let game = game_state.clone();
+            let roots_local = roots.clone();
+            let stop_signal = self.stop_signal.clone();
+            let scorer_kind = self.scorer_kind;
+            let hash_mb = self.hash_mb;
+            handles.push(thread::spawn(move || {
+                let mut local_tt = TranspositionTable::new_with_mb((hash_mb / worker_count).max(1));
+                let move_generator = FastLegalMoveGenerator;
+                let standard = EndgameTaperedScorerV14::standard();
+                let alpha_zero = EndgameTaperedScorerV14::alpha_zero();
+                let mut out = Vec::<RankedCandidate>::new();
+                let mut idx = worker_id;
+                while idx < roots_local.len() {
+                    let mv = roots_local[idx];
+                    let candidate = match scorer_kind {
+                        IterativeScorerKind::Standard => score_root_candidate(
+                            &game,
+                            mv,
+                            &standard,
+                            depth,
+                            &move_generator,
+                            &mut local_tt,
+                            stop_signal.clone(),
+                            node_cap,
+                            movetime_ms,
+                        ),
+                        IterativeScorerKind::AlphaZero => score_root_candidate(
+                            &game,
+                            mv,
+                            &alpha_zero,
+                            depth,
+                            &move_generator,
+                            &mut local_tt,
+                            stop_signal.clone(),
+                            node_cap,
+                            movetime_ms,
+                        ),
+                    };
+                    out.push(candidate);
+                    idx += worker_count;
+                }
+                out
+            }));
+        }
+
+        let mut merged = Vec::<RankedCandidate>::with_capacity(root_legal.len());
+        for h in handles {
+            if let Ok(mut v) = h.join() {
+                merged.append(&mut v);
+            }
+        }
+        merged
     }
 
     fn build_multipv_lines(
@@ -932,5 +1027,32 @@ mod tests {
         let joined = out.info_lines.join("\n");
         assert!(joined.contains("threading model=SingleThreaded threads=4 helpers=3"));
         assert!(joined.contains("thread_contexts workers=4 helpers=3"));
+    }
+
+    #[test]
+    fn iterative_engine_parallel_root_marker_when_lazy_smp_enabled() {
+        let game = GameState::new_game();
+        let mut engine = IterativeEngine::new(2);
+        engine
+            .set_option("OwnBook", "false")
+            .expect("setoption should work");
+        engine
+            .set_option("ThreadingModel", "LazySmp")
+            .expect("threading model should parse");
+        engine
+            .set_option("Threads", "4")
+            .expect("threads should parse");
+        engine
+            .set_option("MultiPV", "3")
+            .expect("multipv should parse");
+        let params = GoParams {
+            depth: Some(2),
+            ..GoParams::default()
+        };
+        let out = engine
+            .choose_move(&game, &params)
+            .expect("engine should choose a move");
+        let joined = out.info_lines.join("\n");
+        assert!(joined.contains("parallel_root workers="));
     }
 }
