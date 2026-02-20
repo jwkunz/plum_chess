@@ -581,12 +581,21 @@ impl IterativeEngine {
         movetime_ms: Option<u64>,
     ) -> (Vec<RankedCandidate>, usize, bool, usize, usize) {
         let threads = self.threading.normalized_threads();
+        let workers_target =
+            effective_parallel_worker_count(threads, root_legal.len(), node_cap, movetime_ms);
         let use_parallel = !self.deterministic_search
             && matches!(self.threading.model, ThreadingModel::LazySmp)
-            && threads > 1
+            && workers_target > 1
             && root_legal.len() > 1;
         let (mut ranked, budget_stopped, panics, mut completed) = if use_parallel {
-            self.rank_root_candidates_parallel(game_state, root_legal, depth, node_cap, movetime_ms)
+            self.rank_root_candidates_parallel(
+                game_state,
+                root_legal,
+                depth,
+                node_cap,
+                movetime_ms,
+                workers_target,
+            )
         } else {
             let ranked = match self.scorer_kind {
                 IterativeScorerKind::Standard => rank_root_candidates_with_scorer(
@@ -644,11 +653,7 @@ impl IterativeEngine {
             completed = ranked.len();
         }
         ranked.sort_by(|a, b| b.cp.cmp(&a.cp));
-        let workers_used = if use_parallel {
-            threads.min(root_legal.len())
-        } else {
-            1
-        };
+        let workers_used = if use_parallel { workers_target } else { 1 };
         (ranked, workers_used, budget_stopped, panics, completed)
     }
 
@@ -659,8 +664,8 @@ impl IterativeEngine {
         depth: u8,
         node_cap: Option<u64>,
         movetime_ms: Option<u64>,
+        worker_count: usize,
     ) -> (Vec<RankedCandidate>, bool, usize, usize) {
-        let worker_count = self.threading.normalized_threads().min(root_legal.len()).max(1);
         let roots = Arc::new(root_legal.to_vec());
         let work_index = Arc::new(AtomicUsize::new(0));
         self.shared_tt.new_generation();
@@ -916,6 +921,42 @@ fn score_root_candidate(
             continuation: Vec::new(),
         },
     }
+}
+
+#[inline]
+fn effective_parallel_worker_count(
+    max_threads: usize,
+    root_count: usize,
+    node_cap: Option<u64>,
+    movetime_ms: Option<u64>,
+) -> usize {
+    let mut workers = max_threads.min(root_count).max(1);
+
+    if let Some(ms) = movetime_ms {
+        workers = if ms <= 20 {
+            1
+        } else if ms <= 50 {
+            workers.min(2)
+        } else if ms <= 100 {
+            workers.min(4)
+        } else {
+            workers
+        };
+    }
+
+    if let Some(nodes) = node_cap {
+        workers = if nodes <= 1_000 {
+            1
+        } else if nodes <= 5_000 {
+            workers.min(2)
+        } else if nodes <= 20_000 {
+            workers.min(4)
+        } else {
+            workers
+        };
+    }
+
+    workers.max(1)
 }
 
 fn rank_root_candidates_with_scorer<S: BoardScorer>(
@@ -1267,5 +1308,21 @@ mod tests {
         let joined = out.info_lines.join("\n");
         assert!(joined.contains("deterministic_search true"));
         assert!(!joined.contains("parallel_root workers="));
+    }
+
+    #[test]
+    fn effective_parallel_worker_count_scales_down_for_tiny_budgets() {
+        assert_eq!(
+            super::effective_parallel_worker_count(8, 20, None, Some(10)),
+            1
+        );
+        assert_eq!(
+            super::effective_parallel_worker_count(8, 20, Some(2000), None),
+            2
+        );
+        assert_eq!(
+            super::effective_parallel_worker_count(8, 3, Some(100_000), Some(500)),
+            3
+        );
     }
 }
