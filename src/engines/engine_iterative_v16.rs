@@ -74,6 +74,8 @@ pub struct IterativeEngine {
     threading: ThreadingConfig,
     thread_contexts: ThreadContextPool,
     deterministic_search: bool,
+    root_parallel_min_depth: u8,
+    root_parallel_min_moves: usize,
     time_strategy: TimeManagementStrategy,
     stop_signal: Option<Arc<AtomicBool>>,
 }
@@ -115,6 +117,8 @@ impl IterativeEngine {
             threading: ThreadingConfig::default(),
             thread_contexts: ThreadContextPool::with_threads(1),
             deterministic_search: false,
+            root_parallel_min_depth: 2,
+            root_parallel_min_moves: 2,
             time_strategy: TimeManagementStrategy::AdaptiveV13,
             stop_signal: None,
         }
@@ -185,6 +189,22 @@ impl Engine for IterativeEngine {
         if name.eq_ignore_ascii_case("DeterministicSearch") {
             let v = value.trim().to_ascii_lowercase();
             self.deterministic_search = matches!(v.as_str(), "true" | "1" | "yes" | "on");
+            return Ok(());
+        }
+        if name.eq_ignore_ascii_case("RootParallelMinDepth") {
+            let parsed = value
+                .trim()
+                .parse::<u8>()
+                .map_err(|_| format!("invalid RootParallelMinDepth value '{value}'"))?;
+            self.root_parallel_min_depth = parsed.max(1);
+            return Ok(());
+        }
+        if name.eq_ignore_ascii_case("RootParallelMinMoves") {
+            let parsed = value
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| format!("invalid RootParallelMinMoves value '{value}'"))?;
+            self.root_parallel_min_moves = parsed.max(2);
             return Ok(());
         }
         if name.eq_ignore_ascii_case("UCI_ShowRefutations") {
@@ -323,7 +343,8 @@ impl Engine for IterativeEngine {
         let use_parallel_root_main = !self.deterministic_search
             && matches!(self.threading.model, ThreadingModel::LazySmp)
             && self.threading.normalized_threads() > 1
-            && root_legal.len() > 1;
+            && root_legal.len() >= self.root_parallel_min_moves
+            && depth >= self.root_parallel_min_depth;
 
         let mut chosen = result
             .best_move
@@ -468,6 +489,10 @@ impl Engine for IterativeEngine {
             self.thread_contexts.len(),
             self.thread_contexts.helper_count()
         ));
+        out.info_lines.push(format!(
+            "info string iterative_engine_v16 root_parallel_thresholds depth>={} moves>={}",
+            self.root_parallel_min_depth, self.root_parallel_min_moves
+        ));
         let shared_stats = self.shared_tt.stats();
         out.info_lines.push(format!(
             "info string iterative_engine_v16 shared_tt probes={} hits={} stores={}",
@@ -586,7 +611,8 @@ impl IterativeEngine {
         let use_parallel = !self.deterministic_search
             && matches!(self.threading.model, ThreadingModel::LazySmp)
             && workers_target > 1
-            && root_legal.len() > 1;
+            && root_legal.len() >= self.root_parallel_min_moves
+            && depth >= self.root_parallel_min_depth;
         let (mut ranked, budget_stopped, panics, mut completed) = if use_parallel {
             self.rank_root_candidates_parallel(
                 game_state,
@@ -1216,6 +1242,12 @@ mod tests {
         engine
             .set_option("ThreadingModel", "SingleThreaded")
             .expect("threading model should parse");
+        engine
+            .set_option("RootParallelMinDepth", "3")
+            .expect("min depth should parse");
+        engine
+            .set_option("RootParallelMinMoves", "4")
+            .expect("min moves should parse");
         let params = GoParams {
             depth: Some(1),
             ..GoParams::default()
@@ -1226,6 +1258,7 @@ mod tests {
         let joined = out.info_lines.join("\n");
         assert!(joined.contains("threading model=SingleThreaded threads=4 helpers=3"));
         assert!(joined.contains("thread_contexts workers=4 helpers=3"));
+        assert!(joined.contains("root_parallel_thresholds depth>=3 moves>=4"));
         assert!(joined.contains("shared_tt_shards 8"));
     }
 

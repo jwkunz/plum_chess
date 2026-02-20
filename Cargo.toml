@@ -1,6 +1,6 @@
 [package]
 name = "plum_chess"
-version = "4.12.0"
+version = "4.13.0"
 edition = "2021"
 
 [dependencies]

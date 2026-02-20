@@ -75,6 +75,8 @@ struct UciState {
     hash_mb: usize,
     threads: usize,
     deterministic_search: bool,
+    root_parallel_min_depth: u8,
+    root_parallel_min_moves: usize,
     own_book: bool,
     ponder: bool,
     analyse_mode: bool,
@@ -107,6 +109,8 @@ impl UciState {
         let multipv = 1usize;
         let hash_mb = 64usize;
         let threads = 1usize;
+        let root_parallel_min_depth = 2u8;
+        let root_parallel_min_moves = 2usize;
         let own_book = true;
         let mut engine = build_engine(skill_level);
         let _ = engine.set_option("Hash", &hash_mb.to_string());
@@ -123,6 +127,8 @@ impl UciState {
             hash_mb,
             threads,
             deterministic_search: false,
+            root_parallel_min_depth,
+            root_parallel_min_moves,
             own_book,
             ponder: false,
             analyse_mode: false,
@@ -183,6 +189,14 @@ impl UciState {
                 writeln!(
                     out,
                     "option name DeterministicSearch type check default false"
+                )?;
+                writeln!(
+                    out,
+                    "option name RootParallelMinDepth type spin default 2 min 1 max 32"
+                )?;
+                writeln!(
+                    out,
+                    "option name RootParallelMinMoves type spin default 2 min 2 max 256"
                 )?;
                 writeln!(out, "option name Ponder type check default false")?;
                 writeln!(out, "option name UCI_AnalyseMode type check default false")?;
@@ -340,6 +354,24 @@ impl UciState {
             self.engine.set_option(
                 "DeterministicSearch",
                 if self.deterministic_search { "true" } else { "false" },
+            )?;
+        } else if name.eq_ignore_ascii_case("RootParallelMinDepth") {
+            let parsed = value
+                .parse::<u8>()
+                .map_err(|_| format!("invalid RootParallelMinDepth value '{}'", value))?;
+            self.root_parallel_min_depth = parsed.max(1);
+            self.engine.set_option(
+                "RootParallelMinDepth",
+                &self.root_parallel_min_depth.to_string(),
+            )?;
+        } else if name.eq_ignore_ascii_case("RootParallelMinMoves") {
+            let parsed = value
+                .parse::<usize>()
+                .map_err(|_| format!("invalid RootParallelMinMoves value '{}'", value))?;
+            self.root_parallel_min_moves = parsed.max(2);
+            self.engine.set_option(
+                "RootParallelMinMoves",
+                &self.root_parallel_min_moves.to_string(),
             )?;
         } else if name.eq_ignore_ascii_case("Ponder") {
             let lower = value.to_ascii_lowercase();
@@ -667,6 +699,14 @@ impl UciState {
             "DeterministicSearch",
             if self.deterministic_search { "true" } else { "false" },
         )?;
+        self.engine.set_option(
+            "RootParallelMinDepth",
+            &self.root_parallel_min_depth.to_string(),
+        )?;
+        self.engine.set_option(
+            "RootParallelMinMoves",
+            &self.root_parallel_min_moves.to_string(),
+        )?;
         self.engine
             .set_option("Ponder", if self.ponder { "true" } else { "false" })?;
         self.engine.set_option(
@@ -707,6 +747,8 @@ impl UciState {
         let hash_mb = self.hash_mb;
         let threads = self.threads;
         let deterministic_search = self.deterministic_search;
+        let root_parallel_min_depth = self.root_parallel_min_depth;
+        let root_parallel_min_moves = self.root_parallel_min_moves;
         let own_book = self.own_book;
         let ponder = self.ponder;
         let limit_strength = self.limit_strength;
@@ -738,6 +780,10 @@ impl UciState {
                 "DeterministicSearch",
                 if deterministic_search { "true" } else { "false" },
             );
+            let _ = worker_engine
+                .set_option("RootParallelMinDepth", &root_parallel_min_depth.to_string());
+            let _ = worker_engine
+                .set_option("RootParallelMinMoves", &root_parallel_min_moves.to_string());
             let _ = worker_engine.set_option("OwnBook", if own_book { "true" } else { "false" });
             let _ = worker_engine.set_option("Ponder", if ponder { "true" } else { "false" });
             let _ = worker_engine.set_option(
@@ -1246,6 +1292,21 @@ mod tests {
     }
 
     #[test]
+    fn setoption_root_parallel_thresholds_parse() {
+        let mut state = UciState::new();
+        assert_eq!(state.root_parallel_min_depth, 2);
+        assert_eq!(state.root_parallel_min_moves, 2);
+        state
+            .handle_setoption("setoption name RootParallelMinDepth value 4")
+            .expect("min depth should parse");
+        state
+            .handle_setoption("setoption name RootParallelMinMoves value 6")
+            .expect("min moves should parse");
+        assert_eq!(state.root_parallel_min_depth, 4);
+        assert_eq!(state.root_parallel_min_moves, 6);
+    }
+
+    #[test]
     fn setoption_clear_hash_button_is_accepted() {
         let mut state = UciState::new();
         state
@@ -1566,6 +1627,8 @@ mod tests {
         assert!(uci_text.contains("MultiPV"));
         assert!(uci_text.contains("ThreadingModel"));
         assert!(uci_text.contains("DeterministicSearch"));
+        assert!(uci_text.contains("RootParallelMinDepth"));
+        assert!(uci_text.contains("RootParallelMinMoves"));
         assert!(uci_text.contains("UCI_ShowWDL"));
         assert!(uci_text.contains("UCI_ShowCurrLine"));
         assert!(uci_text.contains("UCI_ShowRefutations"));
