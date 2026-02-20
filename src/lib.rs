@@ -51,6 +51,7 @@ pub mod search {
     pub mod iterative_deepening_v7;
     pub mod iterative_deepening_v8;
     pub mod iterative_deepening_v9;
+    pub mod threading;
     pub mod transposition_table;
     pub mod transposition_table_v11;
     pub mod zobrist;

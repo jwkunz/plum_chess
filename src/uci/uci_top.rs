@@ -174,6 +174,10 @@ impl UciState {
                 writeln!(out, "option name Hash type spin default 64 min 1 max 4096")?;
                 writeln!(out, "option name Clear Hash type button")?;
                 writeln!(out, "option name Threads type spin default 1 min 1 max 128")?;
+                writeln!(
+                    out,
+                    "option name ThreadingModel type combo default LazySmp var SingleThreaded var LazySmp"
+                )?;
                 writeln!(out, "option name Ponder type check default false")?;
                 writeln!(out, "option name UCI_AnalyseMode type check default false")?;
                 writeln!(out, "option name UCI_Chess960 type check default false")?;
@@ -1528,6 +1532,7 @@ mod tests {
         assert!(uci_text.contains("UCI_LimitStrength"));
         assert!(uci_text.contains("UCI_Elo"));
         assert!(uci_text.contains("MultiPV"));
+        assert!(uci_text.contains("ThreadingModel"));
         assert!(uci_text.contains("UCI_ShowWDL"));
         assert!(uci_text.contains("UCI_ShowCurrLine"));
         assert!(uci_text.contains("UCI_ShowRefutations"));
