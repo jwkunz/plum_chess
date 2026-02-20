@@ -66,6 +66,8 @@ struct UciState {
     game_state: GameState,
     engine: Box<dyn Engine>,
     skill_level: u8,
+    limit_strength: bool,
+    uci_elo: u16,
     fixed_depth_override: Option<u8>,
     hash_mb: usize,
     threads: usize,
@@ -94,6 +96,8 @@ struct AsyncSearchHandle {
 impl UciState {
     fn new() -> Self {
         let skill_level = 1;
+        let limit_strength = false;
+        let uci_elo = 1200u16;
         let hash_mb = 64usize;
         let threads = 1usize;
         let own_book = true;
@@ -105,6 +109,8 @@ impl UciState {
             game_state: GameState::new_game(),
             engine,
             skill_level,
+            limit_strength,
+            uci_elo,
             fixed_depth_override: None,
             hash_mb,
             threads,
@@ -142,6 +148,14 @@ impl UciState {
                 writeln!(
                     out,
                     "option name Skill Level type spin default 1 min 1 max 10"
+                )?;
+                writeln!(
+                    out,
+                    "option name UCI_LimitStrength type check default false"
+                )?;
+                writeln!(
+                    out,
+                    "option name UCI_Elo type spin default 1200 min 600 max 1800"
                 )?;
                 writeln!(
                     out,
@@ -245,9 +259,17 @@ impl UciState {
                 .parse::<u8>()
                 .map_err(|_| format!("invalid Skill Level value '{}'", value))?;
             self.skill_level = parsed;
-            self.engine = build_engine(self.skill_level);
-            self.apply_engine_options()?;
-            self.engine.new_game();
+            self.rebuild_engine_for_current_strength()?;
+        } else if name.eq_ignore_ascii_case("UCI_LimitStrength") {
+            let lower = value.to_ascii_lowercase();
+            self.limit_strength = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
+            self.rebuild_engine_for_current_strength()?;
+        } else if name.eq_ignore_ascii_case("UCI_Elo") {
+            let parsed = value
+                .parse::<u16>()
+                .map_err(|_| format!("invalid UCI_Elo value '{}'", value))?;
+            self.uci_elo = parsed.clamp(600, 1800);
+            self.rebuild_engine_for_current_strength()?;
         } else if name.eq_ignore_ascii_case("FixedDepth") {
             let parsed = value
                 .parse::<u8>()
@@ -308,6 +330,21 @@ impl UciState {
             self.engine.set_option(&name, &value)?;
         }
 
+        Ok(())
+    }
+
+    fn effective_skill_level(&self) -> u8 {
+        if self.limit_strength {
+            elo_to_skill_level(self.uci_elo)
+        } else {
+            self.skill_level
+        }
+    }
+
+    fn rebuild_engine_for_current_strength(&mut self) -> Result<(), String> {
+        self.engine = build_engine(self.effective_skill_level());
+            self.apply_engine_options()?;
+            self.engine.new_game();
         Ok(())
     }
 
@@ -476,6 +513,12 @@ impl UciState {
         self.engine
             .set_option("Ponder", if self.ponder { "true" } else { "false" })?;
         self.engine.set_option(
+            "UCI_LimitStrength",
+            if self.limit_strength { "true" } else { "false" },
+        )?;
+        self.engine
+            .set_option("UCI_Elo", &self.uci_elo.to_string())?;
+        self.engine.set_option(
             "UCI_AnalyseMode",
             if self.analyse_mode { "true" } else { "false" },
         )?;
@@ -499,11 +542,13 @@ impl UciState {
     fn start_async_search(&mut self, params: GoParams) -> Result<(), String> {
         let is_ponder = params.ponder;
         let game_state = self.game_state.clone();
-        let skill_level = self.skill_level;
+        let skill_level = self.effective_skill_level();
         let hash_mb = self.hash_mb;
         let threads = self.threads;
         let own_book = self.own_book;
         let ponder = self.ponder;
+        let limit_strength = self.limit_strength;
+        let uci_elo = self.uci_elo;
         let analyse_mode = self.analyse_mode;
         let chess960 = self.chess960;
         let show_currline = self.show_currline;
@@ -527,6 +572,11 @@ impl UciState {
             let _ = worker_engine.set_option("Threads", &threads.to_string());
             let _ = worker_engine.set_option("OwnBook", if own_book { "true" } else { "false" });
             let _ = worker_engine.set_option("Ponder", if ponder { "true" } else { "false" });
+            let _ = worker_engine.set_option(
+                "UCI_LimitStrength",
+                if limit_strength { "true" } else { "false" },
+            );
+            let _ = worker_engine.set_option("UCI_Elo", &uci_elo.to_string());
             let _ = worker_engine.set_option(
                 "UCI_AnalyseMode",
                 if analyse_mode { "true" } else { "false" },
@@ -751,6 +801,25 @@ fn is_go_keyword(token: &str) -> bool {
     )
 }
 
+fn elo_to_skill_level(elo: u16) -> u8 {
+    match elo {
+        0..=699 => 1,
+        700..=799 => 2,
+        800..=899 => 3,
+        900..=999 => 4,
+        1000..=1099 => 5,
+        1100..=1199 => 6,
+        1200..=1299 => 7,
+        1300..=1399 => 8,
+        1400..=1499 => 9,
+        1500..=1599 => 10,
+        1600..=1699 => 11,
+        1700..=1749 => 12,
+        1750..=1799 => 13,
+        _ => 14,
+    }
+}
+
 fn build_engine(skill_level: u8) -> Box<dyn Engine> {
     match skill_level {
         1 => Box::new(RandomEngine::new()),
@@ -778,7 +847,7 @@ fn build_engine(skill_level: u8) -> Box<dyn Engine> {
 
 #[cfg(test)]
 mod tests {
-    use super::UciState;
+    use super::{elo_to_skill_level, UciState};
 
     #[test]
     fn position_startpos_with_moves_updates_state() {
@@ -826,6 +895,34 @@ mod tests {
             .handle_setoption("setoption name Skill Level value 42")
             .expect("setoption should parse");
         assert_eq!(state.skill_level, 42);
+    }
+
+    #[test]
+    fn setoption_limit_strength_and_elo_parse_and_clamp() {
+        let mut state = UciState::new();
+        assert!(!state.limit_strength);
+        assert_eq!(state.uci_elo, 1200);
+
+        state
+            .handle_setoption("setoption name UCI_LimitStrength value true")
+            .expect("limit strength should parse");
+        state
+            .handle_setoption("setoption name UCI_Elo value 1900")
+            .expect("uci elo should parse");
+
+        assert!(state.limit_strength);
+        assert_eq!(state.uci_elo, 1800);
+        assert_eq!(state.effective_skill_level(), 14);
+    }
+
+    #[test]
+    fn elo_to_skill_mapping_tracks_current_engine_range() {
+        assert_eq!(elo_to_skill_level(600), 1);
+        assert_eq!(elo_to_skill_level(900), 4);
+        assert_eq!(elo_to_skill_level(1200), 7);
+        assert_eq!(elo_to_skill_level(1500), 10);
+        assert_eq!(elo_to_skill_level(1700), 12);
+        assert_eq!(elo_to_skill_level(1800), 14);
     }
 
     #[test]
@@ -1049,6 +1146,8 @@ mod tests {
             .expect("uci should work");
         let uci_text = String::from_utf8(out.clone()).expect("utf8");
         assert!(uci_text.contains("uciok"));
+        assert!(uci_text.contains("UCI_LimitStrength"));
+        assert!(uci_text.contains("UCI_Elo"));
         assert!(uci_text.contains("UCI_ShowWDL"));
         assert!(uci_text.contains("UCI_ShowCurrLine"));
         assert!(uci_text.contains("UCI_ShowRefutations"));
