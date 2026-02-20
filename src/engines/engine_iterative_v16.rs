@@ -294,6 +294,10 @@ impl Engine for IterativeEngine {
             return Ok(out);
         }
 
+        let use_parallel_root_main = matches!(self.threading.model, ThreadingModel::LazySmp)
+            && self.threading.normalized_threads() > 1
+            && root_legal.len() > 1;
+
         let mut chosen = result
             .best_move
             .filter(|mv| root_legal.contains(mv))
@@ -323,7 +327,7 @@ impl Engine for IterativeEngine {
         }
         out.best_move = chosen;
 
-        let ranked = if self.multipv > 1 || self.show_refutations {
+        let ranked = if self.multipv > 1 || self.show_refutations || use_parallel_root_main {
             let (ranked, workers) = self.rank_root_candidates(
                 game_state,
                 &root_legal,
@@ -342,10 +346,17 @@ impl Engine for IterativeEngine {
             None
         };
 
-        if let Some(ref ranked) = ranked {
-            if let Some(top) = ranked.first() {
-                chosen = Some(top.mv);
-                out.best_move = chosen;
+        if use_parallel_root_main {
+            out.info_lines.push(
+                "info string iterative_engine_v16 parallel_root_main enabled".to_owned(),
+            );
+        }
+        if use_parallel_root_main {
+            if let Some(ref ranked) = ranked {
+                if let Some(top) = ranked.first() {
+                    chosen = Some(top.mv);
+                    out.best_move = chosen;
+                }
             }
         }
 
@@ -1054,5 +1065,30 @@ mod tests {
             .expect("engine should choose a move");
         let joined = out.info_lines.join("\n");
         assert!(joined.contains("parallel_root workers="));
+        assert!(joined.contains("parallel_root_main enabled"));
+    }
+
+    #[test]
+    fn iterative_engine_parallel_root_main_runs_without_multipv() {
+        let game = GameState::new_game();
+        let mut engine = IterativeEngine::new(2);
+        engine
+            .set_option("OwnBook", "false")
+            .expect("setoption should work");
+        engine
+            .set_option("ThreadingModel", "LazySmp")
+            .expect("threading model should parse");
+        engine
+            .set_option("Threads", "3")
+            .expect("threads should parse");
+        let params = GoParams {
+            depth: Some(2),
+            ..GoParams::default()
+        };
+        let out = engine
+            .choose_move(&game, &params)
+            .expect("engine should choose a move");
+        let joined = out.info_lines.join("\n");
+        assert!(joined.contains("parallel_root_main enabled"));
     }
 }
