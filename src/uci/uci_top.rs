@@ -17,6 +17,7 @@ use crate::engines::engine_trait::{Engine, GoParams};
 use crate::game_state::game_state::GameState;
 use crate::move_generation::legal_move_apply::apply_move;
 use crate::move_generation::legal_move_generator::generate_legal_move_descriptions_in_place;
+use crate::search::board_scoring::MATE_SCORE;
 use crate::utils::long_algebraic::{
     long_algebraic_to_move_description, move_description_to_long_algebraic,
 };
@@ -521,6 +522,13 @@ impl UciState {
                 writeln!(out, "info wdl {} {} {}", w, d, l).map_err(|e| e.to_string())?;
             }
         }
+        if !has_mate_score_line(&result.info_lines) {
+            if let Some(cp) = extract_last_cp_score(&result.info_lines) {
+                if let Some(mate_moves) = cp_to_mate_moves(cp) {
+                    writeln!(out, "info score mate {}", mate_moves).map_err(|e| e.to_string())?;
+                }
+            }
+        }
         if self.show_currline {
             if let Some(currline) = build_currline_text(result, &self.game_state) {
                 writeln!(out, "info currline {}", currline).map_err(|e| e.to_string())?;
@@ -804,6 +812,22 @@ fn cp_to_wdl(cp: i32) -> (u16, u16, u16) {
     d = d.clamp(0, 1000);
     l = (1000 - w - d).clamp(0, 1000);
     (w as u16, d as u16, l as u16)
+}
+
+fn has_mate_score_line(info_lines: &[String]) -> bool {
+    info_lines
+        .iter()
+        .any(|line| line.contains(" score mate ") || line.starts_with("info score mate "))
+}
+
+fn cp_to_mate_moves(cp: i32) -> Option<i32> {
+    let abs_cp = cp.abs();
+    if abs_cp < (MATE_SCORE - 256) {
+        return None;
+    }
+    let mate_plies = (MATE_SCORE - abs_cp).max(1);
+    let mate_moves = (mate_plies + 1) / 2;
+    Some(if cp >= 0 { mate_moves } else { -mate_moves })
 }
 
 fn parse_go_params(line: &str, game_state: &GameState) -> Result<GoParams, String> {
@@ -1436,5 +1460,28 @@ mod tests {
             .expect("go should succeed");
         let text = String::from_utf8(out).expect("utf8");
         assert!(text.contains("info currline "));
+    }
+
+    #[test]
+    fn cp_to_mate_moves_detects_mate_band() {
+        assert_eq!(super::cp_to_mate_moves(29_999), Some(1));
+        assert_eq!(super::cp_to_mate_moves(-29_998), Some(-1));
+        assert_eq!(super::cp_to_mate_moves(500), None);
+    }
+
+    #[test]
+    fn emit_engine_output_adds_mate_score_line_from_cp() {
+        let mut state = UciState::new();
+        let result = crate::engines::engine_trait::EngineOutput {
+            best_move: None,
+            ponder_move: None,
+            info_lines: vec!["info depth 5 score cp 29999 nodes 123 time 1 nps 1000".to_owned()],
+        };
+        let mut out = Vec::<u8>::new();
+        state
+            .emit_engine_output(&result, &mut out)
+            .expect("emit should succeed");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(text.contains("info score mate 1"));
     }
 }
