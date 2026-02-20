@@ -450,21 +450,35 @@ impl UciState {
             return Ok(());
         }
         let result = self.engine.choose_move(&self.game_state, &params)?;
+        let result = self.enforce_searchmoves(result, &params)?;
         self.emit_engine_output(&result, out)
     }
 
     fn handle_stop(&mut self, out: &mut impl Write) -> Result<(), String> {
+        let active_params = self.async_search.as_ref().map(|h| h.go_params.clone());
         let had_async = self.async_search.is_some();
         if let Some(result) = self.stop_async_search_and_collect()? {
+            let params = active_params.clone().unwrap_or_default();
+            let result = self.enforce_searchmoves(result, &params)?;
             return self.emit_engine_output(&result, out);
         }
         if had_async {
-            let fallback = GoParams {
-                depth: self.fixed_depth_override.or(Some(2)),
-                movetime_ms: Some(100),
-                ..GoParams::default()
-            };
+            let mut fallback = active_params.unwrap_or_default();
+            fallback.ponder = false;
+            fallback.infinite = false;
+            fallback.mate = None;
+            fallback.nodes = None;
+            if fallback.depth.is_none() {
+                fallback.depth = self.fixed_depth_override.or(Some(2));
+            }
+            if fallback.movetime_ms.is_none()
+                && fallback.wtime_ms.is_none()
+                && fallback.btime_ms.is_none()
+            {
+                fallback.movetime_ms = Some(100);
+            }
             let result = self.engine.choose_move(&self.game_state, &fallback)?;
+            let result = self.enforce_searchmoves(result, &fallback)?;
             return self.emit_engine_output(&result, out);
         }
         Ok(())
@@ -492,20 +506,55 @@ impl UciState {
                 return Ok(());
             }
         }
+        let active_params = self.async_search.as_ref().map(|h| h.go_params.clone());
         let had_async = self.async_search.is_some();
         if let Some(result) = self.stop_async_search_and_collect()? {
+            let params = active_params.clone().unwrap_or_default();
+            let result = self.enforce_searchmoves(result, &params)?;
             return self.emit_engine_output(&result, out);
         }
         if had_async {
-            let fallback = GoParams {
-                depth: self.fixed_depth_override.or(Some(2)),
-                movetime_ms: Some(100),
-                ..GoParams::default()
-            };
+            let mut fallback = active_params.unwrap_or_default();
+            fallback.ponder = false;
+            fallback.infinite = false;
+            fallback.mate = None;
+            fallback.nodes = None;
+            if fallback.depth.is_none() {
+                fallback.depth = self.fixed_depth_override.or(Some(2));
+            }
+            if fallback.movetime_ms.is_none()
+                && fallback.wtime_ms.is_none()
+                && fallback.btime_ms.is_none()
+            {
+                fallback.movetime_ms = Some(100);
+            }
             let result = self.engine.choose_move(&self.game_state, &fallback)?;
+            let result = self.enforce_searchmoves(result, &fallback)?;
             return self.emit_engine_output(&result, out);
         }
         Ok(())
+    }
+
+    fn enforce_searchmoves(
+        &self,
+        mut result: crate::engines::engine_trait::EngineOutput,
+        params: &GoParams,
+    ) -> Result<crate::engines::engine_trait::EngineOutput, String> {
+        let Some(allowed) = params.searchmoves.as_ref() else {
+            return Ok(result);
+        };
+        if result.best_move.is_some_and(|mv| allowed.contains(&mv)) {
+            return Ok(result);
+        }
+
+        let mut probe = self.game_state.clone();
+        let legal =
+            generate_legal_move_descriptions_in_place(&mut probe).map_err(|e| e.to_string())?;
+        result.best_move = legal.into_iter().find(|mv| allowed.contains(mv));
+        result
+            .info_lines
+            .push("info string uci searchmoves constraint applied".to_owned());
+        Ok(result)
     }
 
     fn emit_engine_output(
@@ -962,6 +1011,16 @@ fn build_engine(skill_level: u8) -> Box<dyn Engine> {
 mod tests {
     use super::{elo_to_skill_level, UciState};
 
+    fn extract_bestmove_lan(output: &str) -> Option<String> {
+        for line in output.lines() {
+            let mut parts = line.split_whitespace();
+            if parts.next() == Some("bestmove") {
+                return parts.next().map(|s| s.to_owned());
+            }
+        }
+        None
+    }
+
     #[test]
     fn position_startpos_with_moves_updates_state() {
         let mut state = UciState::new();
@@ -1195,6 +1254,40 @@ mod tests {
         assert!(text.contains("bestmove"));
         assert!(!text.contains("async search started"));
         assert!(state.async_search.is_none());
+    }
+
+    #[test]
+    fn searchmoves_is_enforced_for_sync_go_even_if_engine_ignores_it() {
+        let mut state = UciState::new();
+        state
+            .handle_setoption("setoption name Skill Level value 1")
+            .expect("skill should parse");
+        let mut out = Vec::<u8>::new();
+        state
+            .handle_command("go depth 1 searchmoves e2e4", &mut out)
+            .expect("go should succeed");
+        let text = String::from_utf8(out).expect("utf8");
+        let best = extract_bestmove_lan(&text).expect("bestmove should exist");
+        assert_eq!(best, "e2e4");
+    }
+
+    #[test]
+    fn searchmoves_is_enforced_for_async_stop_result() {
+        let mut state = UciState::new();
+        state
+            .handle_setoption("setoption name Skill Level value 1")
+            .expect("skill should parse");
+        let mut out = Vec::<u8>::new();
+        state
+            .handle_command("go infinite searchmoves e2e4", &mut out)
+            .expect("go should succeed");
+        out.clear();
+        state
+            .handle_command("stop", &mut out)
+            .expect("stop should succeed");
+        let text = String::from_utf8(out).expect("utf8");
+        let best = extract_bestmove_lan(&text).expect("bestmove should exist");
+        assert_eq!(best, "e2e4");
     }
 
     #[test]
