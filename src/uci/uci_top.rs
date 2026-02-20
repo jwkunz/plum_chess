@@ -580,7 +580,7 @@ impl UciState {
         }
         if self.show_currline {
             if let Some(currline) = build_currline_text(result, &self.game_state) {
-                writeln!(out, "info currline {}", currline).map_err(|e| e.to_string())?;
+                writeln!(out, "info currline 1 {}", currline).map_err(|e| e.to_string())?;
             }
         }
 
@@ -731,11 +731,20 @@ impl UciState {
                     Ok(out) => {
                         if let Some(tx) = &info_tx {
                             for line in &out.info_lines {
-                                let _ = tx.send(line.clone());
+                                if show_refutations && line.starts_with("info refutation ") {
+                                    let ref_payload = line.trim_start_matches("info ").trim();
+                                    let _ = tx
+                                        .send(format!("info depth {} {}", iter_depth, ref_payload));
+                                } else {
+                                    let _ = tx.send(line.clone());
+                                }
                             }
                             if show_currline {
                                 if let Some(currline) = build_currline_text(&out, &game_state) {
-                                    let _ = tx.send(format!("info currline {}", currline));
+                                    let _ = tx.send(format!(
+                                        "info depth {} currline 1 {}",
+                                        iter_depth, currline
+                                    ));
                                 }
                             }
                             if let Some(best) = out.best_move {
