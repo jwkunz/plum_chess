@@ -341,6 +341,10 @@ impl UciState {
         } else if name.eq_ignore_ascii_case("UCI_ShowRefutations") {
             let lower = value.to_ascii_lowercase();
             self.show_refutations = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
+            self.engine.set_option(
+                "UCI_ShowRefutations",
+                if self.show_refutations { "true" } else { "false" },
+            )?;
         } else if name.eq_ignore_ascii_case("UCI_Opponent") {
             self.uci_opponent = value.trim().to_owned();
             self.engine.set_option("UCI_Opponent", &self.uci_opponent)?;
@@ -1349,5 +1353,28 @@ mod tests {
             .expect("go should succeed");
         let text = String::from_utf8(out).expect("utf8");
         assert!(text.contains("info wdl"));
+    }
+
+    #[test]
+    fn show_refutations_outputs_refutation_info_line() {
+        let mut state = UciState::new();
+        let mut out = Vec::<u8>::new();
+        state
+            .handle_command("setoption name OwnBook value false", &mut out)
+            .expect("setoption should parse");
+        out.clear();
+        state
+            .handle_command("setoption name Skill Level value 3", &mut out)
+            .expect("setoption should parse");
+        out.clear();
+        state
+            .handle_command("setoption name UCI_ShowRefutations value true", &mut out)
+            .expect("setoption should parse");
+        out.clear();
+        state
+            .handle_command("go depth 1", &mut out)
+            .expect("go should succeed");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(text.contains("info refutation "));
     }
 }

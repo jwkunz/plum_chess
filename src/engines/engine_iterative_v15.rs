@@ -53,6 +53,7 @@ pub struct IterativeEngine {
     tt: TranspositionTable,
     hash_mb: usize,
     multipv: usize,
+    show_refutations: bool,
     time_strategy: TimeManagementStrategy,
     stop_signal: Option<Arc<AtomicBool>>,
 }
@@ -83,6 +84,7 @@ impl IterativeEngine {
             tt: TranspositionTable::new_with_mb(hash_mb),
             hash_mb,
             multipv: 1,
+            show_refutations: false,
             time_strategy: TimeManagementStrategy::AdaptiveV13,
             stop_signal: None,
         }
@@ -124,6 +126,11 @@ impl Engine for IterativeEngine {
                 .parse::<usize>()
                 .map_err(|_| format!("invalid MultiPV value '{value}'"))?;
             self.multipv = parsed.clamp(1, 32);
+            return Ok(());
+        }
+        if name.eq_ignore_ascii_case("UCI_ShowRefutations") {
+            let v = value.trim().to_ascii_lowercase();
+            self.show_refutations = matches!(v.as_str(), "true" | "1" | "yes" | "on");
             return Ok(());
         }
         Ok(())
@@ -281,9 +288,24 @@ impl Engine for IterativeEngine {
         }
         out.best_move = chosen;
 
+        let ranked = if self.multipv > 1 || self.show_refutations {
+            Some(self.rank_root_candidates(game_state, &root_legal))
+        } else {
+            None
+        };
+
         if self.multipv > 1 {
-            let multipv_lines = self.build_multipv_lines(game_state, &root_legal, depth);
-            out.info_lines.extend(multipv_lines);
+            if let Some(ref ranked) = ranked {
+                let multipv_lines = self.build_multipv_lines(game_state, ranked, depth);
+                out.info_lines.extend(multipv_lines);
+            }
+        }
+
+        if self.show_refutations {
+            if let Some(ref ranked) = ranked {
+                let refutation_lines = self.build_refutation_lines(game_state, ranked);
+                out.info_lines.extend(refutation_lines);
+            }
         }
 
         out.info_lines.push(format!(
@@ -417,7 +439,7 @@ impl Engine for IterativeEngine {
 }
 
 impl IterativeEngine {
-    fn build_multipv_lines(&self, game_state: &GameState, root_legal: &[u64], depth: u8) -> Vec<String> {
+    fn rank_root_candidates(&self, game_state: &GameState, root_legal: &[u64]) -> Vec<(u64, i32)> {
         let scorer = match self.scorer_kind {
             IterativeScorerKind::Standard => &self.standard_scorer as &dyn BoardScorer,
             IterativeScorerKind::AlphaZero => &self.alpha_zero_scorer as &dyn BoardScorer,
@@ -429,18 +451,39 @@ impl IterativeEngine {
             .map(|mv| (mv, score_root_candidate(game_state, mv, scorer)))
             .collect();
         ranked.sort_by(|a, b| b.1.cmp(&a.1));
+        ranked
+    }
+
+    fn build_multipv_lines(&self, game_state: &GameState, ranked: &[(u64, i32)], depth: u8) -> Vec<String> {
 
         let n = ranked.len().min(self.multipv);
         let mut lines = Vec::with_capacity(n);
-        for (idx, (mv, cp)) in ranked.into_iter().take(n).enumerate() {
-            if let Ok(lan) = move_description_to_long_algebraic(mv, game_state) {
+        for (idx, (mv, cp)) in ranked.iter().take(n).enumerate() {
+            if let Ok(lan) = move_description_to_long_algebraic(*mv, game_state) {
                 lines.push(format!(
                     "info depth {} multipv {} score cp {} pv {}",
                     depth,
                     idx + 1,
-                    cp,
+                    *cp,
                     lan
                 ));
+            }
+        }
+        lines
+    }
+
+    fn build_refutation_lines(&self, game_state: &GameState, ranked: &[(u64, i32)]) -> Vec<String> {
+        if ranked.len() < 2 {
+            return Vec::new();
+        }
+        let Ok(best_lan) = move_description_to_long_algebraic(ranked[0].0, game_state) else {
+            return Vec::new();
+        };
+        let limit = ranked.len().min(4);
+        let mut lines = Vec::with_capacity(limit.saturating_sub(1));
+        for (mv, _cp) in ranked.iter().skip(1).take(limit - 1) {
+            if let Ok(alt_lan) = move_description_to_long_algebraic(*mv, game_state) {
+                lines.push(format!("info refutation {} {}", alt_lan, best_lan));
             }
         }
         lines
@@ -651,5 +694,26 @@ mod tests {
         let joined = out.info_lines.join("\n");
         assert!(joined.contains("multipv 1"));
         assert!(joined.contains("multipv 2"));
+    }
+
+    #[test]
+    fn iterative_engine_emits_refutation_lines_when_enabled() {
+        let game = GameState::new_game();
+        let mut engine = IterativeEngine::new(2);
+        engine
+            .set_option("OwnBook", "false")
+            .expect("setoption should work");
+        engine
+            .set_option("UCI_ShowRefutations", "true")
+            .expect("setoption should work");
+        let params = GoParams {
+            depth: Some(1),
+            ..GoParams::default()
+        };
+        let out = engine
+            .choose_move(&game, &params)
+            .expect("engine should choose a move");
+        let joined = out.info_lines.join("\n");
+        assert!(joined.contains("info refutation "));
     }
 }
