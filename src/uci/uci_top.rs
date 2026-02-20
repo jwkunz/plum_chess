@@ -747,6 +747,12 @@ impl UciState {
                                     ));
                                 }
                             }
+                            if let Some((nodes, time, nps)) = extract_last_search_stats(&out.info_lines) {
+                                let _ = tx.send(format!(
+                                    "info depth {} seldepth {} nodes {} time {} nps {}",
+                                    iter_depth, iter_depth, nodes, time, nps
+                                ));
+                            }
                             if let Some(best) = out.best_move {
                                 if let Ok(curr_lan) =
                                     move_description_to_long_algebraic(best, &game_state)
@@ -816,6 +822,29 @@ fn extract_last_cp_score(info_lines: &[String]) -> Option<i32> {
                     return Some(v);
                 }
             }
+        }
+    }
+    None
+}
+
+fn extract_last_search_stats(info_lines: &[String]) -> Option<(u64, u64, u64)> {
+    for line in info_lines.iter().rev() {
+        let tokens = line.split_whitespace().collect::<Vec<_>>();
+        let mut nodes: Option<u64> = None;
+        let mut time: Option<u64> = None;
+        let mut nps: Option<u64> = None;
+        let mut i = 0usize;
+        while i + 1 < tokens.len() {
+            match tokens[i] {
+                "nodes" => nodes = tokens[i + 1].parse::<u64>().ok(),
+                "time" => time = tokens[i + 1].parse::<u64>().ok(),
+                "nps" => nps = tokens[i + 1].parse::<u64>().ok(),
+                _ => {}
+            }
+            i += 1;
+        }
+        if let (Some(nodes), Some(time), Some(nps)) = (nodes, time, nps) {
+            return Some((nodes, time, nps));
         }
     }
     None
@@ -1326,6 +1355,41 @@ mod tests {
         assert!(state.async_info_tx.is_some());
         state.set_async_info_sender(None);
         assert!(state.async_info_tx.is_none());
+    }
+
+    #[test]
+    fn async_info_sender_emits_seldepth_snapshot_lines() {
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        let mut state = UciState::new();
+        state
+            .handle_setoption("setoption name Skill Level value 3")
+            .expect("skill should parse");
+        state
+            .handle_setoption("setoption name OwnBook value false")
+            .expect("ownbook should parse");
+        state.set_async_info_sender(Some(tx));
+
+        let mut out = Vec::<u8>::new();
+        state
+            .handle_command("go infinite", &mut out)
+            .expect("go infinite should succeed");
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+        let mut saw_seldepth = false;
+        while std::time::Instant::now() < deadline {
+            if let Ok(line) = rx.recv_timeout(std::time::Duration::from_millis(20)) {
+                if line.contains(" seldepth ") {
+                    saw_seldepth = true;
+                    break;
+                }
+            }
+        }
+
+        let mut stop_out = Vec::<u8>::new();
+        state
+            .handle_command("stop", &mut stop_out)
+            .expect("stop should succeed");
+        assert!(saw_seldepth, "expected async seldepth snapshot line");
     }
 
     #[test]
