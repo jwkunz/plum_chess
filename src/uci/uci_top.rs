@@ -74,6 +74,8 @@ struct UciState {
     analyse_mode: bool,
     chess960: bool,
     show_wdl: bool,
+    show_currline: bool,
+    show_refutations: bool,
     debug_mode: bool,
     time_strategy: String,
     async_search: Option<AsyncSearchHandle>,
@@ -111,6 +113,8 @@ impl UciState {
             analyse_mode: false,
             chess960: false,
             show_wdl: false,
+            show_currline: false,
+            show_refutations: false,
             debug_mode: false,
             time_strategy: "adaptive".to_owned(),
             async_search: None,
@@ -150,6 +154,8 @@ impl UciState {
                 writeln!(out, "option name UCI_AnalyseMode type check default false")?;
                 writeln!(out, "option name UCI_Chess960 type check default false")?;
                 writeln!(out, "option name UCI_ShowWDL type check default false")?;
+                writeln!(out, "option name UCI_ShowCurrLine type check default false")?;
+                writeln!(out, "option name UCI_ShowRefutations type check default false")?;
                 writeln!(out, "option name OwnBook type check default true")?;
                 writeln!(
                     out,
@@ -283,6 +289,12 @@ impl UciState {
         } else if name.eq_ignore_ascii_case("UCI_ShowWDL") {
             let lower = value.to_ascii_lowercase();
             self.show_wdl = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
+        } else if name.eq_ignore_ascii_case("UCI_ShowCurrLine") {
+            let lower = value.to_ascii_lowercase();
+            self.show_currline = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
+        } else if name.eq_ignore_ascii_case("UCI_ShowRefutations") {
+            let lower = value.to_ascii_lowercase();
+            self.show_refutations = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
         } else if name.eq_ignore_ascii_case("TimeStrategy") {
             let normalized = value.trim().to_ascii_lowercase();
             self.time_strategy = normalized.clone();
@@ -469,6 +481,14 @@ impl UciState {
         )?;
         self.engine
             .set_option("UCI_Chess960", if self.chess960 { "true" } else { "false" })?;
+        self.engine.set_option(
+            "UCI_ShowCurrLine",
+            if self.show_currline { "true" } else { "false" },
+        )?;
+        self.engine.set_option(
+            "UCI_ShowRefutations",
+            if self.show_refutations { "true" } else { "false" },
+        )?;
         self.engine
             .set_option("OwnBook", if self.own_book { "true" } else { "false" })?;
         self.engine
@@ -486,6 +506,8 @@ impl UciState {
         let ponder = self.ponder;
         let analyse_mode = self.analyse_mode;
         let chess960 = self.chess960;
+        let show_currline = self.show_currline;
+        let show_refutations = self.show_refutations;
         let time_strategy = self.time_strategy.clone();
         let info_tx = self.async_info_tx.clone();
         let depth_override = self.fixed_depth_override;
@@ -511,6 +533,14 @@ impl UciState {
             );
             let _ =
                 worker_engine.set_option("UCI_Chess960", if chess960 { "true" } else { "false" });
+            let _ = worker_engine.set_option(
+                "UCI_ShowCurrLine",
+                if show_currline { "true" } else { "false" },
+            );
+            let _ = worker_engine.set_option(
+                "UCI_ShowRefutations",
+                if show_refutations { "true" } else { "false" },
+            );
             let _ = worker_engine.set_option("TimeStrategy", &time_strategy);
             worker_engine.new_game();
 
@@ -847,6 +877,21 @@ mod tests {
     }
 
     #[test]
+    fn setoption_show_currline_and_refutations_parse() {
+        let mut state = UciState::new();
+        assert!(!state.show_currline);
+        assert!(!state.show_refutations);
+        state
+            .handle_setoption("setoption name UCI_ShowCurrLine value true")
+            .expect("show currline should parse");
+        state
+            .handle_setoption("setoption name UCI_ShowRefutations value true")
+            .expect("show refutations should parse");
+        assert!(state.show_currline);
+        assert!(state.show_refutations);
+    }
+
+    #[test]
     fn parse_go_params_keeps_clock_fields_without_forcing_movetime() {
         let game_state = crate::game_state::game_state::GameState::new_game();
         let params = super::parse_go_params(
@@ -1005,6 +1050,8 @@ mod tests {
         let uci_text = String::from_utf8(out.clone()).expect("utf8");
         assert!(uci_text.contains("uciok"));
         assert!(uci_text.contains("UCI_ShowWDL"));
+        assert!(uci_text.contains("UCI_ShowCurrLine"));
+        assert!(uci_text.contains("UCI_ShowRefutations"));
 
         out.clear();
         state
