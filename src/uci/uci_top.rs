@@ -729,7 +729,16 @@ fn build_engine(skill_level: u8) -> Box<dyn Engine> {
         8 => Box::new(IterativeEngine::new_alpha_zero(4)),
         9 => Box::new(IterativeEngine::new_standard(5)),
         10 => Box::new(IterativeEngine::new_alpha_zero(5)),
-        _ => Box::new(IterativeEngine::new_alpha_zero(10)),
+        11 => Box::new(IterativeEngine::new_standard(7)),
+        12 => Box::new(IterativeEngine::new_alpha_zero(7)),
+        13 => Box::new(IterativeEngine::new_standard(9)),
+        14 => Box::new(IterativeEngine::new_alpha_zero(9)),
+        15 => Box::new(IterativeEngine::new_standard(11)),
+        16 => Box::new(IterativeEngine::new_alpha_zero(11)),
+        17 => Box::new(IterativeEngine::new_standard(13)),
+        18 => Box::new(IterativeEngine::new_alpha_zero(13)),
+        19 => Box::new(IterativeEngine::new_alpha_zero(15)),
+        _ => Box::new(IterativeEngine::new_alpha_zero(20)),
     }
 }
 
