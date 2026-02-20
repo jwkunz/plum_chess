@@ -289,7 +289,13 @@ impl Engine for IterativeEngine {
         out.best_move = chosen;
 
         let ranked = if self.multipv > 1 || self.show_refutations {
-            Some(self.rank_root_candidates(game_state, &root_legal))
+            Some(self.rank_root_candidates(
+                game_state,
+                &root_legal,
+                depth,
+                node_cap,
+                effective_params.movetime_ms,
+            ))
         } else {
             None
         };
@@ -439,17 +445,38 @@ impl Engine for IterativeEngine {
 }
 
 impl IterativeEngine {
-    fn rank_root_candidates(&self, game_state: &GameState, root_legal: &[u64]) -> Vec<(u64, i32)> {
-        let scorer = match self.scorer_kind {
-            IterativeScorerKind::Standard => &self.standard_scorer as &dyn BoardScorer,
-            IterativeScorerKind::AlphaZero => &self.alpha_zero_scorer as &dyn BoardScorer,
+    fn rank_root_candidates(
+        &mut self,
+        game_state: &GameState,
+        root_legal: &[u64],
+        depth: u8,
+        node_cap: Option<u64>,
+        movetime_ms: Option<u64>,
+    ) -> Vec<(u64, i32)> {
+        let mut ranked = match self.scorer_kind {
+            IterativeScorerKind::Standard => rank_root_candidates_with_scorer(
+                game_state,
+                root_legal,
+                &self.standard_scorer,
+                depth,
+                &self.move_generator,
+                &mut self.tt,
+                self.stop_signal.clone(),
+                node_cap,
+                movetime_ms,
+            ),
+            IterativeScorerKind::AlphaZero => rank_root_candidates_with_scorer(
+                game_state,
+                root_legal,
+                &self.alpha_zero_scorer,
+                depth,
+                &self.move_generator,
+                &mut self.tt,
+                self.stop_signal.clone(),
+                node_cap,
+                movetime_ms,
+            ),
         };
-
-        let mut ranked: Vec<(u64, i32)> = root_legal
-            .iter()
-            .copied()
-            .map(|mv| (mv, score_root_candidate(game_state, mv, scorer)))
-            .collect();
         ranked.sort_by(|a, b| b.1.cmp(&a.1));
         ranked
     }
@@ -490,7 +517,17 @@ impl IterativeEngine {
     }
 }
 
-fn score_root_candidate(game_state: &GameState, mv: u64, scorer: &dyn BoardScorer) -> i32 {
+fn score_root_candidate(
+    game_state: &GameState,
+    mv: u64,
+    scorer: &impl BoardScorer,
+    depth: u8,
+    move_generator: &FastLegalMoveGenerator,
+    tt: &mut TranspositionTable,
+    stop_signal: Option<Arc<AtomicBool>>,
+    node_cap: Option<u64>,
+    movetime_ms: Option<u64>,
+) -> i32 {
     let Ok(next) = apply_move(game_state, mv) else {
         return i32::MIN / 4;
     };
@@ -501,7 +538,65 @@ fn score_root_candidate(game_state: &GameState, mv: u64, scorer: &dyn BoardScore
     if replies.is_empty() && is_king_in_check(&next, next.side_to_move) {
         return 29_500;
     }
-    -scorer.score(&next)
+
+    if depth <= 1 {
+        return -scorer.score(&next);
+    }
+
+    let refine_nodes = node_cap.map(|n| (n / 4).max(128));
+    let refine_time = movetime_ms.map(|ms| (ms / 4).max(2));
+    let refine_depth = depth.saturating_sub(1).max(1);
+
+    let search = iterative_deepening_search_with_tt(
+        &next,
+        move_generator,
+        scorer,
+        SearchConfig {
+            max_depth: refine_depth,
+            movetime_ms: refine_time,
+            max_nodes: refine_nodes,
+            stop_flag: stop_signal,
+        },
+        tt,
+    );
+
+    match search {
+        Ok(r) => -r.best_score,
+        Err(_) => -scorer.score(&next),
+    }
+}
+
+fn rank_root_candidates_with_scorer<S: BoardScorer>(
+    game_state: &GameState,
+    root_legal: &[u64],
+    scorer: &S,
+    depth: u8,
+    move_generator: &FastLegalMoveGenerator,
+    tt: &mut TranspositionTable,
+    stop_signal: Option<Arc<AtomicBool>>,
+    node_cap: Option<u64>,
+    movetime_ms: Option<u64>,
+) -> Vec<(u64, i32)> {
+    root_legal
+        .iter()
+        .copied()
+        .map(|mv| {
+            (
+                mv,
+                score_root_candidate(
+                    game_state,
+                    mv,
+                    scorer,
+                    depth,
+                    move_generator,
+                    tt,
+                    stop_signal.clone(),
+                    node_cap,
+                    movetime_ms,
+                ),
+            )
+        })
+        .collect()
 }
 
 fn find_mate_in_one(game_state: &GameState, legal_moves: &[u64]) -> Option<u64> {
