@@ -1,3 +1,5 @@
+![Plum Chess Logo](PlumChessLogo.png)
+
 # Plum Chess Engine — How to Play
 
 Plum Chess is a chess engine that implements the standard **UCI (Universal Chess Interface)** protocol, the same interface used by popular engines like Stockfish. To play against Plum Chess, you’ll need a compatible chess GUI (graphical front-end).
