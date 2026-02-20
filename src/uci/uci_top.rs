@@ -69,6 +69,7 @@ struct UciState {
     skill_level: u8,
     limit_strength: bool,
     uci_elo: u16,
+    multipv: usize,
     fixed_depth_override: Option<u8>,
     hash_mb: usize,
     threads: usize,
@@ -100,6 +101,7 @@ impl UciState {
         let skill_level = 1;
         let limit_strength = false;
         let uci_elo = 1200u16;
+        let multipv = 1usize;
         let hash_mb = 64usize;
         let threads = 1usize;
         let own_book = true;
@@ -113,6 +115,7 @@ impl UciState {
             skill_level,
             limit_strength,
             uci_elo,
+            multipv,
             fixed_depth_override: None,
             hash_mb,
             threads,
@@ -160,6 +163,7 @@ impl UciState {
                     out,
                     "option name UCI_Elo type spin default 1200 min 600 max 1800"
                 )?;
+                writeln!(out, "option name MultiPV type spin default 1 min 1 max 32")?;
                 writeln!(
                     out,
                     "option name FixedDepth type spin default 0 min 0 max 64"
@@ -283,6 +287,13 @@ impl UciState {
                 .map_err(|_| format!("invalid UCI_Elo value '{}'", value))?;
             self.uci_elo = parsed.clamp(600, 1800);
             self.rebuild_engine_for_current_strength()?;
+        } else if name.eq_ignore_ascii_case("MultiPV") {
+            let parsed = value
+                .parse::<usize>()
+                .map_err(|_| format!("invalid MultiPV value '{}'", value))?;
+            self.multipv = parsed.clamp(1, 32);
+            self.engine
+                .set_option("MultiPV", &self.multipv.to_string())?;
         } else if name.eq_ignore_ascii_case("FixedDepth") {
             let parsed = value
                 .parse::<u8>()
@@ -547,6 +558,8 @@ impl UciState {
         )?;
         self.engine
             .set_option("UCI_Elo", &self.uci_elo.to_string())?;
+        self.engine
+            .set_option("MultiPV", &self.multipv.to_string())?;
         self.engine.set_option(
             "UCI_AnalyseMode",
             if self.analyse_mode { "true" } else { "false" },
@@ -580,6 +593,7 @@ impl UciState {
         let ponder = self.ponder;
         let limit_strength = self.limit_strength;
         let uci_elo = self.uci_elo;
+        let multipv = self.multipv;
         let analyse_mode = self.analyse_mode;
         let chess960 = self.chess960;
         let show_currline = self.show_currline;
@@ -609,6 +623,7 @@ impl UciState {
                 if limit_strength { "true" } else { "false" },
             );
             let _ = worker_engine.set_option("UCI_Elo", &uci_elo.to_string());
+            let _ = worker_engine.set_option("MultiPV", &multipv.to_string());
             let _ = worker_engine.set_option(
                 "UCI_AnalyseMode",
                 if analyse_mode { "true" } else { "false" },
@@ -949,6 +964,20 @@ mod tests {
     }
 
     #[test]
+    fn setoption_multipv_parse_and_clamp() {
+        let mut state = UciState::new();
+        assert_eq!(state.multipv, 1);
+        state
+            .handle_setoption("setoption name MultiPV value 4")
+            .expect("multipv should parse");
+        assert_eq!(state.multipv, 4);
+        state
+            .handle_setoption("setoption name MultiPV value 99")
+            .expect("multipv clamp should parse");
+        assert_eq!(state.multipv, 32);
+    }
+
+    #[test]
     fn elo_to_skill_mapping_tracks_current_engine_range() {
         assert_eq!(elo_to_skill_level(600), 1);
         assert_eq!(elo_to_skill_level(900), 4);
@@ -1225,6 +1254,7 @@ mod tests {
         assert!(uci_text.contains("uciok"));
         assert!(uci_text.contains("UCI_LimitStrength"));
         assert!(uci_text.contains("UCI_Elo"));
+        assert!(uci_text.contains("MultiPV"));
         assert!(uci_text.contains("UCI_ShowWDL"));
         assert!(uci_text.contains("UCI_ShowCurrLine"));
         assert!(uci_text.contains("UCI_ShowRefutations"));

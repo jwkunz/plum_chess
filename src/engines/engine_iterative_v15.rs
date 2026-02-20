@@ -18,7 +18,7 @@ use crate::move_generation::legal_move_generator::{
 use crate::moves::move_descriptions::{
     move_from, move_promotion_piece_code, move_to, piece_kind_from_code,
 };
-use crate::search::board_scoring::{EndgameTaperedScorerV14, V3MaterialKind};
+use crate::search::board_scoring::{BoardScorer, EndgameTaperedScorerV14, V3MaterialKind};
 use crate::search::iterative_deepening_v15::{
     iterative_deepening_search_with_tt, principal_variation_from_tt, SearchConfig,
 };
@@ -52,6 +52,7 @@ pub struct IterativeEngine {
     use_own_book: bool,
     tt: TranspositionTable,
     hash_mb: usize,
+    multipv: usize,
     time_strategy: TimeManagementStrategy,
     stop_signal: Option<Arc<AtomicBool>>,
 }
@@ -81,6 +82,7 @@ impl IterativeEngine {
             use_own_book: true,
             tt: TranspositionTable::new_with_mb(hash_mb),
             hash_mb,
+            multipv: 1,
             time_strategy: TimeManagementStrategy::AdaptiveV13,
             stop_signal: None,
         }
@@ -114,6 +116,14 @@ impl Engine for IterativeEngine {
                 "fraction20" | "legacy" | "simple" => TimeManagementStrategy::Fraction20,
                 _ => return Err(format!("invalid TimeStrategy value '{value}'")),
             };
+            return Ok(());
+        }
+        if name.eq_ignore_ascii_case("MultiPV") {
+            let parsed = value
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| format!("invalid MultiPV value '{value}'"))?;
+            self.multipv = parsed.clamp(1, 32);
             return Ok(());
         }
         Ok(())
@@ -270,6 +280,12 @@ impl Engine for IterativeEngine {
             chosen = Some(preferred);
         }
         out.best_move = chosen;
+
+        if self.multipv > 1 {
+            let multipv_lines = self.build_multipv_lines(game_state, &root_legal, depth);
+            out.info_lines.extend(multipv_lines);
+        }
+
         out.info_lines.push(format!(
             "info depth {} score cp {} nodes {} time {} nps {}",
             result.reached_depth, result.best_score, result.nodes, result.elapsed_ms, result.nps
@@ -305,6 +321,10 @@ impl Engine for IterativeEngine {
         out.info_lines.push(format!(
             "info string iterative_engine_v15 time_strategy {:?}",
             self.time_strategy
+        ));
+        out.info_lines.push(format!(
+            "info string iterative_engine_v15 multipv {}",
+            self.multipv
         ));
         out.info_lines.push(format!(
             "info string iterative_engine_v15 go_raw movetime={:?} wtime={:?} btime={:?} winc={:?} binc={:?}",
@@ -394,6 +414,51 @@ impl Engine for IterativeEngine {
 
         Ok(out)
     }
+}
+
+impl IterativeEngine {
+    fn build_multipv_lines(&self, game_state: &GameState, root_legal: &[u64], depth: u8) -> Vec<String> {
+        let scorer = match self.scorer_kind {
+            IterativeScorerKind::Standard => &self.standard_scorer as &dyn BoardScorer,
+            IterativeScorerKind::AlphaZero => &self.alpha_zero_scorer as &dyn BoardScorer,
+        };
+
+        let mut ranked: Vec<(u64, i32)> = root_legal
+            .iter()
+            .copied()
+            .map(|mv| (mv, score_root_candidate(game_state, mv, scorer)))
+            .collect();
+        ranked.sort_by(|a, b| b.1.cmp(&a.1));
+
+        let n = ranked.len().min(self.multipv);
+        let mut lines = Vec::with_capacity(n);
+        for (idx, (mv, cp)) in ranked.into_iter().take(n).enumerate() {
+            if let Ok(lan) = move_description_to_long_algebraic(mv, game_state) {
+                lines.push(format!(
+                    "info depth {} multipv {} score cp {} pv {}",
+                    depth,
+                    idx + 1,
+                    cp,
+                    lan
+                ));
+            }
+        }
+        lines
+    }
+}
+
+fn score_root_candidate(game_state: &GameState, mv: u64, scorer: &dyn BoardScorer) -> i32 {
+    let Ok(next) = apply_move(game_state, mv) else {
+        return i32::MIN / 4;
+    };
+    let mut probe = next.clone();
+    let Ok(replies) = generate_legal_move_descriptions_in_place(&mut probe) else {
+        return -scorer.score(&next);
+    };
+    if replies.is_empty() && is_king_in_check(&next, next.side_to_move) {
+        return 29_500;
+    }
+    -scorer.score(&next)
 }
 
 fn find_mate_in_one(game_state: &GameState, legal_moves: &[u64]) -> Option<u64> {
@@ -564,5 +629,27 @@ mod tests {
         assert!(joined.contains("precedence nodes overrides mate"));
         assert!(joined.contains("node_cap 200"));
         assert!(!joined.contains("mate_mode plies_target"));
+    }
+
+    #[test]
+    fn iterative_engine_emits_multipv_lines_when_enabled() {
+        let game = GameState::new_game();
+        let mut engine = IterativeEngine::new(2);
+        engine
+            .set_option("OwnBook", "false")
+            .expect("setoption should work");
+        engine
+            .set_option("MultiPV", "3")
+            .expect("multipv should parse");
+        let params = GoParams {
+            depth: Some(1),
+            ..GoParams::default()
+        };
+        let out = engine
+            .choose_move(&game, &params)
+            .expect("engine should choose a move");
+        let joined = out.info_lines.join("\n");
+        assert!(joined.contains("multipv 1"));
+        assert!(joined.contains("multipv 2"));
     }
 }
