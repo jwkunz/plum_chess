@@ -50,6 +50,73 @@ impl ThreadingConfig {
     }
 }
 
+/// Lightweight per-thread scratch context.
+///
+/// These are intentionally local-only (no cross-thread shared mutable state)
+/// so later parallel search can re-use existing single-thread heuristics safely.
+#[derive(Debug, Clone)]
+pub struct WorkerThreadContext {
+    pub worker_id: usize,
+    pub nodes_local: u64,
+    pub split_depth_hint: u8,
+}
+
+impl WorkerThreadContext {
+    #[inline]
+    pub fn new(worker_id: usize) -> Self {
+        Self {
+            worker_id,
+            nodes_local: 0,
+            split_depth_hint: 0,
+        }
+    }
+
+    #[inline]
+    pub fn reset(&mut self) {
+        self.nodes_local = 0;
+        self.split_depth_hint = 0;
+    }
+}
+
+/// Pool of per-thread contexts owned by an engine instance.
+#[derive(Debug, Clone, Default)]
+pub struct ThreadContextPool {
+    contexts: Vec<WorkerThreadContext>,
+}
+
+impl ThreadContextPool {
+    pub fn with_threads(thread_count: usize) -> Self {
+        let n = thread_count.max(1);
+        let mut contexts = Vec::with_capacity(n);
+        for i in 0..n {
+            contexts.push(WorkerThreadContext::new(i));
+        }
+        Self { contexts }
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.contexts.len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.contexts.is_empty()
+    }
+
+    #[inline]
+    pub fn helper_count(&self) -> usize {
+        self.contexts.len().saturating_sub(1)
+    }
+
+    #[inline]
+    pub fn reset(&mut self) {
+        for ctx in &mut self.contexts {
+            ctx.reset();
+        }
+    }
+}
+
 /// Shared cancellation + accounting state for future worker pools.
 #[derive(Debug)]
 pub struct SharedSearchState {
@@ -263,5 +330,17 @@ mod tests {
         let probed = tt.probe(12345).expect("entry should exist");
         assert_eq!(probed.key, 12345);
         assert_eq!(probed.score, 42);
+    }
+
+    #[test]
+    fn thread_context_pool_initializes_and_resets() {
+        let mut pool = ThreadContextPool::with_threads(4);
+        assert_eq!(pool.len(), 4);
+        assert_eq!(pool.helper_count(), 3);
+        assert!(!pool.is_empty());
+
+        pool.reset();
+        // Reset should keep shape stable.
+        assert_eq!(pool.len(), 4);
     }
 }

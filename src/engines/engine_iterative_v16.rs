@@ -23,7 +23,7 @@ use crate::search::board_scoring::{BoardScorer, EndgameTaperedScorerV14, V3Mater
 use crate::search::iterative_deepening_v15::{
     iterative_deepening_search_with_tt, principal_variation_from_tt, SearchConfig,
 };
-use crate::search::threading::{ThreadingConfig, ThreadingModel};
+use crate::search::threading::{ThreadContextPool, ThreadingConfig, ThreadingModel};
 use crate::search::transposition_table_v11::TranspositionTable;
 use crate::tables::opening_book::OpeningBook;
 use crate::utils::long_algebraic::move_description_to_long_algebraic;
@@ -64,6 +64,7 @@ pub struct IterativeEngine {
     multipv: usize,
     show_refutations: bool,
     threading: ThreadingConfig,
+    thread_contexts: ThreadContextPool,
     time_strategy: TimeManagementStrategy,
     stop_signal: Option<Arc<AtomicBool>>,
 }
@@ -96,6 +97,7 @@ impl IterativeEngine {
             multipv: 1,
             show_refutations: false,
             threading: ThreadingConfig::default(),
+            thread_contexts: ThreadContextPool::with_threads(1),
             time_strategy: TimeManagementStrategy::AdaptiveV13,
             stop_signal: None,
         }
@@ -145,6 +147,8 @@ impl Engine for IterativeEngine {
                 .parse::<usize>()
                 .map_err(|_| format!("invalid Threads value '{value}'"))?;
             self.threading.requested_threads = parsed.max(1);
+            self.thread_contexts =
+                ThreadContextPool::with_threads(self.threading.normalized_threads());
             return Ok(());
         }
         if name.eq_ignore_ascii_case("ThreadingModel") {
@@ -173,6 +177,8 @@ impl Engine for IterativeEngine {
         game_state: &GameState,
         params: &GoParams,
     ) -> Result<EngineOutput, String> {
+        self.thread_contexts.reset();
+
         let control_mode = if params.movetime_ms.is_some() {
             GoControlMode::MoveTime
         } else if params.nodes.is_some() {
@@ -383,6 +389,11 @@ impl Engine for IterativeEngine {
             self.threading.model,
             self.threading.normalized_threads(),
             self.threading.helper_threads()
+        ));
+        out.info_lines.push(format!(
+            "info string iterative_engine_v16 thread_contexts workers={} helpers={}",
+            self.thread_contexts.len(),
+            self.thread_contexts.helper_count()
         ));
         out.info_lines.push(format!(
             "info string iterative_engine_v16 multipv {}",
@@ -920,5 +931,6 @@ mod tests {
             .expect("engine should choose a move");
         let joined = out.info_lines.join("\n");
         assert!(joined.contains("threading model=SingleThreaded threads=4 helpers=3"));
+        assert!(joined.contains("thread_contexts workers=4 helpers=3"));
     }
 }
