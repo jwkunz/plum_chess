@@ -7,8 +7,11 @@
 
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
+    Arc, Mutex,
 };
+use std::time::Instant;
+
+use crate::search::transposition_table_v11::{TTEntry, TTStats, TranspositionTable};
 
 /// Search execution model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,15 +51,24 @@ impl ThreadingConfig {
 }
 
 /// Shared cancellation + accounting state for future worker pools.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SharedSearchState {
     stop: AtomicBool,
     pub nodes_visited: AtomicU64,
+    node_budget: AtomicU64,     // 0 means unlimited
+    time_budget_ms: AtomicU64,  // 0 means unlimited
+    started_at: Mutex<Option<Instant>>,
 }
 
 impl SharedSearchState {
     pub fn new() -> Arc<Self> {
-        Arc::new(Self::default())
+        Arc::new(Self {
+            stop: AtomicBool::new(false),
+            nodes_visited: AtomicU64::new(0),
+            node_budget: AtomicU64::new(0),
+            time_budget_ms: AtomicU64::new(0),
+            started_at: Mutex::new(None),
+        })
     }
 
     #[inline]
@@ -72,6 +84,134 @@ impl SharedSearchState {
     #[inline]
     pub fn add_nodes(&self, n: u64) {
         self.nodes_visited.fetch_add(n, Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn set_node_budget(&self, budget: Option<u64>) {
+        self.node_budget.store(budget.unwrap_or(0), Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn set_time_budget_ms(&self, budget_ms: Option<u64>) {
+        self.time_budget_ms
+            .store(budget_ms.unwrap_or(0), Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn reset_started_at(&self) {
+        if let Ok(mut guard) = self.started_at.lock() {
+            *guard = Some(Instant::now());
+        }
+    }
+
+    #[inline]
+    pub fn reset_accounting(&self) {
+        self.nodes_visited.store(0, Ordering::Relaxed);
+        self.stop.store(false, Ordering::Relaxed);
+        self.reset_started_at();
+    }
+
+    /// Adds node count and returns true if any configured budget is exceeded.
+    #[inline]
+    pub fn bump_nodes_and_check_budget(&self, n: u64) -> bool {
+        let new_nodes = self.nodes_visited.fetch_add(n, Ordering::Relaxed) + n;
+        let limit = self.node_budget.load(Ordering::Relaxed);
+        if limit != 0 && new_nodes >= limit {
+            return true;
+        }
+        self.time_budget_exceeded()
+    }
+
+    #[inline]
+    pub fn time_budget_exceeded(&self) -> bool {
+        let budget_ms = self.time_budget_ms.load(Ordering::Relaxed);
+        if budget_ms == 0 {
+            return false;
+        }
+        let Ok(guard) = self.started_at.lock() else {
+            return false;
+        };
+        let Some(started) = *guard else {
+            return false;
+        };
+        started.elapsed().as_millis() as u64 >= budget_ms
+    }
+}
+
+/// Thread-safe transposition table façade for shared worker access.
+///
+/// Step 2 uses coarse-grained per-shard mutexes for simplicity and correctness.
+/// A future step can replace this with lock-free or striped atomic buckets.
+#[derive(Debug)]
+pub struct SharedTranspositionTable {
+    shards: Vec<Mutex<TranspositionTable>>,
+}
+
+impl SharedTranspositionTable {
+    pub fn new_with_mb(total_mb: usize, shard_count: usize) -> Arc<Self> {
+        let shards = shard_count.max(1);
+        let mb_per_shard = (total_mb.max(1) / shards).max(1);
+        let mut vec = Vec::with_capacity(shards);
+        for _ in 0..shards {
+            vec.push(Mutex::new(TranspositionTable::new_with_mb(mb_per_shard)));
+        }
+        Arc::new(Self { shards: vec })
+    }
+
+    #[inline]
+    fn shard_idx(&self, key: u64) -> usize {
+        (key as usize) % self.shards.len()
+    }
+
+    pub fn probe(&self, key: u64) -> Option<TTEntry> {
+        let idx = self.shard_idx(key);
+        let Ok(mut guard) = self.shards[idx].lock() else {
+            return None;
+        };
+        guard.probe(key)
+    }
+
+    pub fn store(&self, entry: TTEntry) {
+        let idx = self.shard_idx(entry.key);
+        if let Ok(mut guard) = self.shards[idx].lock() {
+            guard.store(entry);
+        }
+    }
+
+    pub fn clear(&self) {
+        for shard in &self.shards {
+            if let Ok(mut guard) = shard.lock() {
+                guard.clear();
+            }
+        }
+    }
+
+    pub fn new_generation(&self) {
+        for shard in &self.shards {
+            if let Ok(mut guard) = shard.lock() {
+                guard.new_generation();
+            }
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.shards
+            .iter()
+            .filter_map(|s| s.lock().ok().map(|g| g.len()))
+            .sum()
+    }
+
+    pub fn stats(&self) -> TTStats {
+        let mut merged = TTStats::default();
+        for shard in &self.shards {
+            if let Ok(guard) = shard.lock() {
+                let s = guard.stats();
+                merged.probes += s.probes;
+                merged.hits += s.hits;
+                merged.stores += s.stores;
+            }
+        }
+        merged
     }
 }
 
@@ -98,5 +238,30 @@ mod tests {
 
         state.add_nodes(10);
         assert_eq!(state.nodes_visited.load(Ordering::Relaxed), 10);
+    }
+
+    #[test]
+    fn shared_state_budget_checks_work() {
+        let state = SharedSearchState::new();
+        state.reset_accounting();
+        state.set_node_budget(Some(5));
+        assert!(!state.bump_nodes_and_check_budget(4));
+        assert!(state.bump_nodes_and_check_budget(1));
+    }
+
+    #[test]
+    fn shared_tt_store_and_probe() {
+        let tt = SharedTranspositionTable::new_with_mb(4, 2);
+        let entry = TTEntry {
+            key: 12345,
+            depth: 6,
+            score: 42,
+            bound: crate::search::transposition_table_v11::Bound::Exact,
+            best_move: Some(77),
+        };
+        tt.store(entry);
+        let probed = tt.probe(12345).expect("entry should exist");
+        assert_eq!(probed.key, 12345);
+        assert_eq!(probed.score, 42);
     }
 }
