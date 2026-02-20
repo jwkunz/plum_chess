@@ -10,13 +10,25 @@ You have two options: download a prebuilt binary or build the engine from source
 
 ### Option 1: Download a Prebuilt Binary
 
-Precompiled executables are available in the **releases** folder of this repository.
-Currently supported platforms:
+Precompiled executables are published on GitHub under **Releases** (tagged versions).
 
-* **Windows (Win32)**
-* **Linux (x86_64)**
+1. Open the project **Releases** page.
+2. Click the latest tagged release (`vX.Y.Z`).
+3. In **Assets**, download the binary matching your OS/architecture.
 
-Simply download the appropriate binary for your system.
+Asset naming format:
+
+```
+plum_chess-v<version>-<os>-<arch>[.exe]
+```
+
+Examples:
+
+* `plum_chess-v3.0.0-windows-x86_64.exe`
+* `plum_chess-v3.0.0-linux-x86_64`
+* `plum_chess-v3.0.0-macos-aarch64`
+
+You can also browse tags directly from the **Tags** tab, then open the corresponding release.
 
 ### Option 2: Build from Source
 
@@ -31,8 +43,10 @@ cargo build --release
 Once the build completes, the executable will be located at:
 
 ```
-target/release/plum_chess_X.X.X_YYY.exe
+target/release/plum_chess
 ```
+
+(On Windows: `target/release/plum_chess.exe`.)
 
 You may wish to copy this file to a more permanent or convenient location on your system.
 
@@ -91,5 +105,4 @@ The highest level plays at approximately level 1800 ELO as determined by centipa
 ## Enjoy!
 
 That’s it—set it up, experiment with the levels, and have fun playing against Plum Chess ♟️
-
 

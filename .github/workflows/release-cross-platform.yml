@@ -2,11 +2,8 @@ name: Build And Release Binaries
 
 on:
   push:
-    branches:
-      - master
     tags:
       - "v*"
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -82,6 +79,11 @@ jobs:
           echo "runner.os=${{ runner.os }}"
           echo "runner.arch=${{ runner.arch }}"
           uname -a || true
+
+      - name: Run test suite
+        run: |
+          set -euxo pipefail
+          cargo test --locked --all-targets
 
       - name: Build release binary
         run: |
