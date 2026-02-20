@@ -409,10 +409,21 @@ impl UciState {
     fn handle_go(&mut self, line: &str, out: &mut impl Write) -> Result<(), String> {
         let _ = self.stop_async_search_and_collect();
         let mut params = parse_go_params(line, &self.game_state)?;
-        if params.depth.is_none() {
+        if params.mate.is_some() && params.depth.is_none() && params.nodes.is_none() {
+            // `go mate N` should remain mate-driven and not be masked by a fixed-depth override.
+            if let Some(m) = params.mate {
+                params.depth = Some(m.saturating_mul(2).saturating_add(1).max(1));
+            }
+            writeln!(
+                out,
+                "info string go mate requested {:?}; using mate-priority search",
+                params.mate
+            )
+            .map_err(|e| e.to_string())?;
+        } else if params.depth.is_none() {
             params.depth = self.fixed_depth_override;
         }
-        if params.infinite || params.ponder {
+        if params.mate.is_none() && (params.infinite || params.ponder) {
             let start_mode = if params.ponder { "ponder" } else { "infinite" };
             self.start_async_search(params)?;
             writeln!(
@@ -1055,6 +1066,41 @@ mod tests {
         assert_eq!(params.mate, Some(3));
         assert!(params.ponder);
         assert!(params.infinite);
+    }
+
+    #[test]
+    fn go_mate_priority_overrides_fixed_depth_hint() {
+        let mut state = UciState::new();
+        state.fixed_depth_override = Some(1);
+        state
+            .handle_setoption("setoption name Skill Level value 3")
+            .expect("setoption should parse");
+        state
+            .handle_setoption("setoption name OwnBook value false")
+            .expect("setoption should parse");
+
+        let mut out = Vec::<u8>::new();
+        state
+            .handle_command("go mate 2", &mut out)
+            .expect("go mate should work");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(text.contains("go mate requested"));
+        assert!(text.contains("mate_mode plies_target 5"));
+        assert!(text.contains("bestmove"));
+    }
+
+    #[test]
+    fn go_mate_ignores_infinite_mode_and_returns_bestmove() {
+        let mut state = UciState::new();
+        let mut out = Vec::<u8>::new();
+        state
+            .handle_command("go infinite mate 1", &mut out)
+            .expect("go mate should be handled synchronously");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(text.contains("go mate requested"));
+        assert!(text.contains("bestmove"));
+        assert!(!text.contains("async search started"));
+        assert!(state.async_search.is_none());
     }
 
     #[test]
