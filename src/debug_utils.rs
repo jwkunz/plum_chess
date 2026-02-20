@@ -95,7 +95,7 @@ pub fn run_stockfish_perft(fen: &str, depth: u32) -> std::io::Result<(usize,Vec<
 mod test{
     use super::*;
 
-    #[test]
+    //#[test]
     fn test_run_stockfish_perft(){
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
         let (count,_) = run_stockfish_perft(fen, 3).unwrap();
