@@ -82,6 +82,7 @@ struct UciState {
     show_currline: bool,
     show_refutations: bool,
     uci_opponent: String,
+    uci_set_position_value: Option<String>,
     debug_mode: bool,
     time_strategy: String,
     async_search: Option<AsyncSearchHandle>,
@@ -128,6 +129,7 @@ impl UciState {
             show_currline: false,
             show_refutations: false,
             uci_opponent: "none none computer unknown".to_owned(),
+            uci_set_position_value: None,
             debug_mode: false,
             time_strategy: "adaptive".to_owned(),
             async_search: None,
@@ -188,6 +190,10 @@ impl UciState {
                     "option name UCI_EngineAbout type string default {}",
                     UCI_ENGINE_ABOUT
                 )?;
+                writeln!(
+                    out,
+                    "option name UCI_SetPositionValue type string default"
+                )?;
                 writeln!(out, "option name OwnBook type check default true")?;
                 writeln!(
                     out,
@@ -236,7 +242,9 @@ impl UciState {
                 self.debug_mode = mode.eq_ignore_ascii_case("on");
             }
             "register" => {
-                // Registration is not required by this engine.
+                if let Err(err) = self.handle_register(trimmed, out) {
+                    writeln!(out, "info string register error: {}", err)?;
+                }
             }
             "quit" => {
                 let _ = self.stop_async_search_and_collect();
@@ -351,6 +359,15 @@ impl UciState {
             self.engine.set_option("UCI_Opponent", &self.uci_opponent)?;
         } else if name.eq_ignore_ascii_case("UCI_EngineAbout") {
             // Read-only informational option in practice; accept and ignore for compatibility.
+        } else if name.eq_ignore_ascii_case("UCI_SetPositionValue") {
+            let normalized = value.trim().to_owned();
+            self.uci_set_position_value = if normalized.is_empty() {
+                None
+            } else {
+                Some(normalized.clone())
+            };
+            self.engine
+                .set_option("UCI_SetPositionValue", &normalized)?;
         } else if name.eq_ignore_ascii_case("TimeStrategy") {
             let normalized = value.trim().to_ascii_lowercase();
             self.time_strategy = normalized.clone();
@@ -419,6 +436,19 @@ impl UciState {
         }
 
         self.game_state = base_state;
+        Ok(())
+    }
+
+    fn handle_register(&mut self, line: &str, out: &mut impl Write) -> Result<(), String> {
+        let tokens = line.split_whitespace().collect::<Vec<_>>();
+        if tokens.get(1).is_some_and(|t| t.eq_ignore_ascii_case("later")) {
+            writeln!(out, "info string register deferred").map_err(|e| e.to_string())?;
+            writeln!(out, "registration ok").map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+        // Accept all registration payloads for compatibility. Engine does not
+        // require license keys at this time.
+        writeln!(out, "registration ok").map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -1222,6 +1252,18 @@ mod tests {
     }
 
     #[test]
+    fn setoption_uci_set_position_value_parse() {
+        let mut state = UciState::new();
+        state
+            .handle_setoption("setoption name UCI_SetPositionValue value 8/8/8/8/8/8/8/8=0")
+            .expect("uci set position value should parse");
+        assert_eq!(
+            state.uci_set_position_value.as_deref(),
+            Some("8/8/8/8/8/8/8/8=0")
+        );
+    }
+
+    #[test]
     fn parse_go_params_keeps_clock_fields_without_forcing_movetime() {
         let game_state = crate::game_state::game_state::GameState::new_game();
         let params = super::parse_go_params(
@@ -1491,6 +1533,7 @@ mod tests {
         assert!(uci_text.contains("UCI_ShowRefutations"));
         assert!(uci_text.contains("UCI_Opponent"));
         assert!(uci_text.contains("UCI_EngineAbout"));
+        assert!(uci_text.contains("UCI_SetPositionValue"));
 
         out.clear();
         state
@@ -1649,5 +1692,16 @@ mod tests {
             .expect("emit should succeed");
         let text = String::from_utf8(out).expect("utf8");
         assert!(text.contains("info score mate 1"));
+    }
+
+    #[test]
+    fn register_command_returns_registration_ok() {
+        let mut state = UciState::new();
+        let mut out = Vec::<u8>::new();
+        state
+            .handle_command("register later", &mut out)
+            .expect("register should succeed");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(text.contains("registration ok"));
     }
 }
