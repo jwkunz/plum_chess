@@ -23,6 +23,7 @@ use crate::utils::long_algebraic::{
 
 const UCI_ENGINE_NAME: &str = "Plum Chess";
 const UCI_ENGINE_AUTHOR: &str = "jwkunz using Codex";
+const UCI_ENGINE_ABOUT: &str = "Plum Chess by jwkunz using Codex";
 
 pub fn run_stdio_loop() -> io::Result<()> {
     let (output_tx, output_rx) = mpsc::channel::<String>();
@@ -78,6 +79,7 @@ struct UciState {
     show_wdl: bool,
     show_currline: bool,
     show_refutations: bool,
+    uci_opponent: String,
     debug_mode: bool,
     time_strategy: String,
     async_search: Option<AsyncSearchHandle>,
@@ -121,6 +123,7 @@ impl UciState {
             show_wdl: false,
             show_currline: false,
             show_refutations: false,
+            uci_opponent: "none none computer unknown".to_owned(),
             debug_mode: false,
             time_strategy: "adaptive".to_owned(),
             async_search: None,
@@ -170,6 +173,16 @@ impl UciState {
                 writeln!(out, "option name UCI_ShowWDL type check default false")?;
                 writeln!(out, "option name UCI_ShowCurrLine type check default false")?;
                 writeln!(out, "option name UCI_ShowRefutations type check default false")?;
+                writeln!(
+                    out,
+                    "option name UCI_Opponent type string default {}",
+                    self.uci_opponent
+                )?;
+                writeln!(
+                    out,
+                    "option name UCI_EngineAbout type string default {}",
+                    UCI_ENGINE_ABOUT
+                )?;
                 writeln!(out, "option name OwnBook type check default true")?;
                 writeln!(
                     out,
@@ -317,6 +330,11 @@ impl UciState {
         } else if name.eq_ignore_ascii_case("UCI_ShowRefutations") {
             let lower = value.to_ascii_lowercase();
             self.show_refutations = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
+        } else if name.eq_ignore_ascii_case("UCI_Opponent") {
+            self.uci_opponent = value.trim().to_owned();
+            self.engine.set_option("UCI_Opponent", &self.uci_opponent)?;
+        } else if name.eq_ignore_ascii_case("UCI_EngineAbout") {
+            // Read-only informational option in practice; accept and ignore for compatibility.
         } else if name.eq_ignore_ascii_case("TimeStrategy") {
             let normalized = value.trim().to_ascii_lowercase();
             self.time_strategy = normalized.clone();
@@ -533,6 +551,8 @@ impl UciState {
             if self.show_refutations { "true" } else { "false" },
         )?;
         self.engine
+            .set_option("UCI_Opponent", &self.uci_opponent)?;
+        self.engine
             .set_option("OwnBook", if self.own_book { "true" } else { "false" })?;
         self.engine
             .set_option("TimeStrategy", &self.time_strategy)?;
@@ -553,6 +573,7 @@ impl UciState {
         let chess960 = self.chess960;
         let show_currline = self.show_currline;
         let show_refutations = self.show_refutations;
+        let uci_opponent = self.uci_opponent.clone();
         let time_strategy = self.time_strategy.clone();
         let info_tx = self.async_info_tx.clone();
         let depth_override = self.fixed_depth_override;
@@ -591,6 +612,7 @@ impl UciState {
                 "UCI_ShowRefutations",
                 if show_refutations { "true" } else { "false" },
             );
+            let _ = worker_engine.set_option("UCI_Opponent", &uci_opponent);
             let _ = worker_engine.set_option("TimeStrategy", &time_strategy);
             worker_engine.new_game();
 
@@ -989,6 +1011,15 @@ mod tests {
     }
 
     #[test]
+    fn setoption_uci_opponent_parse() {
+        let mut state = UciState::new();
+        state
+            .handle_setoption("setoption name UCI_Opponent value GM 2800 human Gary Kasparov")
+            .expect("uci opponent should parse");
+        assert_eq!(state.uci_opponent, "GM 2800 human Gary Kasparov");
+    }
+
+    #[test]
     fn parse_go_params_keeps_clock_fields_without_forcing_movetime() {
         let game_state = crate::game_state::game_state::GameState::new_game();
         let params = super::parse_go_params(
@@ -1151,6 +1182,8 @@ mod tests {
         assert!(uci_text.contains("UCI_ShowWDL"));
         assert!(uci_text.contains("UCI_ShowCurrLine"));
         assert!(uci_text.contains("UCI_ShowRefutations"));
+        assert!(uci_text.contains("UCI_Opponent"));
+        assert!(uci_text.contains("UCI_EngineAbout"));
 
         out.clear();
         state
