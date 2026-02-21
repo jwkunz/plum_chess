@@ -66,6 +66,7 @@ pub mod engines {
     pub mod engine_greedy;
     pub mod engine_humanized_v5;
     pub mod engine_iterative_v16;
+    pub mod engine_iterative_v17;
     pub mod engine_random;
     pub mod engine_trait;
     pub mod time_management;

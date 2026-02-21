@@ -13,6 +13,7 @@ use std::thread::{self, JoinHandle};
 use crate::engines::engine_greedy::GreedyEngine;
 use crate::engines::engine_humanized_v5::HumanizedEngineV5;
 use crate::engines::engine_iterative_v16::IterativeEngine;
+use crate::engines::engine_iterative_v17::IterativeEngineV17;
 use crate::engines::engine_random::RandomEngine;
 use crate::engines::engine_trait::{Engine, GoParams};
 use crate::game_state::game_state::GameState;
@@ -1128,9 +1129,10 @@ fn build_engine(skill_level: u8) -> Box<dyn Engine> {
         1 => Box::new(RandomEngine::new()),
         2 => Box::new(GreedyEngine::new()),
         3..=17 => Box::new(HumanizedEngineV5::new(skill_level)),
+        // v6.0 rollout guardrail: keep level 18 on v16 as baseline.
         18 => Box::new(IterativeEngine::new_alpha_zero(8)),
-        19 => Box::new(IterativeEngine::new_alpha_zero(12)),
-        _ => Box::new(IterativeEngine::new_alpha_zero(16)),
+        19 => Box::new(IterativeEngineV17::new_alpha_zero(12)),
+        _ => Box::new(IterativeEngineV17::new_alpha_zero(16)),
     }
 }
 
@@ -1796,6 +1798,26 @@ mod tests {
             .expect("go should succeed");
         let text = String::from_utf8(out).expect("utf8");
         assert!(text.contains("iterative_engine_v16 default_depth 8"));
+        assert!(text.contains("bestmove "));
+    }
+
+    #[test]
+    fn level_19_uses_v17_scaffold_profile() {
+        let mut state = UciState::new();
+        let mut out = Vec::<u8>::new();
+        state
+            .handle_command("setoption name OwnBook value false", &mut out)
+            .expect("setoption should parse");
+        out.clear();
+        state
+            .handle_command("setoption name Skill Level value 19", &mut out)
+            .expect("setoption should parse");
+        out.clear();
+        state
+            .handle_command("go depth 1", &mut out)
+            .expect("go should succeed");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(text.contains("iterative_engine_v17 scaffold active"));
         assert!(text.contains("bestmove "));
     }
 
