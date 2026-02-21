@@ -15,6 +15,7 @@ use crate::moves::move_descriptions::{
     move_captured_piece_code, move_from, move_moved_piece_code, move_promotion_piece_code, move_to,
     piece_kind_from_code, FLAG_CAPTURE, NO_PIECE_CODE,
 };
+use crate::search::zobrist::refresh_game_state_hashes;
 use std::collections::{HashMap, HashSet};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{atomic::AtomicBool, Arc};
@@ -683,6 +684,8 @@ fn legal_move_count(game_state: &GameState, perspective: Color) -> i32 {
     }
     let mut tmp = game_state.clone();
     tmp.side_to_move = perspective;
+    // Keep incremental hash fields coherent when probing a flipped-side view.
+    refresh_game_state_hashes(&mut tmp);
     try_generate_legal_moves(&tmp)
         .map(|v| v.len() as i32)
         .unwrap_or(0)
@@ -920,5 +923,15 @@ mod tests {
                 generate_legal_move_descriptions_in_place(&mut probe).expect("legal moves");
             assert!(!legal.is_empty());
         }
+    }
+
+    #[test]
+    fn activity_score_side_flip_keeps_hashes_consistent() {
+        let game = crate::utils::fen_parser::parse_fen("8/8/3k4/3p4/4P3/3K4/8/8 w - - 0 1")
+            .expect("fen should parse");
+        let light = super::endgame_activity_score(&game, crate::game_state::chess_types::Color::Light);
+        let dark = super::endgame_activity_score(&game, crate::game_state::chess_types::Color::Dark);
+        assert!(light.abs() < 10_000);
+        assert!(dark.abs() < 10_000);
     }
 }
