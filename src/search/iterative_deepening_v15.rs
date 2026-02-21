@@ -1345,6 +1345,12 @@ fn is_quiet_move(move_description: u64) -> bool {
 fn lmr_reduction(depth: u8, move_index: usize, is_quiet: bool, in_check: bool) -> u8 {
     if !is_quiet || in_check || depth < 3 || move_index < 3 {
         0
+    } else if depth >= 9 && move_index >= 12 {
+        3
+    } else if depth >= 7 && move_index >= 7 {
+        2
+    } else if depth >= 5 && move_index >= 5 {
+        1
     } else if depth >= 6 && move_index >= 8 {
         2
     } else {
@@ -1378,9 +1384,9 @@ fn should_lmp_prune(
     }
 
     let threshold = match depth {
-        0 | 1 => 4,
-        2 => 8,
-        3 => 12,
+        0 | 1 => 3,
+        2 => 6,
+        3 => 10,
         _ => usize::MAX,
     };
 
@@ -1404,7 +1410,7 @@ struct NullMoveUndo {
 
 #[inline]
 fn should_try_null_move(depth: u8, in_check: bool, beta: i32, game_state: &GameState) -> bool {
-    if in_check || depth < 3 {
+    if in_check || depth < 4 {
         return false;
     }
     if beta > (MATE_SCORE - 1000) {
@@ -1418,7 +1424,7 @@ fn should_try_null_move(depth: u8, in_check: bool, beta: i32, game_state: &GameS
 
 #[inline]
 fn should_verify_null_cutoff(depth: u8, in_check: bool) -> bool {
-    !in_check && depth >= 6
+    !in_check && depth >= 8
 }
 
 #[inline]
