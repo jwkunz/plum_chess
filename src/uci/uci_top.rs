@@ -11,6 +11,7 @@ use std::sync::{
 use std::thread::{self, JoinHandle};
 
 use crate::engines::engine_greedy::GreedyEngine;
+use crate::engines::engine_humanized_v5::HumanizedEngineV5;
 use crate::engines::engine_iterative_v16::IterativeEngine;
 use crate::engines::engine_random::RandomEngine;
 use crate::engines::engine_trait::{Engine, GoParams};
@@ -1126,24 +1127,10 @@ fn build_engine(skill_level: u8) -> Box<dyn Engine> {
     match skill_level {
         1 => Box::new(RandomEngine::new()),
         2 => Box::new(GreedyEngine::new()),
-        3 => Box::new(IterativeEngine::new_standard(2)),
-        4 => Box::new(IterativeEngine::new_alpha_zero(2)),
-        5 => Box::new(IterativeEngine::new_standard(3)),
-        6 => Box::new(IterativeEngine::new_alpha_zero(3)),
-        7 => Box::new(IterativeEngine::new_standard(4)),
-        8 => Box::new(IterativeEngine::new_alpha_zero(4)),
-        9 => Box::new(IterativeEngine::new_standard(5)),
-        10 => Box::new(IterativeEngine::new_alpha_zero(5)),
-        11 => Box::new(IterativeEngine::new_standard(7)),
-        12 => Box::new(IterativeEngine::new_alpha_zero(7)),
-        13 => Box::new(IterativeEngine::new_standard(9)),
-        14 => Box::new(IterativeEngine::new_alpha_zero(9)),
-        15 => Box::new(IterativeEngine::new_standard(11)),
-        16 => Box::new(IterativeEngine::new_alpha_zero(11)),
-        17 => Box::new(IterativeEngine::new_standard(13)),
-        18 => Box::new(IterativeEngine::new_alpha_zero(13)),
-        19 => Box::new(IterativeEngine::new_alpha_zero(15)),
-        _ => Box::new(IterativeEngine::new_alpha_zero(20)),
+        3..=17 => Box::new(HumanizedEngineV5::new(skill_level)),
+        18 => Box::new(IterativeEngine::new_alpha_zero(8)),
+        19 => Box::new(IterativeEngine::new_alpha_zero(12)),
+        _ => Box::new(IterativeEngine::new_alpha_zero(16)),
     }
 }
 
