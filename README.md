@@ -94,32 +94,25 @@ You may also click the **weather icon** to configure additional game parameters 
 
 ## Difficulty Levels
 
-The engine difficulty levels are set like this:
+Plum Chess now uses a mixed ladder:
 
-```
-    match skill_level {
-        1 => Box::new(RandomEngine::new()),  // Used for debugging
-        2 => Box::new(GreedyEngine::new()), // Always attacks
-        3 => Box::new(IterativeEngine::new_standard(2)), // ~ ELO 400
-        4 => Box::new(IterativeEngine::new_alpha_zero(2)),
-        5 => Box::new(IterativeEngine::new_standard(3)), // ~ ELO 1000
-        6 => Box::new(IterativeEngine::new_alpha_zero(3)),
-        7 => Box::new(IterativeEngine::new_standard(4)), // ~ ELO 1300
-        8 => Box::new(IterativeEngine::new_alpha_zero(4)),
-        9 => Box::new(IterativeEngine::new_standard(5)), // ~ ELO 1800
-        10 => Box::new(IterativeEngine::new_alpha_zero(5)),
-        11 => Box::new(IterativeEngine::new_standard(7)),
-        12 => Box::new(IterativeEngine::new_alpha_zero(7)),
-        13 => Box::new(IterativeEngine::new_standard(9)),
-        14 => Box::new(IterativeEngine::new_alpha_zero(9)),
-        15 => Box::new(IterativeEngine::new_standard(11)),
-        16 => Box::new(IterativeEngine::new_alpha_zero(11)),
-        17 => Box::new(IterativeEngine::new_standard(13)),
-        18 => Box::new(IterativeEngine::new_alpha_zero(13)),
-        19 => Box::new(IterativeEngine::new_alpha_zero(15)),
-        _ => Box::new(IterativeEngine::new_alpha_zero(20)),
-    }
-'''
+- `1`: Random engine (diagnostic baseline)
+- `2`: Greedy engine (capture-first style)
+- `3..=17`: Humanized CPL engine (`engine_humanized_v5`)
+- `18`: Iterative v16 (best-move focused), depth `8`
+- `19`: Iterative v16 (best-move focused), depth `12`
+- `20+`: Iterative v16 (best-move focused), depth `16`
+
+For humanized levels (`3..=17`), the engine:
+
+- Runs normal search and collects top root candidates (MultiPV-style root set)
+- Computes centipawn loss (CPL) relative to the best move
+- Uses a strength percentage that scales linearly from:
+  - level `3` -> `60%`
+  - level `17` -> `100%`
+- Chooses moves with a CPL budget model, then applies linear weighted randomness
+  so lower levels play more human-like inaccuracies while higher levels converge
+  to stronger choices.
 
 ## Developer Notes
 
@@ -129,6 +122,7 @@ Additional internal documentation is available in `docs/`:
 - `docs/optimization.md`: search/engine optimization journey.
 - `docs/uci_enhancement.md`: UCI feature implementation journey.
 - `docs/multithread_roadmap.md`: major-version 4 threading roadmap and outcomes.
+- `docs/humanizing.md`: major-version 5 humanized CPL strategy guide.
 
 For thread scaling measurements, run:
 
