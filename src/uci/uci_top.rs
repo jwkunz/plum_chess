@@ -1760,6 +1760,46 @@ mod tests {
     }
 
     #[test]
+    fn level_3_uses_humanized_v5_engine_behavior() {
+        let mut state = UciState::new();
+        let mut out = Vec::<u8>::new();
+        state
+            .handle_command("setoption name OwnBook value false", &mut out)
+            .expect("setoption should parse");
+        out.clear();
+        state
+            .handle_command("setoption name Skill Level value 3", &mut out)
+            .expect("setoption should parse");
+        out.clear();
+        state
+            .handle_command("go depth 2", &mut out)
+            .expect("go should succeed");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(text.contains("humanized_v5"));
+        assert!(text.contains("bestmove "));
+    }
+
+    #[test]
+    fn level_18_uses_v16_depth_8_profile() {
+        let mut state = UciState::new();
+        let mut out = Vec::<u8>::new();
+        state
+            .handle_command("setoption name OwnBook value false", &mut out)
+            .expect("setoption should parse");
+        out.clear();
+        state
+            .handle_command("setoption name Skill Level value 18", &mut out)
+            .expect("setoption should parse");
+        out.clear();
+        state
+            .handle_command("go depth 1", &mut out)
+            .expect("go should succeed");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(text.contains("iterative_engine_v16 default_depth 8"));
+        assert!(text.contains("bestmove "));
+    }
+
+    #[test]
     fn cp_to_mate_moves_detects_mate_band() {
         assert_eq!(super::cp_to_mate_moves(29_999), Some(1));
         assert_eq!(super::cp_to_mate_moves(-29_998), Some(-1));
