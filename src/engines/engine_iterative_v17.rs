@@ -94,8 +94,7 @@ impl Engine for IterativeEngineV17 {
         if in_endgame_mode && winning_cp >= 200 {
             if let Some(chosen) = out.best_move {
                 if would_be_threefold_after_move(game_state, chosen) {
-                    let mut probe = game_state.clone();
-                    let legal = try_generate_legal_moves(&probe)
+                    let legal = try_generate_legal_moves(game_state)
                         .ok_or_else(|| "failed to generate legal moves".to_owned())?;
                     if let Some(replacement) =
                         select_non_repetition_best_material_move(game_state, &legal, chosen)
@@ -168,8 +167,7 @@ fn select_non_repetition_best_material_move(
 }
 
 fn is_mate_for_side_to_move(next: &GameState) -> bool {
-    let mut probe = next.clone();
-    let Some(replies) = try_generate_legal_moves(&probe) else {
+    let Some(replies) = try_generate_legal_moves(next) else {
         return false;
     };
     replies.is_empty() && is_king_in_check(next, next.side_to_move)
@@ -259,8 +257,7 @@ fn kpk_pawn_color(game_state: &GameState) -> Option<Color> {
 
 fn select_kpk_best_move(game_state: &GameState) -> Option<u64> {
     let pawn_color = kpk_pawn_color(game_state)?;
-    let mut probe = game_state.clone();
-    let legal = try_generate_legal_moves(&probe)?;
+    let legal = try_generate_legal_moves(game_state)?;
     let mut memo = HashMap::<u64, KpkOutcome>::new();
     let mut best = None;
     let mut best_outcome = KpkOutcome::Loss;
@@ -324,8 +321,7 @@ fn solve_kpk_outcome(
         return KpkOutcome::Draw;
     }
 
-    let mut probe = game_state.clone();
-    let legal = match try_generate_legal_moves(&probe) {
+    let legal = match try_generate_legal_moves(game_state) {
         Some(v) => v,
         None => {
             visiting.remove(&game_state.zobrist_key);
@@ -421,8 +417,7 @@ fn select_kbnk_best_move(game_state: &GameState) -> Option<u64> {
     if game_state.side_to_move != attacker {
         return None;
     }
-    let mut probe = game_state.clone();
-    let legal = try_generate_legal_moves(&probe)?;
+    let legal = try_generate_legal_moves(game_state)?;
     let mut best = None;
     let mut best_score = i32::MIN;
     for mv in legal {
@@ -443,8 +438,7 @@ fn select_kbnk_best_move(game_state: &GameState) -> Option<u64> {
 
 fn kbnk_progress_score(game_state: &GameState, attacker: Color) -> i32 {
     let defender = attacker.opposite();
-    let mut probe = game_state.clone();
-    let defender_moves = try_generate_legal_moves(&probe)
+    let defender_moves = try_generate_legal_moves(game_state)
         .map(|v| v.len() as i32)
         .unwrap_or(32);
     let defender_king_sq = king_square(game_state, defender).unwrap_or(0);
@@ -511,8 +505,7 @@ fn select_endgame_verified_move(
     params: &GoParams,
     fallback_best: Option<u64>,
 ) -> Option<u64> {
-    let mut probe = game_state.clone();
-    let legal = try_generate_legal_moves(&probe)?;
+    let legal = try_generate_legal_moves(game_state)?;
     if legal.is_empty() {
         return None;
     }
@@ -561,8 +554,7 @@ fn endgame_verify_negamax(
     if depth == 0 {
         return endgame_verify_quiescence(game_state, alpha, beta, root_color, 0);
     }
-    let mut probe = game_state.clone();
-    let legal = match try_generate_legal_moves(&probe) {
+    let legal = match try_generate_legal_moves(game_state) {
         Some(v) => v,
         None => return evaluate_for_root(game_state, root_color),
     };
@@ -611,8 +603,7 @@ fn endgame_verify_quiescence(
     if qply >= 4 {
         return alpha;
     }
-    let mut probe = game_state.clone();
-    let mut legal = match try_generate_legal_moves(&probe) {
+    let mut legal = match try_generate_legal_moves(game_state) {
         Some(v) => v,
         None => return alpha,
     };
@@ -686,15 +677,13 @@ fn endgame_activity_score(game_state: &GameState, root_color: Color) -> i32 {
 
 fn legal_move_count(game_state: &GameState, perspective: Color) -> i32 {
     if game_state.side_to_move == perspective {
-        let mut probe = game_state.clone();
-        return try_generate_legal_moves(&probe)
+        return try_generate_legal_moves(game_state)
             .map(|v| v.len() as i32)
             .unwrap_or(0);
     }
     let mut tmp = game_state.clone();
     tmp.side_to_move = perspective;
-    let mut probe = tmp;
-    try_generate_legal_moves(&probe)
+    try_generate_legal_moves(&tmp)
         .map(|v| v.len() as i32)
         .unwrap_or(0)
 }
@@ -914,5 +903,22 @@ mod tests {
 
         let non_race = GameState::new_game();
         assert!(!super::is_king_pawn_race_position(&non_race));
+    }
+
+    #[test]
+    fn endgame_validation_suite_returns_legal_moves() {
+        let fens = [
+            "8/8/3k4/3p4/4P3/3K4/8/8 w - - 0 1",
+            "8/8/8/8/8/8/4KB2/6Nk w - - 0 1",
+            "8/8/8/8/8/4k3/4P3/4K3 w - - 0 1",
+            "8/8/8/8/8/8/5k2/6KR w - - 0 1",
+        ];
+        for fen in fens {
+            let game = crate::utils::fen_parser::parse_fen(fen).expect("fen should parse");
+            let mut probe = game.clone();
+            let legal =
+                generate_legal_move_descriptions_in_place(&mut probe).expect("legal moves");
+            assert!(!legal.is_empty());
+        }
     }
 }
