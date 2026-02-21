@@ -714,9 +714,9 @@ fn endgame_extension_ply(game_state: &GameState, mv: u64, next: &GameState) -> u
 
 #[inline]
 fn extended_child_depth(depth: u8, extension_ply: u8) -> u8 {
-    let base = depth.saturating_sub(1);
-    let bonus = if depth > 2 { extension_ply.min(1) } else { 0 };
-    base.saturating_add(bonus)
+    let _ = extension_ply;
+    // Keep depth strictly descending to avoid recursive non-termination.
+    depth.saturating_sub(1)
 }
 
 fn is_king_pawn_race_position(game_state: &GameState) -> bool {
@@ -894,8 +894,8 @@ mod tests {
     fn endgame_extension_depth_is_bounded_and_descending() {
         assert_eq!(super::extended_child_depth(1, 2), 0);
         assert_eq!(super::extended_child_depth(2, 2), 1);
-        assert_eq!(super::extended_child_depth(3, 2), 3);
-        assert_eq!(super::extended_child_depth(6, 2), 6);
+        assert_eq!(super::extended_child_depth(3, 2), 2);
+        assert_eq!(super::extended_child_depth(6, 2), 5);
     }
 
     #[test]

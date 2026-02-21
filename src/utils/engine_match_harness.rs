@@ -130,17 +130,60 @@ pub fn play_engine_match(
     seed: u64,
     config: MatchConfig,
 ) -> Result<MatchResult, String> {
-    let mut state = GameState::new_game();
+    play_engine_match_from_state_internal(
+        GameState::new_game(),
+        &mut engine_white,
+        &mut engine_black,
+        seed,
+        config,
+        true,
+    )
+}
+
+/// Play a single seeded engine-vs-engine match from a caller-provided state.
+///
+/// This entrypoint bypasses random opening plies and is intended for curated
+/// acceptance suites (for example endgame conversion testing).
+pub fn play_engine_match_from_state(
+    mut engine_white: Box<dyn Engine>,
+    mut engine_black: Box<dyn Engine>,
+    start_state: GameState,
+    seed: u64,
+    config: MatchConfig,
+) -> Result<MatchResult, String> {
+    play_engine_match_from_state_internal(
+        start_state,
+        &mut engine_white,
+        &mut engine_black,
+        seed,
+        config,
+        false,
+    )
+}
+
+fn play_engine_match_from_state_internal(
+    mut state: GameState,
+    engine_white: &mut Box<dyn Engine>,
+    engine_black: &mut Box<dyn Engine>,
+    seed: u64,
+    config: MatchConfig,
+    apply_random_opening: bool,
+) -> Result<MatchResult, String> {
     engine_white.new_game();
     engine_black.new_game();
 
-    let (state_after_opening, opening_moves_lan) = apply_seeded_random_opening(
-        &state,
-        seed,
-        config.opening_min_plies,
-        config.opening_max_plies,
-    )?;
-    state = state_after_opening;
+    let opening_moves_lan = if apply_random_opening {
+        let (state_after_opening, opening_moves_lan) = apply_seeded_random_opening(
+            &state,
+            seed,
+            config.opening_min_plies,
+            config.opening_max_plies,
+        )?;
+        state = state_after_opening;
+        opening_moves_lan
+    } else {
+        Vec::new()
+    };
 
     let mut played_moves_lan = Vec::<String>::new();
     let mut white_move_count = 0u32;
@@ -200,13 +243,12 @@ pub fn play_engine_match(
         }
 
         let mover = state.side_to_move;
-        let engine = match mover {
-            Color::Light => &mut engine_white,
-            Color::Dark => &mut engine_black,
-        };
-
         let started = Instant::now();
-        let out = engine.choose_move(&state, &config.go_params)?;
+        let out = if mover == Color::Light {
+            engine_white.choose_move(&state, &config.go_params)?
+        } else {
+            engine_black.choose_move(&state, &config.go_params)?
+        };
         let elapsed_ns = started.elapsed().as_nanos();
 
         match mover {
