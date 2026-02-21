@@ -43,7 +43,7 @@ const MAX_PLY: usize = 128;
 const QUIESCENCE_DELTA_MARGIN: i32 = 120;
 const SEE_BAD_CAPTURE_THRESHOLD: i32 = -120;
 const QUIESCENCE_MAX_PLY: u8 = 10;
-const QUIESCENCE_CHECK_PLY: u8 = 2;
+const QUIESCENCE_CHECK_PLY: u8 = 1;
 const MATE_TT_THRESHOLD: i32 = MATE_SCORE - 1000;
 
 #[derive(Debug, Clone)]
@@ -1288,9 +1288,17 @@ fn append_quiescence_check_moves(
     game_state: &mut GameState,
     moves: &mut Vec<u64>,
 ) -> MoveGenResult<()> {
+    let mut seen = [false; 4096];
+    for &mv in moves.iter() {
+        let key = ((usize::from(crate::moves::move_descriptions::move_from(mv))) << 6)
+            | usize::from(crate::moves::move_descriptions::move_to(mv));
+        seen[key] = true;
+    }
     let all = generate_legal_move_descriptions_in_place(game_state)?;
     for mv in all {
-        if is_tactical_move(mv) || moves.contains(&mv) {
+        let key = ((usize::from(crate::moves::move_descriptions::move_from(mv))) << 6)
+            | usize::from(crate::moves::move_descriptions::move_to(mv));
+        if is_tactical_move(mv) || seen[key] {
             continue;
         }
         make_move_in_place(game_state, mv).map_err(|x| {
@@ -1302,6 +1310,7 @@ fn append_quiescence_check_moves(
         })?;
         if gives_check {
             moves.push(mv);
+            seen[key] = true;
         }
     }
     Ok(())
