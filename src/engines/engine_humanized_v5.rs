@@ -1,9 +1,9 @@
 //! Humanized CPL engine scaffold for major version 5.
 //!
-//! This module starts with a compatibility wrapper around v16 iterative search
-//! and will progressively add CPL-based top-candidate selection behavior.
+//! This module wraps v17 iterative search and applies CPL-based candidate
+//! selection behavior to emulate more human move quality by skill level.
 
-use crate::engines::engine_iterative_v16::IterativeEngine;
+use crate::engines::engine_iterative_v17::IterativeEngineV17;
 use crate::engines::engine_trait::{Engine, EngineOutput, GoParams};
 use crate::game_state::game_state::GameState;
 use crate::utils::long_algebraic::long_algebraic_to_move_description;
@@ -12,7 +12,7 @@ use std::sync::{atomic::AtomicBool, Arc};
 
 pub struct HumanizedEngineV5 {
     level: u8,
-    inner: IterativeEngine,
+    inner: IterativeEngineV17,
 }
 
 impl HumanizedEngineV5 {
@@ -20,7 +20,7 @@ impl HumanizedEngineV5 {
         let default_depth = default_depth_for_level(level);
         Self {
             level,
-            inner: IterativeEngine::new_standard(default_depth),
+            inner: IterativeEngineV17::new_standard(default_depth),
         }
     }
 }
@@ -289,6 +289,28 @@ mod tests {
         let mut probe = game.clone();
         let legal = generate_legal_move_descriptions_in_place(&mut probe).expect("legal moves");
         assert!(legal.contains(&best));
+    }
+
+    #[test]
+    fn engine_emits_v17_backend_marker() {
+        let game = GameState::new_game();
+        let mut engine = HumanizedEngineV5::new(12);
+        engine
+            .set_option("OwnBook", "false")
+            .expect("setoption should work");
+        let out = engine
+            .choose_move(
+                &game,
+                &GoParams {
+                    depth: Some(1),
+                    ..GoParams::default()
+                },
+            )
+            .expect("engine should choose move");
+        assert!(out
+            .info_lines
+            .iter()
+            .any(|l| l.contains("iterative_engine_v17")));
     }
 
     #[test]
