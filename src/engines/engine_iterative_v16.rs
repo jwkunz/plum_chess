@@ -717,56 +717,60 @@ impl IterativeEngine {
                 let standard = EndgameTaperedScorerV14::standard();
                 let alpha_zero = EndgameTaperedScorerV14::alpha_zero();
                 let mut out = Vec::<RankedCandidate>::new();
+                const ROOT_WORK_CHUNK: usize = 3;
                 while !shared_local.should_stop() {
-                    let idx = work_index_local.fetch_add(1, Ordering::Relaxed);
-                    if idx >= roots_local.len() {
+                    let start = work_index_local.fetch_add(ROOT_WORK_CHUNK, Ordering::Relaxed);
+                    if start >= roots_local.len() {
                         break;
                     }
-                    if shared_local.should_stop() {
-                        break;
-                    }
-                    if stop_signal
-                        .as_ref()
-                        .is_some_and(|f| f.load(Ordering::Relaxed))
-                    {
-                        shared_local.request_stop();
-                        break;
-                    }
-                    if shared_local.bump_nodes_and_check_budget(1) {
-                        shared_local.request_stop();
-                        break;
-                    }
-                    let mv = roots_local[idx];
-                    let candidate = match scorer_kind {
-                        IterativeScorerKind::Standard => score_root_candidate(
-                            &game,
-                            mv,
-                            &standard,
-                            depth,
-                            &move_generator,
-                            &mut local_tt,
-                            stop_signal.clone(),
-                            node_cap,
-                            movetime_ms,
-                            Some(shared_tt.as_ref()),
-                        ),
-                        IterativeScorerKind::AlphaZero => score_root_candidate(
-                            &game,
-                            mv,
-                            &alpha_zero,
-                            depth,
-                            &move_generator,
-                            &mut local_tt,
-                            stop_signal.clone(),
-                            node_cap,
-                            movetime_ms,
-                            Some(shared_tt.as_ref()),
-                        ),
-                    };
-                    out.push(candidate);
-                    if shared_local.time_budget_exceeded() {
-                        shared_local.request_stop();
-                        break;
+                    let end = (start + ROOT_WORK_CHUNK).min(roots_local.len());
+                    for idx in start..end {
+                        if shared_local.should_stop() {
+                            break;
+                        }
+                        if stop_signal
+                            .as_ref()
+                            .is_some_and(|f| f.load(Ordering::Relaxed))
+                        {
+                            shared_local.request_stop();
+                            break;
+                        }
+                        if shared_local.bump_nodes_and_check_budget(1) {
+                            shared_local.request_stop();
+                            break;
+                        }
+                        let mv = roots_local[idx];
+                        let candidate = match scorer_kind {
+                            IterativeScorerKind::Standard => score_root_candidate(
+                                &game,
+                                mv,
+                                &standard,
+                                depth,
+                                &move_generator,
+                                &mut local_tt,
+                                stop_signal.clone(),
+                                node_cap,
+                                movetime_ms,
+                                Some(shared_tt.as_ref()),
+                            ),
+                            IterativeScorerKind::AlphaZero => score_root_candidate(
+                                &game,
+                                mv,
+                                &alpha_zero,
+                                depth,
+                                &move_generator,
+                                &mut local_tt,
+                                stop_signal.clone(),
+                                node_cap,
+                                movetime_ms,
+                                Some(shared_tt.as_ref()),
+                            ),
+                        };
+                        out.push(candidate);
+                        if shared_local.time_budget_exceeded() {
+                            shared_local.request_stop();
+                            break;
+                        }
                     }
                 }
                 out
