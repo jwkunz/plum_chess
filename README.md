@@ -114,15 +114,26 @@ For humanized levels (`3..=17`), the engine:
   so lower levels play more human-like inaccuracies while higher levels converge
   to stronger choices.
 
+## Documentation Directory
+
+The `docs/` directory contains the project guides and roadmap history:
+
+- `docs/code_structure.md`
+  - Current architecture and module interaction map.
+- `docs/optimization.md`
+  - Search and engine optimization evolution guide.
+- `docs/uci_enhancement.md`
+  - UCI implementation and compliance journey.
+- `docs/multithread_roadmap.md`
+  - Major version 4 multi-threading roadmap and outcomes.
+- `docs/humanizing.md`
+  - Major version 5 humanized CPL strategy guide.
+- `docs/requirements/v5.md`
+  - Locked requirements/spec for the v5 humanized engine effort.
+- `docs/engine-interface.txt`
+  - Reference UCI protocol specification text.
+
 ## Developer Notes
-
-Additional internal documentation is available in `docs/`:
-
-- `docs/code_structure.md`: architecture and module map.
-- `docs/optimization.md`: search/engine optimization journey.
-- `docs/uci_enhancement.md`: UCI feature implementation journey.
-- `docs/multithread_roadmap.md`: major-version 4 threading roadmap and outcomes.
-- `docs/humanizing.md`: major-version 5 humanized CPL strategy guide.
 
 For thread scaling measurements, run:
 

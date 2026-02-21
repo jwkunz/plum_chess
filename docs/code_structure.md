@@ -9,8 +9,8 @@ The codebase is organized by responsibility:
 - `src/game_state/`: core chess state types and constants.
 - `src/moves/`: low-level attack/bitboard primitives and packed move encoding.
 - `src/move_generation/`: legal move generation, move application, attack/check checks, and perft.
-- `src/search/`: board scoring interfaces and iterative deepening negamax alpha-beta.
-- `src/engines/`: pluggable engine implementations (random/greedy/iterative).
+- `src/search/`: board scoring interfaces and iterative deepening negamax alpha-beta variants.
+- `src/engines/`: pluggable engine implementations (random/greedy/humanized/iterative + time mgmt).
 - `src/uci/`: UCI protocol command loop and engine orchestration.
 - `src/utils/`: notation/parsing/serialization/debug utilities (algebraic, FEN, PGN, rendering).
 - `src/main.rs`: binary entry point (launches UCI loop).
@@ -103,11 +103,12 @@ Contains configurable evaluation and tree search logic independent of UCI.
 ### Key files
 - `board_scoring.rs`
   - `BoardScorer` trait for modular scoring.
-  - `MaterialScorer` baseline implementation.
-- `iterative_deepening.rs`
-  - iterative deepening driver.
-  - negamax alpha-beta core.
-  - terminal score handling for mate/stalemate.
+  - material and endgame-aware scoring variants.
+- `iterative_deepening_v15.rs`
+  - active search backbone used by v16 engine wrapper.
+  - negamax alpha-beta, pruning and ordering stack, TT integration.
+- `threading.rs`
+  - threading model config, shared budget state, shared TT façade.
 
 ## Engine Layer (`src/engines`)
 
@@ -125,8 +126,12 @@ Wraps strategy-specific move selection behind a shared interface callable from U
   - random legal move.
 - `engine_greedy.rs` (difficulty 2)
   - highest immediate captured-material move.
-- `engine_iterative.rs` (difficulties 3-5)
-  - iterative deepening alpha-beta with material scoring.
+- `engine_humanized_v5.rs` (difficulties 3-17)
+  - top-candidate CPL budgeting with weighted randomization.
+- `engine_iterative_v16.rs` (difficulties 18+)
+  - strongest deterministic/parallel iterative search profile.
+- `time_management.rs`
+  - reusable per-move budgeting (`Fraction20`, `AdaptiveV13`).
 
 ## UCI Layer (`src/uci`)
 
@@ -177,15 +182,17 @@ digraph engine_selection {
   skill [label="UCI option:\nSkill Level"];
   e1 [label="1 -> RandomEngine"];
   e2 [label="2 -> GreedyEngine"];
-  e3 [label="3 -> IterativeEngine(depth=1)"];
-  e4 [label="4 -> IterativeEngine(depth=3)"];
-  e5 [label="5 -> IterativeEngine(depth=5)"];
+  e3 [label="3..17 -> HumanizedEngineV5"];
+  e18 [label="18 -> IterativeEngineV16(depth=8)"];
+  e19 [label="19 -> IterativeEngineV16(depth=12)"];
+  e20 [label="20+ -> IterativeEngineV16(depth=16)"];
 
   skill -> e1;
   skill -> e2;
   skill -> e3;
-  skill -> e4;
-  skill -> e5;
+  skill -> e18;
+  skill -> e19;
+  skill -> e20;
 }
 ```
 
@@ -209,5 +216,6 @@ The project currently validates correctness primarily through:
 - notation/parser round-trip tests (FEN/PGN/algebraic/long algebraic).
 - search unit tests for baseline behavior.
 - UCI command-state behavior tests.
+- humanized-v5 static-position and CPL-shaping tests.
 
 This gives high confidence that move legality and protocol integration remain stable while engine strength evolves.
