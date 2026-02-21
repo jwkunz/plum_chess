@@ -6,10 +6,11 @@
 use crate::engines::engine_iterative_v16::IterativeEngine;
 use crate::engines::engine_trait::{Engine, EngineOutput, GoParams};
 use crate::game_state::game_state::GameState;
+use crate::utils::long_algebraic::long_algebraic_to_move_description;
+use rand::Rng;
 use std::sync::{atomic::AtomicBool, Arc};
 
 pub struct HumanizedEngineV5 {
-    #[allow(dead_code)]
     level: u8,
     inner: IterativeEngine,
 }
@@ -64,6 +65,88 @@ fn allowed_cpl_loss(percent: f64) -> i32 {
     raw.clamp(min_cpl, max_cpl)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ScoredMove {
+    mv: u64,
+    cp: i32,
+}
+
+fn parse_multipv_candidates(info_lines: &[String], game_state: &GameState) -> Vec<ScoredMove> {
+    let mut out = Vec::<ScoredMove>::new();
+    for line in info_lines {
+        if !line.contains(" multipv ") || !line.contains(" score cp ") || !line.contains(" pv ") {
+            continue;
+        }
+        let Some(cp_idx) = line.find(" score cp ") else {
+            continue;
+        };
+        let cp_part = &line[(cp_idx + " score cp ".len())..];
+        let Some(cp_token) = cp_part.split_whitespace().next() else {
+            continue;
+        };
+        let Ok(cp) = cp_token.parse::<i32>() else {
+            continue;
+        };
+        let Some(pv_idx) = line.find(" pv ") else {
+            continue;
+        };
+        let pv_part = &line[(pv_idx + " pv ".len())..];
+        let Some(first_lan) = pv_part.split_whitespace().next() else {
+            continue;
+        };
+        let Ok(mv) = long_algebraic_to_move_description(first_lan, game_state) else {
+            continue;
+        };
+        if out.iter().any(|x| x.mv == mv) {
+            continue;
+        }
+        out.push(ScoredMove { mv, cp });
+    }
+    out.sort_by(|a, b| b.cp.cmp(&a.cp));
+    out
+}
+
+fn choose_humanized_move(
+    candidates: &[ScoredMove],
+    level: u8,
+    rng: &mut impl Rng,
+) -> Option<(u64, i32, i32)> {
+    if candidates.len() < 3 {
+        return None;
+    }
+    let best = candidates[0];
+    let percent = strength_percent(level);
+    let allowed = allowed_cpl_loss(percent);
+
+    let mut allowed_moves = Vec::<(ScoredMove, i32)>::new();
+    for c in candidates {
+        let loss = (best.cp - c.cp).max(0);
+        if loss <= allowed {
+            allowed_moves.push((*c, loss));
+        }
+    }
+    if allowed_moves.is_empty() {
+        return Some((best.mv, 0, allowed));
+    }
+
+    let mut total_weight = 0u64;
+    let mut weighted = Vec::<(ScoredMove, i32, u64)>::new();
+    for (c, loss) in allowed_moves {
+        let w = u64::from((allowed - loss + 1).max(1) as u32);
+        total_weight += w;
+        weighted.push((c, loss, w));
+    }
+    let mut pick = rng.random_range(0..total_weight);
+    for (c, loss, w) in weighted {
+        if pick < w {
+            return Some((c.mv, loss, allowed));
+        }
+        pick -= w;
+    }
+
+    Some((best.mv, 0, allowed))
+}
+
 impl Engine for HumanizedEngineV5 {
     fn new_game(&mut self) {
         self.inner.new_game();
@@ -82,13 +165,42 @@ impl Engine for HumanizedEngineV5 {
         game_state: &GameState,
         params: &GoParams,
     ) -> Result<EngineOutput, String> {
-        self.inner.choose_move(game_state, params)
+        // Keep behavior after opening-book handling by letting the underlying
+        // engine make that choice first.
+        let _ = self.inner.set_option("MultiPV", "3");
+        let mut out = self.inner.choose_move(game_state, params)?;
+        if out
+            .info_lines
+            .iter()
+            .any(|l| l.contains("opening book move"))
+        {
+            return Ok(out);
+        }
+
+        let candidates = parse_multipv_candidates(&out.info_lines, game_state);
+        let mut rng = rand::rng();
+        if let Some((mv, loss, allowed)) = choose_humanized_move(&candidates, self.level, &mut rng)
+        {
+            out.best_move = Some(mv);
+            out.info_lines.push(format!(
+                "info string humanized_v5 selected_cpl_loss {} allowed_cpl {} level {}",
+                loss, allowed, self.level
+            ));
+        }
+        Ok(out)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{allowed_cpl_loss, cpl_bounds, default_depth_for_level, strength_percent};
+    use super::{
+        allowed_cpl_loss, choose_humanized_move, cpl_bounds, default_depth_for_level,
+        parse_multipv_candidates, strength_percent, HumanizedEngineV5, ScoredMove,
+    };
+    use crate::engines::engine_trait::{Engine, GoParams};
+    use crate::game_state::game_state::GameState;
+    use crate::move_generation::legal_move_generator::generate_legal_move_descriptions_in_place;
+    use rand::SeedableRng;
 
     #[test]
     fn v5_default_depth_scales_across_level_bands() {
@@ -122,5 +234,60 @@ mod tests {
         let high = allowed_cpl_loss(1.0);
         assert!(low > high);
         assert_eq!(high, 0);
+    }
+
+    #[test]
+    fn parse_multipv_candidates_extracts_scored_moves() {
+        let game = GameState::new_game();
+        let lines = vec![
+            "info depth 3 multipv 1 score cp 52 pv e2e4 e7e5".to_owned(),
+            "info depth 3 multipv 2 score cp 48 pv d2d4 d7d5".to_owned(),
+            "info depth 3 multipv 3 score cp 39 pv g1f3 g8f6".to_owned(),
+        ];
+        let parsed = parse_multipv_candidates(&lines, &game);
+        assert_eq!(parsed.len(), 3);
+        assert!(parsed[0].cp >= parsed[1].cp);
+    }
+
+    #[test]
+    fn choose_humanized_move_returns_none_when_fewer_than_three() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(7);
+        let candidates = vec![ScoredMove { mv: 1, cp: 10 }, ScoredMove { mv: 2, cp: 8 }];
+        assert!(choose_humanized_move(&candidates, 10, &mut rng).is_none());
+    }
+
+    #[test]
+    fn choose_humanized_move_prefers_within_allowed_loss() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(9);
+        let candidates = vec![
+            ScoredMove { mv: 10, cp: 100 },
+            ScoredMove { mv: 20, cp: 95 },
+            ScoredMove { mv: 30, cp: 80 },
+        ];
+        let chosen = choose_humanized_move(&candidates, 17, &mut rng).expect("should choose");
+        assert_eq!(chosen.0, 10);
+        assert_eq!(chosen.2, 0);
+    }
+
+    #[test]
+    fn engine_returns_legal_move_on_static_position() {
+        let game = GameState::new_game();
+        let mut engine = HumanizedEngineV5::new(10);
+        engine
+            .set_option("OwnBook", "false")
+            .expect("setoption should work");
+        let out = engine
+            .choose_move(
+                &game,
+                &GoParams {
+                    depth: Some(2),
+                    ..GoParams::default()
+                },
+            )
+            .expect("engine should choose move");
+        let best = out.best_move.expect("best move");
+        let mut probe = game.clone();
+        let legal = generate_legal_move_descriptions_in_place(&mut probe).expect("legal moves");
+        assert!(legal.contains(&best));
     }
 }
