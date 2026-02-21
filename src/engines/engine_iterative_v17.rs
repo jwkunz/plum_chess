@@ -71,6 +71,11 @@ impl Engine for IterativeEngineV17 {
                     .push("info string iterative_engine_v17 kpk_exact_applied".to_owned());
             }
         }
+        if let Some(best) = select_kbnk_best_move(game_state) {
+            out.best_move = Some(best);
+            out.info_lines
+                .push("info string iterative_engine_v17 kbnk_logic_applied".to_owned());
+        }
         let winning_cp = extract_last_cp_score(&out.info_lines).unwrap_or(0);
         if in_endgame_mode && winning_cp >= 200 {
             if let Some(chosen) = out.best_move {
@@ -369,6 +374,124 @@ fn solve_kpk_outcome(
     result
 }
 
+fn kbnk_attacker_color(game_state: &GameState) -> Option<Color> {
+    let mut side_with_kbn = None;
+    for color in [Color::Light, Color::Dark] {
+        let idx = color.index();
+        let bishops = game_state.pieces[idx][PieceKind::Bishop.index()].count_ones();
+        let knights = game_state.pieces[idx][PieceKind::Knight.index()].count_ones();
+        let pawns = game_state.pieces[idx][PieceKind::Pawn.index()].count_ones();
+        let rooks = game_state.pieces[idx][PieceKind::Rook.index()].count_ones();
+        let queens = game_state.pieces[idx][PieceKind::Queen.index()].count_ones();
+        if bishops == 1 && knights == 1 && pawns == 0 && rooks == 0 && queens == 0 {
+            side_with_kbn = Some(color);
+        }
+    }
+    let attacker = side_with_kbn?;
+    let defender = attacker.opposite();
+    let d_idx = defender.index();
+    let defender_non_king = game_state.pieces[d_idx][PieceKind::Pawn.index()].count_ones()
+        + game_state.pieces[d_idx][PieceKind::Knight.index()].count_ones()
+        + game_state.pieces[d_idx][PieceKind::Bishop.index()].count_ones()
+        + game_state.pieces[d_idx][PieceKind::Rook.index()].count_ones()
+        + game_state.pieces[d_idx][PieceKind::Queen.index()].count_ones();
+    if defender_non_king == 0 {
+        Some(attacker)
+    } else {
+        None
+    }
+}
+
+fn select_kbnk_best_move(game_state: &GameState) -> Option<u64> {
+    let attacker = kbnk_attacker_color(game_state)?;
+    if game_state.side_to_move != attacker {
+        return None;
+    }
+    let mut probe = game_state.clone();
+    let legal = generate_legal_move_descriptions_in_place(&mut probe).ok()?;
+    let mut best = None;
+    let mut best_score = i32::MIN;
+    for mv in legal {
+        let Ok(next) = apply_move(game_state, mv) else {
+            continue;
+        };
+        if is_mate_for_side_to_move(&next) {
+            return Some(mv);
+        }
+        let score = kbnk_progress_score(&next, attacker);
+        if score > best_score {
+            best_score = score;
+            best = Some(mv);
+        }
+    }
+    best
+}
+
+fn kbnk_progress_score(game_state: &GameState, attacker: Color) -> i32 {
+    let defender = attacker.opposite();
+    let mut probe = game_state.clone();
+    let defender_moves = generate_legal_move_descriptions_in_place(&mut probe)
+        .map(|v| v.len() as i32)
+        .unwrap_or(32);
+    let defender_king_sq = king_square(game_state, defender).unwrap_or(0);
+    let attacker_king_sq = king_square(game_state, attacker).unwrap_or(0);
+    let bishop_dark = bishop_on_dark_square(game_state, attacker).unwrap_or(true);
+    let target_corners = if bishop_dark {
+        [0u8, 63u8] // a1, h8
+    } else {
+        [7u8, 56u8] // h1, a8
+    };
+    let corner_dist = target_corners
+        .iter()
+        .map(|c| manhattan(defender_king_sq, *c))
+        .min()
+        .unwrap_or(14) as i32;
+    let king_dist = manhattan(attacker_king_sq, defender_king_sq) as i32;
+    let in_target_corner = target_corners.contains(&defender_king_sq);
+    let mut score = 0i32;
+    score -= corner_dist * 24;
+    score -= defender_moves * 18;
+    score -= king_dist * 7;
+    if in_target_corner {
+        score += 80;
+    }
+    score
+}
+
+fn bishop_on_dark_square(game_state: &GameState, color: Color) -> Option<bool> {
+    let bb = game_state.pieces[color.index()][PieceKind::Bishop.index()];
+    if bb == 0 {
+        return None;
+    }
+    let sq = bb.trailing_zeros() as u8;
+    Some(is_dark_square(sq))
+}
+
+fn king_square(game_state: &GameState, color: Color) -> Option<u8> {
+    let bb = game_state.pieces[color.index()][PieceKind::King.index()];
+    if bb == 0 {
+        None
+    } else {
+        Some(bb.trailing_zeros() as u8)
+    }
+}
+
+#[inline]
+fn is_dark_square(square: u8) -> bool {
+    let file = square % 8;
+    let rank = square / 8;
+    (file + rank) % 2 == 0
+}
+
+#[inline]
+fn manhattan(a: u8, b: u8) -> u8 {
+    let af = (a % 8) as i8;
+    let ar = (a / 8) as i8;
+    let bf = (b % 8) as i8;
+    let br = (b / 8) as i8;
+    ((af - bf).abs() + (ar - br).abs()) as u8
+}
+
 #[cfg(test)]
 mod tests {
     use super::IterativeEngineV17;
@@ -439,5 +562,17 @@ mod tests {
         let mut visiting = std::collections::HashSet::new();
         let outcome = super::solve_kpk_outcome(&game, &mut memo, &mut visiting, 0);
         assert_eq!(outcome, super::KpkOutcome::Draw);
+    }
+
+    #[test]
+    fn kbnk_detection_and_selection_work() {
+        let game = crate::utils::fen_parser::parse_fen("8/8/8/8/8/8/4KB2/6Nk w - - 0 1")
+            .expect("fen should parse");
+        assert_eq!(
+            super::kbnk_attacker_color(&game),
+            Some(crate::game_state::chess_types::Color::Light)
+        );
+        let best = super::select_kbnk_best_move(&game);
+        assert!(best.is_some());
     }
 }
