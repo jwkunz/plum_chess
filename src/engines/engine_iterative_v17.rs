@@ -11,8 +11,12 @@ use crate::game_state::game_state::GameState;
 use crate::move_generation::legal_move_apply::apply_move;
 use crate::move_generation::legal_move_checks::is_king_in_check;
 use crate::move_generation::legal_move_generator::generate_legal_move_descriptions_in_place;
-use crate::moves::move_descriptions::piece_kind_from_code;
+use crate::moves::move_descriptions::{
+    move_captured_piece_code, move_from, move_moved_piece_code, move_promotion_piece_code, move_to,
+    piece_kind_from_code, FLAG_CAPTURE, NO_PIECE_CODE,
+};
 use std::collections::{HashMap, HashSet};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{atomic::AtomicBool, Arc};
 
 pub struct IterativeEngineV17 {
@@ -60,6 +64,7 @@ impl Engine for IterativeEngineV17 {
         let mut out = self.inner.choose_move(game_state, params)?;
         let in_endgame_mode = is_conservative_endgame(game_state);
         let in_kpk = kpk_pawn_color(game_state).is_some();
+        let mut special_solver_applied = false;
         if in_endgame_mode {
             out.info_lines
                 .push("info string iterative_engine_v17 endgame_mode conservative".to_owned());
@@ -67,22 +72,31 @@ impl Engine for IterativeEngineV17 {
         if in_kpk {
             if let Some(best) = select_kpk_best_move(game_state) {
                 out.best_move = Some(best);
+                special_solver_applied = true;
                 out.info_lines
                     .push("info string iterative_engine_v17 kpk_exact_applied".to_owned());
             }
         }
         if let Some(best) = select_kbnk_best_move(game_state) {
             out.best_move = Some(best);
+            special_solver_applied = true;
             out.info_lines
                 .push("info string iterative_engine_v17 kbnk_logic_applied".to_owned());
+        }
+        if in_endgame_mode && !special_solver_applied {
+            if let Some(best) = select_endgame_verified_move(game_state, params, out.best_move) {
+                out.best_move = Some(best);
+                out.info_lines
+                    .push("info string iterative_engine_v17 endgame_selectivity_applied".to_owned());
+            }
         }
         let winning_cp = extract_last_cp_score(&out.info_lines).unwrap_or(0);
         if in_endgame_mode && winning_cp >= 200 {
             if let Some(chosen) = out.best_move {
                 if would_be_threefold_after_move(game_state, chosen) {
                     let mut probe = game_state.clone();
-                    let legal = generate_legal_move_descriptions_in_place(&mut probe)
-                        .map_err(|e| e.to_string())?;
+                    let legal = try_generate_legal_moves(&probe)
+                        .ok_or_else(|| "failed to generate legal moves".to_owned())?;
                     if let Some(replacement) =
                         select_non_repetition_best_material_move(game_state, &legal, chosen)
                     {
@@ -116,7 +130,7 @@ fn extract_last_cp_score(info_lines: &[String]) -> Option<i32> {
 }
 
 fn would_be_threefold_after_move(game_state: &GameState, mv: u64) -> bool {
-    let Ok(next) = apply_move(game_state, mv) else {
+    let Some(next) = try_apply_move(game_state, mv) else {
         return false;
     };
     let current = next.zobrist_key;
@@ -138,7 +152,7 @@ fn select_non_repetition_best_material_move(
         if mv == chosen || would_be_threefold_after_move(game_state, mv) {
             continue;
         }
-        let Ok(next) = apply_move(game_state, mv) else {
+        let Some(next) = try_apply_move(game_state, mv) else {
             continue;
         };
         if is_mate_for_side_to_move(&next) {
@@ -155,7 +169,7 @@ fn select_non_repetition_best_material_move(
 
 fn is_mate_for_side_to_move(next: &GameState) -> bool {
     let mut probe = next.clone();
-    let Ok(replies) = generate_legal_move_descriptions_in_place(&mut probe) else {
+    let Some(replies) = try_generate_legal_moves(&probe) else {
         return false;
     };
     replies.is_empty() && is_king_in_check(next, next.side_to_move)
@@ -246,13 +260,13 @@ fn kpk_pawn_color(game_state: &GameState) -> Option<Color> {
 fn select_kpk_best_move(game_state: &GameState) -> Option<u64> {
     let pawn_color = kpk_pawn_color(game_state)?;
     let mut probe = game_state.clone();
-    let legal = generate_legal_move_descriptions_in_place(&mut probe).ok()?;
+    let legal = try_generate_legal_moves(&probe)?;
     let mut memo = HashMap::<u64, KpkOutcome>::new();
     let mut best = None;
     let mut best_outcome = KpkOutcome::Loss;
 
     for mv in legal {
-        let Ok(next) = apply_move(game_state, mv) else {
+        let Some(next) = try_apply_move(game_state, mv) else {
             continue;
         };
         let outcome = if kpk_pawn_color(&next).is_none() {
@@ -311,9 +325,9 @@ fn solve_kpk_outcome(
     }
 
     let mut probe = game_state.clone();
-    let legal = match generate_legal_move_descriptions_in_place(&mut probe) {
-        Ok(v) => v,
-        Err(_) => {
+    let legal = match try_generate_legal_moves(&probe) {
+        Some(v) => v,
+        None => {
             visiting.remove(&game_state.zobrist_key);
             return KpkOutcome::Draw;
         }
@@ -332,7 +346,7 @@ fn solve_kpk_outcome(
     let pawn_color = kpk_pawn_color(game_state);
     let mut saw_draw = false;
     for mv in legal {
-        let Ok(next) = apply_move(game_state, mv) else {
+        let Some(next) = try_apply_move(game_state, mv) else {
             continue;
         };
         let child = if kpk_pawn_color(&next).is_none() {
@@ -408,11 +422,11 @@ fn select_kbnk_best_move(game_state: &GameState) -> Option<u64> {
         return None;
     }
     let mut probe = game_state.clone();
-    let legal = generate_legal_move_descriptions_in_place(&mut probe).ok()?;
+    let legal = try_generate_legal_moves(&probe)?;
     let mut best = None;
     let mut best_score = i32::MIN;
     for mv in legal {
-        let Ok(next) = apply_move(game_state, mv) else {
+        let Some(next) = try_apply_move(game_state, mv) else {
             continue;
         };
         if is_mate_for_side_to_move(&next) {
@@ -430,7 +444,7 @@ fn select_kbnk_best_move(game_state: &GameState) -> Option<u64> {
 fn kbnk_progress_score(game_state: &GameState, attacker: Color) -> i32 {
     let defender = attacker.opposite();
     let mut probe = game_state.clone();
-    let defender_moves = generate_legal_move_descriptions_in_place(&mut probe)
+    let defender_moves = try_generate_legal_moves(&probe)
         .map(|v| v.len() as i32)
         .unwrap_or(32);
     let defender_king_sq = king_square(game_state, defender).unwrap_or(0);
@@ -490,6 +504,314 @@ fn manhattan(a: u8, b: u8) -> u8 {
     let bf = (b % 8) as i8;
     let br = (b / 8) as i8;
     ((af - bf).abs() + (ar - br).abs()) as u8
+}
+
+fn select_endgame_verified_move(
+    game_state: &GameState,
+    params: &GoParams,
+    fallback_best: Option<u64>,
+) -> Option<u64> {
+    let mut probe = game_state.clone();
+    let legal = try_generate_legal_moves(&probe)?;
+    if legal.is_empty() {
+        return None;
+    }
+    if legal.len() == 1 {
+        return legal.first().copied();
+    }
+    let requested_depth = params.depth.unwrap_or(4).clamp(2, 5);
+    let mut alpha = i32::MIN / 2;
+    let beta = i32::MAX / 2;
+    let mut best_mv = fallback_best.unwrap_or(legal[0]);
+    let mut best_score = i32::MIN / 2;
+    for mv in legal {
+        let Some(next) = try_apply_move(game_state, mv) else {
+            continue;
+        };
+        if is_mate_for_side_to_move(&next) {
+            return Some(mv);
+        }
+        let ext = endgame_extension_ply(game_state, mv, &next);
+        let child_depth = extended_child_depth(requested_depth, ext);
+        let score = -endgame_verify_negamax(
+            &next,
+            child_depth,
+            -beta,
+            -alpha,
+            game_state.side_to_move,
+        );
+        if score > best_score {
+            best_score = score;
+            best_mv = mv;
+        }
+        if score > alpha {
+            alpha = score;
+        }
+    }
+    Some(best_mv)
+}
+
+fn endgame_verify_negamax(
+    game_state: &GameState,
+    depth: u8,
+    mut alpha: i32,
+    beta: i32,
+    root_color: Color,
+) -> i32 {
+    if depth == 0 {
+        return endgame_verify_quiescence(game_state, alpha, beta, root_color, 0);
+    }
+    let mut probe = game_state.clone();
+    let legal = match try_generate_legal_moves(&probe) {
+        Some(v) => v,
+        None => return evaluate_for_root(game_state, root_color),
+    };
+    if legal.is_empty() {
+        if is_king_in_check(game_state, game_state.side_to_move) {
+            return -90_000 + i32::from(depth);
+        }
+        return 0;
+    }
+
+    let mut best = i32::MIN / 2;
+    for mv in legal {
+        let Some(next) = try_apply_move(game_state, mv) else {
+            continue;
+        };
+        let ext = endgame_extension_ply(game_state, mv, &next);
+        let child_depth = extended_child_depth(depth, ext);
+        let score = -endgame_verify_negamax(&next, child_depth, -beta, -alpha, root_color);
+        if score > best {
+            best = score;
+        }
+        if score > alpha {
+            alpha = score;
+        }
+        if alpha >= beta {
+            break;
+        }
+    }
+    best
+}
+
+fn endgame_verify_quiescence(
+    game_state: &GameState,
+    mut alpha: i32,
+    beta: i32,
+    root_color: Color,
+    qply: u8,
+) -> i32 {
+    let stand = evaluate_for_root(game_state, root_color);
+    if stand >= beta {
+        return stand;
+    }
+    if stand > alpha {
+        alpha = stand;
+    }
+    if qply >= 4 {
+        return alpha;
+    }
+    let mut probe = game_state.clone();
+    let mut legal = match try_generate_legal_moves(&probe) {
+        Some(v) => v,
+        None => return alpha,
+    };
+    legal.retain(|&mv| {
+        is_forcing_capture_or_promotion(mv)
+            || gives_check_after_move(game_state, mv)
+            || has_positive_see_estimate(mv)
+    });
+    for mv in legal {
+        let Some(next) = try_apply_move(game_state, mv) else {
+            continue;
+        };
+        let score = -endgame_verify_quiescence(&next, -beta, -alpha, root_color, qply + 1);
+        if score >= beta {
+            return score;
+        }
+        if score > alpha {
+            alpha = score;
+        }
+    }
+    alpha
+}
+
+#[inline]
+fn is_forcing_capture_or_promotion(mv: u64) -> bool {
+    (mv & FLAG_CAPTURE) != 0 || move_promotion_piece_code(mv) != NO_PIECE_CODE
+}
+
+#[inline]
+fn gives_check_after_move(game_state: &GameState, mv: u64) -> bool {
+    let Some(next) = try_apply_move(game_state, mv) else {
+        return false;
+    };
+    is_king_in_check(&next, next.side_to_move)
+}
+
+#[inline]
+fn has_positive_see_estimate(mv: u64) -> bool {
+    let capture = move_captured_piece_code(mv);
+    if capture == NO_PIECE_CODE {
+        return false;
+    }
+    let moved = move_moved_piece_code(mv);
+    let Some(captured_kind) = piece_kind_from_code(capture) else {
+        return false;
+    };
+    let Some(moved_kind) = piece_kind_from_code(moved) else {
+        return false;
+    };
+    piece_value(captured_kind) - piece_value(moved_kind) >= -25
+}
+
+#[inline]
+fn evaluate_for_root(game_state: &GameState, root_color: Color) -> i32 {
+    let mat = material_score_for_color(game_state, root_color);
+    let activity = endgame_activity_score(game_state, root_color);
+    mat + activity
+}
+
+fn endgame_activity_score(game_state: &GameState, root_color: Color) -> i32 {
+    let our_king = king_square(game_state, root_color).unwrap_or(0);
+    let their_king = king_square(game_state, root_color.opposite()).unwrap_or(0);
+    let king_proximity = 14 - i32::from(manhattan(our_king, their_king));
+    let mut score = king_proximity * 3;
+
+    let our_moves = legal_move_count(game_state, root_color);
+    let their_moves = legal_move_count(game_state, root_color.opposite());
+    score += (our_moves - their_moves) * 2;
+    score
+}
+
+fn legal_move_count(game_state: &GameState, perspective: Color) -> i32 {
+    if game_state.side_to_move == perspective {
+        let mut probe = game_state.clone();
+        return try_generate_legal_moves(&probe)
+            .map(|v| v.len() as i32)
+            .unwrap_or(0);
+    }
+    let mut tmp = game_state.clone();
+    tmp.side_to_move = perspective;
+    let mut probe = tmp;
+    try_generate_legal_moves(&probe)
+        .map(|v| v.len() as i32)
+        .unwrap_or(0)
+}
+
+fn endgame_extension_ply(game_state: &GameState, mv: u64, next: &GameState) -> u8 {
+    let mut ext = 0u8;
+    if gives_check_after_move(game_state, mv) {
+        ext = ext.saturating_add(1);
+    }
+    if move_promotion_piece_code(mv) != NO_PIECE_CODE {
+        ext = ext.saturating_add(1);
+    }
+    if is_passer_push(game_state, mv) {
+        ext = ext.saturating_add(1);
+    }
+    if is_king_pawn_race_position(game_state) {
+        // In king-pawn races, allow one more ply for sharper conversion/race accuracy.
+        ext = ext.saturating_add(1);
+    }
+    if is_king_in_check(next, next.side_to_move) {
+        ext = ext.saturating_add(1);
+    }
+    ext.min(2)
+}
+
+#[inline]
+fn extended_child_depth(depth: u8, extension_ply: u8) -> u8 {
+    let base = depth.saturating_sub(1);
+    let bonus = if depth > 2 { extension_ply.min(1) } else { 0 };
+    base.saturating_add(bonus)
+}
+
+fn is_king_pawn_race_position(game_state: &GameState) -> bool {
+    let light_non_king = non_king_count(game_state, Color::Light);
+    let dark_non_king = non_king_count(game_state, Color::Dark);
+    let light_only_pawns = light_non_king
+        == game_state.pieces[Color::Light.index()][PieceKind::Pawn.index()].count_ones();
+    let dark_only_pawns =
+        dark_non_king == game_state.pieces[Color::Dark.index()][PieceKind::Pawn.index()].count_ones();
+    light_only_pawns && dark_only_pawns && light_non_king + dark_non_king <= 6
+}
+
+fn is_passer_push(game_state: &GameState, mv: u64) -> bool {
+    let moved = move_moved_piece_code(mv);
+    if piece_kind_from_code(moved) != Some(PieceKind::Pawn) {
+        return false;
+    }
+    let from = move_from(mv) as u8;
+    let to = move_to(mv) as u8;
+    let color = game_state.side_to_move;
+    if !is_forward_push(from, to, color) {
+        return false;
+    }
+    let to_file = to % 8;
+    let to_rank = to / 8;
+    let opp_pawns = game_state.pieces[color.opposite().index()][PieceKind::Pawn.index()];
+    let mut blockers = 0u64;
+    for df in [-1i8, 0, 1] {
+        let f = to_file as i8 + df;
+        if !(0..=7).contains(&f) {
+            continue;
+        }
+        if color == Color::Light {
+            for r in (to_rank + 1)..8 {
+                blockers |= 1u64 << (u64::from(r) * 8 + f as u64);
+            }
+        } else {
+            for r in 0..to_rank {
+                blockers |= 1u64 << (u64::from(r) * 8 + f as u64);
+            }
+        }
+    }
+    (opp_pawns & blockers) == 0
+}
+
+#[inline]
+fn is_forward_push(from: u8, to: u8, color: Color) -> bool {
+    match color {
+        Color::Light => to > from,
+        Color::Dark => to < from,
+    }
+}
+
+fn non_king_count(game_state: &GameState, color: Color) -> u32 {
+    let idx = color.index();
+    game_state.pieces[idx][PieceKind::Pawn.index()].count_ones()
+        + game_state.pieces[idx][PieceKind::Knight.index()].count_ones()
+        + game_state.pieces[idx][PieceKind::Bishop.index()].count_ones()
+        + game_state.pieces[idx][PieceKind::Rook.index()].count_ones()
+        + game_state.pieces[idx][PieceKind::Queen.index()].count_ones()
+}
+
+#[inline]
+fn piece_value(kind: PieceKind) -> i32 {
+    match kind {
+        PieceKind::Pawn => 100,
+        PieceKind::Knight => 350,
+        PieceKind::Bishop => 325,
+        PieceKind::Rook => 500,
+        PieceKind::Queen => 975,
+        PieceKind::King => 0,
+    }
+}
+
+#[inline]
+fn try_apply_move(game_state: &GameState, mv: u64) -> Option<GameState> {
+    let applied = catch_unwind(AssertUnwindSafe(|| apply_move(game_state, mv))).ok()?;
+    applied.ok()
+}
+
+#[inline]
+fn try_generate_legal_moves(game_state: &GameState) -> Option<Vec<u64>> {
+    let mut probe = game_state.clone();
+    let generated =
+        catch_unwind(AssertUnwindSafe(|| generate_legal_move_descriptions_in_place(&mut probe)))
+            .ok()?;
+    generated.ok()
 }
 
 #[cfg(test)]
@@ -574,5 +896,23 @@ mod tests {
         );
         let best = super::select_kbnk_best_move(&game);
         assert!(best.is_some());
+    }
+
+    #[test]
+    fn endgame_extension_depth_is_bounded_and_descending() {
+        assert_eq!(super::extended_child_depth(1, 2), 0);
+        assert_eq!(super::extended_child_depth(2, 2), 1);
+        assert_eq!(super::extended_child_depth(3, 2), 3);
+        assert_eq!(super::extended_child_depth(6, 2), 6);
+    }
+
+    #[test]
+    fn king_pawn_race_detection_is_conservative() {
+        let race = crate::utils::fen_parser::parse_fen("8/8/3k4/3p4/4P3/3K4/8/8 w - - 0 1")
+            .expect("fen should parse");
+        assert!(super::is_king_pawn_race_position(&race));
+
+        let non_race = GameState::new_game();
+        assert!(!super::is_king_pawn_race_position(&non_race));
     }
 }
