@@ -33,17 +33,18 @@ pub struct FastLegalMoveGenerator;
 pub fn generate_legal_move_descriptions_in_place(
     game_state: &mut GameState,
 ) -> MoveGenResult<Vec<u64>> {
-    let mut pseudo = Vec::<u64>::with_capacity(128);
-    generate_pawn_moves(game_state, &mut pseudo);
-    generate_knight_moves(game_state, &mut pseudo);
-    generate_bishop_moves(game_state, &mut pseudo);
-    generate_rook_moves(game_state, &mut pseudo);
-    generate_queen_moves(game_state, &mut pseudo);
-    generate_king_moves(game_state, &mut pseudo);
+    let mut moves = Vec::<u64>::with_capacity(128);
+    generate_pawn_moves(game_state, &mut moves);
+    generate_knight_moves(game_state, &mut moves);
+    generate_bishop_moves(game_state, &mut moves);
+    generate_rook_moves(game_state, &mut moves);
+    generate_queen_moves(game_state, &mut moves);
+    generate_king_moves(game_state, &mut moves);
 
     let side_before = game_state.side_to_move;
-    let mut legal = Vec::<u64>::with_capacity(pseudo.len());
-    for mv in pseudo {
+    let mut write_idx = 0usize;
+    for read_idx in 0..moves.len() {
+        let mv = moves[read_idx];
         make_move_in_place(game_state, mv).map_err(|x| {
             MoveGenerationError::InvalidState(format!("make_move_in_place failed: {x}"))
         })?;
@@ -52,10 +53,12 @@ pub fn generate_legal_move_descriptions_in_place(
             MoveGenerationError::InvalidState(format!("unmake_move_in_place failed: {x}"))
         })?;
         if !illegal {
-            legal.push(mv);
+            moves[write_idx] = mv;
+            write_idx += 1;
         }
     }
-    Ok(legal)
+    moves.truncate(write_idx);
+    Ok(moves)
 }
 
 impl MoveGenerator for LegalMoveGenerator {
