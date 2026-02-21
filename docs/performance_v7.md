@@ -160,3 +160,34 @@ Observed in final smoke:
 2. More aggressive scratch-buffer reuse across recursive search calls.
 3. Endgame-specific verification cost controls to close the v17 endgame speed gap.
 
+## v7.10 Hotspot Micro-Pass
+
+After v7.9, a focused micro-optimization pass targeted two hot spots in
+`iterative_deepening_v15`:
+
+1. Removed a redundant `tt.probe(...)` call in `negamax`:
+- The first probe result is now reused for TT move ordering instead of probing
+  the same key again.
+
+2. Skipped sorting when move list size is `< 2`:
+- `order_moves` and `order_moves_basic` now return immediately for trivial lists.
+
+### v7.10 Snapshot (depth 4)
+
+Command:
+
+```bash
+cargo run --release --bin v7_perf_baseline -- --depth 4
+```
+
+| Position       | v7.9 NPS | v7.10 NPS | Delta |
+|----------------|----------|-----------|-------|
+| `startpos`     | 240666   | 240666    | 0.00% |
+| `classical_mid`| 161777   | 208000    | +28.57% |
+| `tactical`     | 170259   | 199869    | +17.39% |
+
+Interpretation:
+
+- Micro-pass gains are strongest in non-trivial middlegame/tactical trees,
+  where repeated TT probing and small-list sort overhead compound.
+- Tiny-depth start position remains timer-granularity dominated.

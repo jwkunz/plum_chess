@@ -387,7 +387,8 @@ fn negamax<S: BoardScorer>(
 
     let alpha_orig = alpha;
 
-    if let Some(entry) = tt.probe(game_state.zobrist_key) {
+    let tt_entry = tt.probe(game_state.zobrist_key);
+    if let Some(entry) = tt_entry {
         let tt_score = tt_score_from_storage(entry.score, ply);
         if entry.depth >= depth {
             match entry.bound {
@@ -470,7 +471,7 @@ fn negamax<S: BoardScorer>(
         return Ok(Some(terminal_score(game_state, ply)));
     }
 
-    let tt_move = tt.probe(game_state.zobrist_key).and_then(|entry| {
+    let tt_move = tt_entry.and_then(|entry| {
         if entry.depth >= depth {
             entry.best_move
         } else {
@@ -1185,12 +1186,18 @@ fn order_moves(
     heuristics: &SearchHeuristics,
     side_to_move: crate::game_state::chess_types::Color,
 ) {
+    if moves.len() < 2 {
+        return;
+    }
     moves.sort_unstable_by_key(|m| {
         -move_order_score(*m, tt_move, prev_move, killers, heuristics, side_to_move)
     });
 }
 
 fn order_moves_basic(moves: &mut [u64], tt_move: Option<u64>) {
+    if moves.len() < 2 {
+        return;
+    }
     moves.sort_unstable_by_key(|m| -move_order_score_basic(*m, tt_move));
 }
 
