@@ -1170,13 +1170,13 @@ fn order_moves(
     heuristics: &SearchHeuristics,
     side_to_move: crate::game_state::chess_types::Color,
 ) {
-    moves.sort_by_key(|m| {
+    moves.sort_unstable_by_key(|m| {
         -move_order_score(*m, tt_move, prev_move, killers, heuristics, side_to_move)
     });
 }
 
 fn order_moves_basic(moves: &mut [u64], tt_move: Option<u64>) {
-    moves.sort_by_key(|m| -move_order_score_basic(*m, tt_move));
+    moves.sort_unstable_by_key(|m| -move_order_score_basic(*m, tt_move));
 }
 
 fn move_order_score(
@@ -1197,8 +1197,8 @@ fn move_order_score(
 
         if let Some(piece) = piece_kind_from_code(move_moved_piece_code(move_description)) {
             let to = move_to_square(move_description);
-            score += heuristics.history[side_to_move.index()][piece.index()][to];
-            score += heuristics.continuation_bonus(side_to_move, prev_move, piece, to);
+            score += heuristics.history[side_to_move.index()][piece.index()][to] / 2;
+            score += heuristics.continuation_bonus(side_to_move, prev_move, piece, to) / 2;
         }
 
         if heuristics.is_countermove(prev_move, move_description) {
@@ -1214,13 +1214,21 @@ fn move_order_score_basic(move_description: u64, tt_move: Option<u64>) -> i32 {
     }
     let mut score = 0i32;
     if (move_description & (FLAG_CAPTURE | FLAG_EN_PASSANT)) != 0 {
-        let victim = piece_kind_from_code(move_captured_piece_code(move_description))
+        let victim = capture_value(move_description);
+        let aggressor = piece_kind_from_code(move_moved_piece_code(move_description))
             .map(piece_value)
             .unwrap_or(100);
-        score += 100_000 + victim + static_exchange_estimate(move_description);
+        let see = static_exchange_estimate(move_description);
+        // Tactical ordering blend:
+        // - MVV/LVA preference (high victim, low aggressor)
+        // - SEE bonus to push likely winning captures earlier
+        score += 100_000 + (victim * 16) - aggressor + (see * 4);
     }
     if move_promotion_piece_code(move_description) != NO_PIECE_CODE {
-        score += 90_000;
+        let promo_value = piece_kind_from_code(move_promotion_piece_code(move_description))
+            .map(piece_value)
+            .unwrap_or(0);
+        score += 90_000 + promo_value;
     }
     score
 }
