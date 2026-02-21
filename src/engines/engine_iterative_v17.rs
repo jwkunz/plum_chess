@@ -56,8 +56,13 @@ impl Engine for IterativeEngineV17 {
         params: &GoParams,
     ) -> Result<EngineOutput, String> {
         let mut out = self.inner.choose_move(game_state, params)?;
+        let in_endgame_mode = is_conservative_endgame(game_state);
+        if in_endgame_mode {
+            out.info_lines
+                .push("info string iterative_engine_v17 endgame_mode conservative".to_owned());
+        }
         let winning_cp = extract_last_cp_score(&out.info_lines).unwrap_or(0);
-        if winning_cp >= 200 {
+        if in_endgame_mode && winning_cp >= 200 {
             if let Some(chosen) = out.best_move {
                 if would_be_threefold_after_move(game_state, chosen) {
                     let mut probe = game_state.clone();
@@ -163,6 +168,25 @@ fn material_score_for_color(game_state: &GameState, color: crate::game_state::ch
     score
 }
 
+fn is_conservative_endgame(game_state: &GameState) -> bool {
+    let mut non_king_count = 0u32;
+    let mut queen_count = 0u32;
+    for color in [crate::game_state::chess_types::Color::Light, crate::game_state::chess_types::Color::Dark] {
+        let idx = color.index();
+        for piece_code in 0..6usize {
+            let count = game_state.pieces[idx][piece_code].count_ones();
+            if piece_code != crate::game_state::chess_types::PieceKind::King.index() {
+                non_king_count += count;
+            }
+            if piece_code == crate::game_state::chess_types::PieceKind::Queen.index() {
+                queen_count += count;
+            }
+        }
+    }
+    // Conservative gate: very low material, and at most one queen on board.
+    non_king_count <= 6 && queen_count <= 1
+}
+
 #[cfg(test)]
 mod tests {
     use super::IterativeEngineV17;
@@ -202,5 +226,14 @@ mod tests {
         let next = crate::move_generation::legal_move_apply::apply_move(&game, mv).expect("apply");
         game.repetition_history = vec![next.zobrist_key, next.zobrist_key];
         assert!(super::would_be_threefold_after_move(&game, mv));
+    }
+
+    #[test]
+    fn conservative_endgame_trigger_detects_low_material() {
+        let start = GameState::new_game();
+        assert!(!super::is_conservative_endgame(&start));
+        let low = crate::utils::fen_parser::parse_fen("8/8/8/8/8/8/5k2/6KR w - - 0 1")
+            .expect("fen should parse");
+        assert!(super::is_conservative_endgame(&low));
     }
 }
