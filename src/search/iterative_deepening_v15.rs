@@ -1600,11 +1600,9 @@ pub fn principal_variation_from_tt(
             break;
         }
         pv.moves.push(best_move);
-        let Ok(next) = crate::move_generation::legal_move_apply::apply_move(&state, best_move)
-        else {
+        if make_move_in_place(&mut state, best_move).is_err() {
             break;
-        };
-        state = next;
+        }
     }
 
     pv
