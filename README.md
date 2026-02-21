@@ -130,10 +130,14 @@ The `docs/` directory contains the project guides and roadmap history:
   - Major version 5 humanized CPL strategy guide.
 - `docs/end_game_optimization.md`
   - Major version 6 endgame optimization process and acceptance outcomes.
+- `docs/performance_v7.md`
+  - Major version 7 search-performance optimization journey and results.
 - `docs/requirements/v5.md`
   - Locked requirements/spec for the v5 humanized engine effort.
 - `docs/requirements/v6.md`
   - Locked requirements/spec for the v6 endgame-strength effort.
+- `docs/requirements/v7.md`
+  - Locked requirements/spec for the v7 performance optimization effort.
 - `docs/engine-interface.txt`
   - Reference UCI protocol specification text.
 
