@@ -900,12 +900,27 @@ fn is_draw_state(game_state: &GameState) -> bool {
         return true;
     }
     let current = game_state.zobrist_key;
-    let count = game_state
+    // Repetition can only occur along same side-to-move parity and only since
+    // the last irreversible move (bounded by halfmove clock).
+    let max_scan = usize::from(game_state.halfmove_clock)
+        .saturating_add(1)
+        .min(game_state.repetition_history.len());
+    let mut count = 0usize;
+    for h in game_state
         .repetition_history
         .iter()
-        .filter(|h| **h == current)
-        .count();
-    count >= 3
+        .rev()
+        .take(max_scan)
+        .step_by(2)
+    {
+        if *h == current {
+            count += 1;
+            if count >= 3 {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 #[inline]
