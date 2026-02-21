@@ -37,6 +37,7 @@ struct TTSlot {
 #[derive(Debug, Clone)]
 pub struct TranspositionTable {
     buckets: Vec<[TTSlot; Self::BUCKET_SIZE]>,
+    bucket_mask: usize,
     current_generation: u8,
     stats: TTStats,
 }
@@ -47,9 +48,11 @@ impl TranspositionTable {
     pub fn new_with_mb(size_mb: usize) -> Self {
         let bytes = size_mb.max(1) * 1024 * 1024;
         let bucket_size = std::mem::size_of::<[TTSlot; Self::BUCKET_SIZE]>().max(1);
-        let bucket_count = (bytes / bucket_size).max(1);
+        let raw_bucket_count = (bytes / bucket_size).max(1);
+        let bucket_count = raw_bucket_count.next_power_of_two().max(1);
         Self {
             buckets: vec![[TTSlot::default(); Self::BUCKET_SIZE]; bucket_count],
+            bucket_mask: bucket_count - 1,
             current_generation: 0,
             stats: TTStats::default(),
         }
@@ -79,7 +82,7 @@ impl TranspositionTable {
 
     #[inline]
     fn bucket_idx(&self, key: u64) -> usize {
-        (key as usize) % self.buckets.len()
+        (key as usize) & self.bucket_mask
     }
 
     pub fn probe(&mut self, key: u64) -> Option<TTEntry> {
