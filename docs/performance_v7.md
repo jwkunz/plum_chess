@@ -221,3 +221,23 @@ PLUM_V7_DEPTH=4 cargo bench --bench v7_perf_criterion -- "classical_mid/d4" --sa
 
 - Time: `[70.943 ms 73.586 ms 76.238 ms]`
 - Criterion change: `No change in performance detected` (non-regressive)
+
+## v7.13 Conservative Reverse-Futility Pruning
+
+Added a guarded reverse-futility prune in `negamax`:
+
+- Applies only at shallow depth (`<= 2`).
+- Disabled when in check, in critical endgames, and near mate-score bounds.
+- Restricted to narrow-window (non-PV-like) nodes.
+
+This targets low-value branches early while preserving tactical stability in
+the sensitive parts of the tree.
+
+### v7.13 snapshot (depth 4, `classical_mid/d4`)
+
+```bash
+PLUM_V7_DEPTH=4 cargo bench --bench v7_perf_criterion -- "classical_mid/d4" --sample-size 20
+```
+
+- Time: `[62.896 ms 65.256 ms 67.726 ms]`
+- Criterion change: `Performance has improved` (p < 0.05)

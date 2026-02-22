@@ -374,7 +374,7 @@ dependencies = [
 
 [[package]]
 name = "plum_chess"
-version = "7.12.0"
+version = "7.13.0"
 dependencies = [
  "chrono",
  "criterion",

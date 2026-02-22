@@ -409,6 +409,13 @@ fn negamax<S: BoardScorer>(
     }
 
     let in_check = is_king_in_check(game_state, game_state.side_to_move);
+    // Conservative reverse futility pruning:
+    // at shallow depth in quiet, non-PV-like nodes, skip hopelessly high evals.
+    let static_eval = scorer.score(game_state);
+    if should_reverse_futility_prune(depth, in_check, alpha, beta, static_eval, game_state) {
+        return Ok(Some(beta));
+    }
+
     if allow_null_pruning && should_try_null_move(depth, in_check, beta, game_state) {
         let null = make_null_move(game_state);
         let reduction = if depth >= 6 { 3 } else { 2 };
@@ -1434,6 +1441,38 @@ fn should_lmp_prune(
     };
 
     move_index >= threshold
+}
+
+#[inline]
+fn should_reverse_futility_prune(
+    depth: u8,
+    in_check: bool,
+    alpha: i32,
+    beta: i32,
+    static_eval: i32,
+    game_state: &GameState,
+) -> bool {
+    if in_check || depth > 2 {
+        return false;
+    }
+    // Restrict to non-PV-like narrow windows.
+    if beta.saturating_sub(alpha) > 1 {
+        return false;
+    }
+    // Avoid tactical instability near mate bounds.
+    if beta > (MATE_SCORE - 2000) || alpha < (-MATE_SCORE + 2000) {
+        return false;
+    }
+    // Be conservative in sensitive endgames.
+    if is_critical_endgame(game_state) {
+        return false;
+    }
+    let margin = match depth {
+        0 => 0,
+        1 => 110,
+        _ => 210,
+    };
+    static_eval - margin >= beta
 }
 
 #[inline]
