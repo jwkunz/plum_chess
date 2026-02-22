@@ -278,3 +278,29 @@ PLUM_V7_DEPTH=4 cargo bench --bench v7_perf_criterion -- "classical_mid/d4" --sa
 
 - Time: `[66.334 ms 70.448 ms 75.067 ms]`
 - Criterion change: `Performance has improved` (p < 0.05)
+
+## v7.16 Stabilization and Acceptance Re-Run
+
+Final pass focused on controlled measurement discipline:
+
+- Re-ran `v7_perf_criterion` sequentially (no concurrent benchmark jobs) to
+  avoid cross-benchmark contention skew.
+- Re-ran `v6_acceptance_criterion` as a post-change smoke gate.
+
+### v7.16 sequential snapshot (depth 4, `classical_mid/d4`)
+
+```bash
+PLUM_V7_DEPTH=4 cargo bench --bench v7_perf_criterion -- "classical_mid/d4" --sample-size 20
+```
+
+- Time: `[71.919 ms 73.582 ms 75.542 ms]`
+- Criterion change: `Performance has improved` (p < 0.05)
+
+### v7.16 acceptance snapshot
+
+```bash
+PLUM_V6_DEPTH=4 PLUM_V6_GAMES=4 cargo bench --bench v6_acceptance_criterion
+```
+
+- `v6_acceptance_opening_series/v16_vs_v17`: `[4.9644 s 6.2374 s 7.6386 s]`
+- `v6_acceptance_endgame_suite/v16_v17_curated`: `[2.2748 s 2.5932 s 2.9706 s]`
