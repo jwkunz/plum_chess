@@ -191,3 +191,33 @@ Interpretation:
 - Micro-pass gains are strongest in non-trivial middlegame/tactical trees,
   where repeated TT probing and small-list sort overhead compound.
 - Tiny-depth start position remains timer-granularity dominated.
+
+## v7.11 Draw-Repetition Scan Tightening
+
+A follow-on pass targeted draw detection overhead in the hot path:
+
+- Kept the index-based reverse parity scan in `is_draw_state` to avoid layered
+  iterator adaptors.
+- Confirmed no search behavior regressions in v15-focused tests.
+
+Depth-4 benchmark (`classical_mid/d4`) remained statistically neutral versus the
+previous step, with a slightly improved median.
+
+## v7.12 Draw Fast-Path Gates
+
+Added two constant-time guards before repetition scanning:
+
+- If `halfmove_clock < 4`, threefold repetition is impossible.
+- If `repetition_history.len() < 5`, three occurrences cannot exist.
+
+This avoids unnecessary scan setup in many middlegame nodes while preserving
+exact draw semantics.
+
+### v7.12 snapshot (depth 4, `classical_mid/d4`)
+
+```bash
+PLUM_V7_DEPTH=4 cargo bench --bench v7_perf_criterion -- "classical_mid/d4" --sample-size 20
+```
+
+- Time: `[70.943 ms 73.586 ms 76.238 ms]`
+- Criterion change: `No change in performance detected` (non-regressive)

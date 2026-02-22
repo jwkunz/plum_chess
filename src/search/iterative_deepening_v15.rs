@@ -900,6 +900,13 @@ fn is_draw_state(game_state: &GameState) -> bool {
     if game_state.halfmove_clock >= 100 {
         return true;
     }
+    // Fast gates for the hot path:
+    // - A threefold repetition needs at least 4 reversible plies since the last
+    //   irreversible move.
+    // - We also need at least 5 stored positions to have 3 occurrences.
+    if game_state.halfmove_clock < 4 || game_state.repetition_history.len() < 5 {
+        return false;
+    }
     let current = game_state.zobrist_key;
     // Repetition can only occur along same side-to-move parity and only since
     // the last irreversible move (bounded by halfmove clock).
