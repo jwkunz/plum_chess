@@ -24,8 +24,7 @@ use crate::search::iterative_deepening_v15::{
     iterative_deepening_search_with_tt, principal_variation_from_tt, SearchConfig,
 };
 use crate::search::threading::{
-    SharedSearchState, SharedTranspositionTable, ThreadContextPool, ThreadingConfig,
-    ThreadingModel,
+    SharedSearchState, SharedTranspositionTable, ThreadContextPool, ThreadingConfig, ThreadingModel,
 };
 use crate::search::transposition_table_v11::{Bound, TTEntry, TranspositionTable};
 use crate::tables::opening_book::OpeningBook;
@@ -396,9 +395,8 @@ impl Engine for IterativeEngine {
                 ));
             }
             if budget_stopped {
-                out.info_lines.push(
-                    "info string iterative_engine_v16 parallel_root budget_stop".to_owned(),
-                );
+                out.info_lines
+                    .push("info string iterative_engine_v16 parallel_root budget_stop".to_owned());
             }
             if panics > 0 {
                 out.info_lines.push(
@@ -411,9 +409,8 @@ impl Engine for IterativeEngine {
         };
 
         if use_parallel_root_main {
-            out.info_lines.push(
-                "info string iterative_engine_v16 parallel_root_main enabled".to_owned(),
-            );
+            out.info_lines
+                .push("info string iterative_engine_v16 parallel_root_main enabled".to_owned());
         }
         if use_parallel_root_main {
             if let Some(ref ranked) = ranked {
@@ -796,7 +793,6 @@ impl IterativeEngine {
         ranked: &[RankedCandidate],
         depth: u8,
     ) -> Vec<String> {
-
         let n = ranked.len().min(self.multipv);
         let mut lines = Vec::with_capacity(n);
         for (idx, candidate) in ranked.iter().take(n).enumerate() {

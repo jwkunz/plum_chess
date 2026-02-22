@@ -906,20 +906,25 @@ fn is_draw_state(game_state: &GameState) -> bool {
     let max_scan = usize::from(game_state.halfmove_clock)
         .saturating_add(1)
         .min(game_state.repetition_history.len());
+    let history = &game_state.repetition_history;
+    if history.is_empty() {
+        return false;
+    }
+
+    let min_index = history.len().saturating_sub(max_scan);
     let mut count = 0usize;
-    for h in game_state
-        .repetition_history
-        .iter()
-        .rev()
-        .take(max_scan)
-        .step_by(2)
-    {
-        if *h == current {
+    let mut idx = history.len() - 1;
+    loop {
+        if history[idx] == current {
             count += 1;
             if count >= 3 {
                 return true;
             }
         }
+        if idx < min_index + 2 {
+            break;
+        }
+        idx -= 2;
     }
     false
 }

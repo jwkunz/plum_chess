@@ -122,4 +122,3 @@ criterion_group!(
     bench_v6_endgame_suite
 );
 criterion_main!(v6_acceptance_benches);
-

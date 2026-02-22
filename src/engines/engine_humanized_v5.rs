@@ -337,8 +337,7 @@ mod tests {
                 .expect("engine should choose");
             let best = out.best_move.expect("best move");
             let mut probe = game.clone();
-            let legal =
-                generate_legal_move_descriptions_in_place(&mut probe).expect("legal moves");
+            let legal = generate_legal_move_descriptions_in_place(&mut probe).expect("legal moves");
             assert!(legal.contains(&best));
         }
     }

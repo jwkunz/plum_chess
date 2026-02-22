@@ -205,7 +205,10 @@ impl UciState {
                 writeln!(out, "option name UCI_Chess960 type check default false")?;
                 writeln!(out, "option name UCI_ShowWDL type check default false")?;
                 writeln!(out, "option name UCI_ShowCurrLine type check default false")?;
-                writeln!(out, "option name UCI_ShowRefutations type check default false")?;
+                writeln!(
+                    out,
+                    "option name UCI_ShowRefutations type check default false"
+                )?;
                 writeln!(
                     out,
                     "option name UCI_Opponent type string default {}",
@@ -216,10 +219,7 @@ impl UciState {
                     "option name UCI_EngineAbout type string default {}",
                     UCI_ENGINE_ABOUT
                 )?;
-                writeln!(
-                    out,
-                    "option name UCI_SetPositionValue type string default"
-                )?;
+                writeln!(out, "option name UCI_SetPositionValue type string default")?;
                 writeln!(out, "option name OwnBook type check default true")?;
                 writeln!(
                     out,
@@ -355,7 +355,11 @@ impl UciState {
             self.deterministic_search = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
             self.engine.set_option(
                 "DeterministicSearch",
-                if self.deterministic_search { "true" } else { "false" },
+                if self.deterministic_search {
+                    "true"
+                } else {
+                    "false"
+                },
             )?;
         } else if name.eq_ignore_ascii_case("RootParallelMinDepth") {
             let parsed = value
@@ -403,7 +407,11 @@ impl UciState {
             self.show_refutations = matches!(lower.as_str(), "true" | "1" | "yes" | "on");
             self.engine.set_option(
                 "UCI_ShowRefutations",
-                if self.show_refutations { "true" } else { "false" },
+                if self.show_refutations {
+                    "true"
+                } else {
+                    "false"
+                },
             )?;
         } else if name.eq_ignore_ascii_case("UCI_Opponent") {
             self.uci_opponent = value.trim().to_owned();
@@ -445,8 +453,8 @@ impl UciState {
 
     fn rebuild_engine_for_current_strength(&mut self) -> Result<(), String> {
         self.engine = build_engine(self.effective_skill_level());
-            self.apply_engine_options()?;
-            self.engine.new_game();
+        self.apply_engine_options()?;
+        self.engine.new_game();
         Ok(())
     }
 
@@ -492,7 +500,10 @@ impl UciState {
 
     fn handle_register(&mut self, line: &str, out: &mut impl Write) -> Result<(), String> {
         let tokens = line.split_whitespace().collect::<Vec<_>>();
-        if tokens.get(1).is_some_and(|t| t.eq_ignore_ascii_case("later")) {
+        if tokens
+            .get(1)
+            .is_some_and(|t| t.eq_ignore_ascii_case("later"))
+        {
             writeln!(out, "info string register deferred").map_err(|e| e.to_string())?;
             writeln!(out, "registration ok").map_err(|e| e.to_string())?;
             return Ok(());
@@ -699,7 +710,11 @@ impl UciState {
             .set_option("Threads", &self.threads.to_string())?;
         self.engine.set_option(
             "DeterministicSearch",
-            if self.deterministic_search { "true" } else { "false" },
+            if self.deterministic_search {
+                "true"
+            } else {
+                "false"
+            },
         )?;
         self.engine.set_option(
             "RootParallelMinDepth",
@@ -731,10 +746,13 @@ impl UciState {
         )?;
         self.engine.set_option(
             "UCI_ShowRefutations",
-            if self.show_refutations { "true" } else { "false" },
+            if self.show_refutations {
+                "true"
+            } else {
+                "false"
+            },
         )?;
-        self.engine
-            .set_option("UCI_Opponent", &self.uci_opponent)?;
+        self.engine.set_option("UCI_Opponent", &self.uci_opponent)?;
         self.engine
             .set_option("OwnBook", if self.own_book { "true" } else { "false" })?;
         self.engine
@@ -780,7 +798,11 @@ impl UciState {
             let _ = worker_engine.set_option("Threads", &threads.to_string());
             let _ = worker_engine.set_option(
                 "DeterministicSearch",
-                if deterministic_search { "true" } else { "false" },
+                if deterministic_search {
+                    "true"
+                } else {
+                    "false"
+                },
             );
             let _ = worker_engine
                 .set_option("RootParallelMinDepth", &root_parallel_min_depth.to_string());
@@ -851,7 +873,9 @@ impl UciState {
                                     ));
                                 }
                             }
-                            if let Some((nodes, time, nps)) = extract_last_search_stats(&out.info_lines) {
+                            if let Some((nodes, time, nps)) =
+                                extract_last_search_stats(&out.info_lines)
+                            {
                                 let _ = tx.send(format!(
                                     "info depth {} seldepth {} nodes {} time {} nps {}",
                                     iter_depth, iter_depth, nodes, time, nps

@@ -122,8 +122,8 @@ impl ThreadContextPool {
 pub struct SharedSearchState {
     stop: AtomicBool,
     pub nodes_visited: AtomicU64,
-    node_budget: AtomicU64,     // 0 means unlimited
-    time_budget_ms: AtomicU64,  // 0 means unlimited
+    node_budget: AtomicU64,    // 0 means unlimited
+    time_budget_ms: AtomicU64, // 0 means unlimited
     started_at: Mutex<Option<Instant>>,
 }
 
@@ -155,7 +155,8 @@ impl SharedSearchState {
 
     #[inline]
     pub fn set_node_budget(&self, budget: Option<u64>) {
-        self.node_budget.store(budget.unwrap_or(0), Ordering::Relaxed);
+        self.node_budget
+            .store(budget.unwrap_or(0), Ordering::Relaxed);
     }
 
     #[inline]

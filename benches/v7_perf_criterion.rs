@@ -80,4 +80,3 @@ fn bench_v7_search_perf(c: &mut Criterion) {
 
 criterion_group!(v7_perf_benches, bench_v7_search_perf);
 criterion_main!(v7_perf_benches);
-

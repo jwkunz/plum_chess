@@ -4,7 +4,9 @@
 //! In v6.0 it intentionally delegates to v16 behavior while preserving
 //! compatibility and adding explicit version markers for A/B rollout testing.
 
-use crate::engines::engine_iterative_v16::{IterativeEngine as IterativeEngineV16, IterativeScorerKind};
+use crate::engines::engine_iterative_v16::{
+    IterativeEngine as IterativeEngineV16, IterativeScorerKind,
+};
 use crate::engines::engine_trait::{Engine, EngineOutput, GoParams};
 use crate::game_state::chess_types::{Color, PieceKind};
 use crate::game_state::game_state::GameState;
@@ -87,8 +89,9 @@ impl Engine for IterativeEngineV17 {
         if in_endgame_mode && !special_solver_applied {
             if let Some(best) = select_endgame_verified_move(game_state, params, out.best_move) {
                 out.best_move = Some(best);
-                out.info_lines
-                    .push("info string iterative_engine_v17 endgame_selectivity_applied".to_owned());
+                out.info_lines.push(
+                    "info string iterative_engine_v17 endgame_selectivity_applied".to_owned(),
+                );
             }
         }
         let winning_cp = extract_last_cp_score(&out.info_lines).unwrap_or(0);
@@ -174,7 +177,10 @@ fn is_mate_for_side_to_move(next: &GameState) -> bool {
     replies.is_empty() && is_king_in_check(next, next.side_to_move)
 }
 
-fn material_score_for_color(game_state: &GameState, color: crate::game_state::chess_types::Color) -> i32 {
+fn material_score_for_color(
+    game_state: &GameState,
+    color: crate::game_state::chess_types::Color,
+) -> i32 {
     let us = color.index();
     let them = color.opposite().index();
     let mut score = 0i32;
@@ -199,7 +205,10 @@ fn material_score_for_color(game_state: &GameState, color: crate::game_state::ch
 fn is_conservative_endgame(game_state: &GameState) -> bool {
     let mut non_king_count = 0u32;
     let mut queen_count = 0u32;
-    for color in [crate::game_state::chess_types::Color::Light, crate::game_state::chess_types::Color::Dark] {
+    for color in [
+        crate::game_state::chess_types::Color::Light,
+        crate::game_state::chess_types::Color::Dark,
+    ] {
         let idx = color.index();
         for piece_code in 0..6usize {
             let count = game_state.pieces[idx][piece_code].count_ones();
@@ -527,13 +536,8 @@ fn select_endgame_verified_move(
         }
         let ext = endgame_extension_ply(game_state, mv, &next);
         let child_depth = extended_child_depth(requested_depth, ext);
-        let score = -endgame_verify_negamax(
-            &next,
-            child_depth,
-            -beta,
-            -alpha,
-            game_state.side_to_move,
-        );
+        let score =
+            -endgame_verify_negamax(&next, child_depth, -beta, -alpha, game_state.side_to_move);
         if score > best_score {
             best_score = score;
             best_mv = mv;
@@ -724,8 +728,8 @@ fn is_king_pawn_race_position(game_state: &GameState) -> bool {
     let dark_non_king = non_king_count(game_state, Color::Dark);
     let light_only_pawns = light_non_king
         == game_state.pieces[Color::Light.index()][PieceKind::Pawn.index()].count_ones();
-    let dark_only_pawns =
-        dark_non_king == game_state.pieces[Color::Dark.index()][PieceKind::Pawn.index()].count_ones();
+    let dark_only_pawns = dark_non_king
+        == game_state.pieces[Color::Dark.index()][PieceKind::Pawn.index()].count_ones();
     light_only_pawns && dark_only_pawns && light_non_king + dark_non_king <= 6
 }
 
@@ -800,9 +804,10 @@ fn try_apply_move(game_state: &GameState, mv: u64) -> Option<GameState> {
 #[inline]
 fn try_generate_legal_moves(game_state: &GameState) -> Option<Vec<u64>> {
     let mut probe = game_state.clone();
-    let generated =
-        catch_unwind(AssertUnwindSafe(|| generate_legal_move_descriptions_in_place(&mut probe)))
-            .ok()?;
+    let generated = catch_unwind(AssertUnwindSafe(|| {
+        generate_legal_move_descriptions_in_place(&mut probe)
+    }))
+    .ok()?;
     generated.ok()
 }
 
@@ -919,8 +924,7 @@ mod tests {
         for fen in fens {
             let game = crate::utils::fen_parser::parse_fen(fen).expect("fen should parse");
             let mut probe = game.clone();
-            let legal =
-                generate_legal_move_descriptions_in_place(&mut probe).expect("legal moves");
+            let legal = generate_legal_move_descriptions_in_place(&mut probe).expect("legal moves");
             assert!(!legal.is_empty());
         }
     }
@@ -929,8 +933,10 @@ mod tests {
     fn activity_score_side_flip_keeps_hashes_consistent() {
         let game = crate::utils::fen_parser::parse_fen("8/8/3k4/3p4/4P3/3K4/8/8 w - - 0 1")
             .expect("fen should parse");
-        let light = super::endgame_activity_score(&game, crate::game_state::chess_types::Color::Light);
-        let dark = super::endgame_activity_score(&game, crate::game_state::chess_types::Color::Dark);
+        let light =
+            super::endgame_activity_score(&game, crate::game_state::chess_types::Color::Light);
+        let dark =
+            super::endgame_activity_score(&game, crate::game_state::chess_types::Color::Dark);
         assert!(light.abs() < 10_000);
         assert!(dark.abs() < 10_000);
     }
