@@ -149,6 +149,25 @@ For thread scaling measurements, run:
 cargo run --bin thread_scaling_bench -- 8 4 3
 ```
 
+For benchmark runs (Criterion):
+
+```bash
+# Perft benchmark suite
+cargo bench --bench perft_criterion
+
+# Version 7 search-performance benchmark (default depth=4)
+cargo bench --bench v7_perf_criterion
+
+# Override depth for v7 benchmark
+PLUM_V7_DEPTH=5 cargo bench --bench v7_perf_criterion
+
+# Version 6-style acceptance benchmark (opening + endgame subsets)
+cargo bench --bench v6_acceptance_criterion
+
+# Override acceptance depth/games for Criterion run
+PLUM_V6_DEPTH=4 PLUM_V6_GAMES=2 cargo bench --bench v6_acceptance_criterion
+```
+
 
 ## Enjoy!
 

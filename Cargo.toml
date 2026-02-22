@@ -13,3 +13,11 @@ criterion = "0"
 [[bench]]
 name = "perft_criterion"
 harness = false
+
+[[bench]]
+name = "v7_perf_criterion"
+harness = false
+
+[[bench]]
+name = "v6_acceptance_criterion"
+harness = false

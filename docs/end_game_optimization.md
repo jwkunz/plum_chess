@@ -9,7 +9,7 @@ Primary implementation files:
 - `src/engines/engine_iterative_v17.rs`
 - `src/engines/engine_humanized_v5.rs`
 - `src/utils/engine_match_harness.rs`
-- `src/bin/v6_acceptance.rs`
+- `benches/v6_acceptance_criterion.rs`
 - `docs/requirements/v6.md`
 
 ## Objective
@@ -149,7 +149,7 @@ digraph v6_measurement {
   rankdir=LR;
   node [shape=box, style=rounded];
 
-  runner [label="v6_acceptance binary"];
+  runner [label="v6_acceptance_criterion bench"];
   open [label="Opening/Middlegame series"];
   end [label="Curated endgame suite"];
   stats [label="Win/draw + avg ms/move"];
@@ -188,4 +188,3 @@ further endgame tuning remains available as a future iteration.
 - `docs/optimization.md`
 - `docs/humanizing.md`
 - `docs/uci_enhancement.md`
-

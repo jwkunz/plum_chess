@@ -10,7 +10,7 @@ Primary files touched:
 - `src/search/transposition_table_v11.rs`
 - `src/move_generation/legal_move_generator.rs`
 - `src/engines/engine_iterative_v16.rs`
-- `src/bin/v7_perf_baseline.rs`
+- `benches/v7_perf_criterion.rs`
 - `docs/requirements/v7.md`
 
 ## Goal
@@ -45,7 +45,7 @@ digraph v7_steps {
 ### v7.0 Baseline and instrumentation
 
 - Added `docs/requirements/v7.md`.
-- Added `src/bin/v7_perf_baseline.rs` for reproducible depth-based baseline
+- Added `benches/v7_perf_criterion.rs` for reproducible depth-based baseline
   snapshots across representative FENs.
 
 ### v7.1 Hot-path de-allocation in move generation
@@ -111,7 +111,7 @@ digraph v7_steps {
 Baseline command:
 
 ```bash
-cargo run --release --bin v7_perf_baseline -- --depth 4
+PLUM_V7_DEPTH=4 cargo bench --bench v7_perf_criterion
 ```
 
 `v7.0` snapshot (initial baseline):
@@ -138,7 +138,7 @@ Notes:
 Command:
 
 ```bash
-cargo run --release --bin v6_acceptance -- --games 4 --depth 4
+PLUM_V6_DEPTH=4 PLUM_V6_GAMES=4 cargo bench --bench v6_acceptance_criterion
 ```
 
 Observed in final smoke:
@@ -177,7 +177,7 @@ After v7.9, a focused micro-optimization pass targeted two hot spots in
 Command:
 
 ```bash
-cargo run --release --bin v7_perf_baseline -- --depth 4
+PLUM_V7_DEPTH=4 cargo bench --bench v7_perf_criterion
 ```
 
 | Position       | v7.9 NPS | v7.10 NPS | Delta |
