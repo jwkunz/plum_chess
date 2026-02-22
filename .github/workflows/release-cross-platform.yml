@@ -83,7 +83,7 @@ jobs:
       - name: Run test suite
         run: |
           set -euxo pipefail
-          cargo test --locked --all-targets --test-threads=1 --release
+          cargo test --locked --all-targets --release
           
       - name: Build release binary
         run: |
