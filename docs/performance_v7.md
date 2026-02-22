@@ -241,3 +241,21 @@ PLUM_V7_DEPTH=4 cargo bench --bench v7_perf_criterion -- "classical_mid/d4" --sa
 
 - Time: `[62.896 ms 65.256 ms 67.726 ms]`
 - Criterion change: `Performance has improved` (p < 0.05)
+
+## v7.14 TT Stats Hot-Path Toggle
+
+Added a transposition-table micro-optimization:
+
+- TT probe/store stats bookkeeping is now behind an internal constant
+  (`TRACK_STATS`), disabled for the performance profile path.
+- This removes increment work from TT probe/store hot paths while keeping the
+  API intact (`TTStats` remains available and returns zeros when disabled).
+
+### v7.14 snapshot (depth 4, `classical_mid/d4`)
+
+```bash
+PLUM_V7_DEPTH=4 cargo bench --bench v7_perf_criterion -- "classical_mid/d4" --sample-size 20
+```
+
+- Time: `[76.780 ms 80.770 ms 85.447 ms]`
+- Criterion change: `No change in performance detected` (non-regressive)

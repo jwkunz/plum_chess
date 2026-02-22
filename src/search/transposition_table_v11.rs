@@ -44,6 +44,7 @@ pub struct TranspositionTable {
 
 impl TranspositionTable {
     const BUCKET_SIZE: usize = 4;
+    const TRACK_STATS: bool = false;
 
     pub fn new_with_mb(size_mb: usize) -> Self {
         let bytes = size_mb.max(1) * 1024 * 1024;
@@ -86,12 +87,16 @@ impl TranspositionTable {
     }
 
     pub fn probe(&mut self, key: u64) -> Option<TTEntry> {
-        self.stats.probes += 1;
+        if Self::TRACK_STATS {
+            self.stats.probes += 1;
+        }
         let b = self.bucket_idx(key);
         for slot in &mut self.buckets[b] {
             if let Some(entry) = slot.entry {
                 if entry.key == key {
-                    self.stats.hits += 1;
+                    if Self::TRACK_STATS {
+                        self.stats.hits += 1;
+                    }
                     slot.generation = self.current_generation;
                     return Some(entry);
                 }
@@ -101,7 +106,9 @@ impl TranspositionTable {
     }
 
     pub fn store(&mut self, entry: TTEntry) {
-        self.stats.stores += 1;
+        if Self::TRACK_STATS {
+            self.stats.stores += 1;
+        }
         let b = self.bucket_idx(entry.key);
         let bucket = &mut self.buckets[b];
 
