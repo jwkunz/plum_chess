@@ -259,3 +259,22 @@ PLUM_V7_DEPTH=4 cargo bench --bench v7_perf_criterion -- "classical_mid/d4" --sa
 
 - Time: `[76.780 ms 80.770 ms 85.447 ms]`
 - Criterion change: `No change in performance detected` (non-regressive)
+
+## v7.15 Quiescence Branch Elision
+
+A qsearch hot-path cleanup removed a runtime branch that was effectively
+disabled by constants:
+
+- The quiet-check expansion condition (`qply > 0 && qply < QUIESCENCE_CHECK_PLY`)
+  is unreachable at the current `QUIESCENCE_CHECK_PLY = 1`.
+- Added a compile-time guard (`QUIESCENCE_CHECK_PLY > 1`) so this path is
+  eliminated in optimized builds while preserving exact behavior.
+
+### v7.15 snapshot (depth 4, `classical_mid/d4`)
+
+```bash
+PLUM_V7_DEPTH=4 cargo bench --bench v7_perf_criterion -- "classical_mid/d4" --sample-size 20
+```
+
+- Time: `[66.334 ms 70.448 ms 75.067 ms]`
+- Criterion change: `Performance has improved` (p < 0.05)

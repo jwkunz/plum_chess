@@ -856,7 +856,7 @@ fn quiescence<S: BoardScorer>(
 
     moves.retain(|m| is_tactical_move(*m));
     moves.retain(|m| passes_quiescence_pruning(*m, stand_pat, alpha, qply, game_state));
-    if qply > 0 && qply < QUIESCENCE_CHECK_PLY {
+    if QUIESCENCE_CHECK_PLY > 1 && qply > 0 && qply < QUIESCENCE_CHECK_PLY {
         append_quiescence_check_moves(game_state, &mut moves)?;
     }
     order_moves_basic(&mut moves, None);
